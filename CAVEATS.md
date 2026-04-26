@@ -66,6 +66,41 @@ After a 20% drawdown, you'll want to turn it off. After a hot 30% gain, you'll w
 ### 18. The "who's accountable" problem
 When the algo loses money, you have to remember: YOU built it, YOU deployed it, YOU are accountable. The Bull/Bear/Risk debate gives you a paper trail of *why* each trade was taken — use the journal to learn, not to blame.
 
+## v1.2 risk-parity sleeve weighting (deployed)
+
+Validated by v1.1 walk-forward (TRAIN 2015-2020, TEST 2021-2025):
+
+| Config | OOS CAGR | OOS Sharpe | OOS MaxDD |
+|---|---|---|---|
+| momentum-only (no bottom) | 16.0% | 0.74 | -32.8% |
+| fixed 60/40 (was deployed) | 25.9% | 1.41 | -20.2% |
+| **risk-parity w/ priors (now deployed)** | **30.6%** | **1.76** | **-14.6%** |
+
+Mechanism: each month, momentum and bottom-catch sleeves are weighted inversely
+to their realized vol. Bootstrapped with backtest priors (PRIOR_MOMENTUM_VOL =
+6.31%, PRIOR_BOTTOM_VOL = 4.20% monthly) so no live warmup needed. Once we
+have 6+ months of live monthly returns, the sample vol takes over.
+
+Weights are clipped to [30%, 85%] so neither sleeve dominates entirely.
+
+First-day live: priors gave momentum 40% / bottom 60%. With no bottom-catch
+triggers, only momentum sleeve activated — 5 stocks at $6,793 each ($34k of $100k
+deployed, after VIX 0.85 vol scaling).
+
+## v1.0/v1.1 enhancements TESTED and REJECTED
+
+Four ideas that sounded smart but didn't survive walk-forward:
+
+| Enhancement | OOS Sharpe vs baseline | Verdict |
+|---|---|---|
+| Sector-neutral (1 per sector) | 0.51 vs 0.83 | REJECT — forces weak-sector picks |
+| Vol-targeting 15% annualized | 0.52 vs 0.83 | REJECT — scales down at wrong moments |
+| Tail hedge (TLT when VIX>25) | 0.79 vs 0.83 | REJECT — tiny drag, no hedge needed in 2021-2025 |
+| Momentum acceleration filter (12m AND 3m > 0) | 0.80 vs 0.83 | REJECT — kills good entries |
+| 3-sleeve (add 52w breakout) | 0.99 vs 1.15 baseline | REJECT — overfit (decay 45%) |
+
+**Key meta-finding:** the simple system has converged. Adding more features past v1.2 risk-parity is negative-ROI. Occam's razor wins.
+
 ## v0.8 stress test results (5 historical crashes + bias quantification)
 
 ### Crash performance (strategy vs SPY through named drawdowns)

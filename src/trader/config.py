@@ -4,7 +4,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-load_dotenv(ROOT / ".env")
+# override=True so .env beats any stale shell env (esp. an empty ANTHROPIC_API_KEY).
+load_dotenv(ROOT / ".env", override=True)
 
 DATA_DIR = ROOT / "data"
 CACHE_DIR = DATA_DIR / "cache"

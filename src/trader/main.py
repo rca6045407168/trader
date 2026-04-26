@@ -25,16 +25,20 @@ from .notify import notify
 from .kill_switch import check_kill_triggers
 from .validation import validate_targets, DataQualityError
 
-# Sleeve allocations — v0.5 walk-forward result.
-# Fixed 60/40 chosen as deployable proxy for risk-parity 2-sleeve (Sharpe 1.38 OOS).
-# Risk-parity itself needs 12 months of live monthly returns to bootstrap — v0.6 work.
-MOMENTUM_ALLOC = 0.60
-BOTTOM_ALLOC = 0.40
+# Sleeve allocations — v1.2 risk-parity with backtest priors.
+# OOS results (v1.1 walk-forward 2021-2025):
+#   - momentum-only:           CAGR 16.0%  Sharpe 0.74  MaxDD -32.8%
+#   - fixed 60/40 (was):       CAGR 25.9%  Sharpe 1.41  MaxDD -20.2%
+#   - risk-parity w/ priors:   CAGR 30.6%  Sharpe 1.76  MaxDD -14.6%
+# Now deployed via risk_parity.compute_weights()
+USE_RISK_PARITY = True
+FALLBACK_MOMENTUM_ALLOC = 0.60
+FALLBACK_BOTTOM_ALLOC = 0.40
 MAX_BOTTOMS_TO_DEBATE = 5
 
 
-def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict]]:
-    """Return (target_weights_for_momentum, list_of_approved_bottoms_with_meta)."""
+def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], dict]:
+    """Return (target_weights_for_momentum, list_of_approved_bottoms_with_meta, sleeve_alloc)."""
     print(f"[{datetime.now():%H:%M:%S}] ranking momentum on {len(universe)} tickers...")
     momentum = rank_momentum(universe, top_n=TOP_N)
     print(f"  -> {len(momentum)} momentum picks: {[c.ticker for c in momentum]}")
@@ -43,9 +47,23 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict]]:
     bottoms = find_bottoms(universe)
     print(f"  -> {len(bottoms)} bottom candidates: {[(c.ticker, round(c.score, 2)) for c in bottoms]}")
 
+    # v1.2: compute sleeve weights via risk-parity (or fall back to fixed)
+    if USE_RISK_PARITY:
+        from .risk_parity import compute_weights, compute_sleeve_returns_from_journal
+        try:
+            mom_hist, bot_hist = compute_sleeve_returns_from_journal()
+            sw = compute_weights(mom_hist, bot_hist)
+            momentum_alloc, bottom_alloc = sw.momentum, sw.bottom
+            print(f"  risk-parity sleeves — momentum: {momentum_alloc:.0%}  bottom: {bottom_alloc:.0%}  ({sw.method})")
+        except Exception as e:
+            print(f"  risk-parity failed ({e}); falling back to fixed 60/40")
+            momentum_alloc, bottom_alloc = FALLBACK_MOMENTUM_ALLOC, FALLBACK_BOTTOM_ALLOC
+    else:
+        momentum_alloc, bottom_alloc = FALLBACK_MOMENTUM_ALLOC, FALLBACK_BOTTOM_ALLOC
+
     momentum_targets: dict[str, float] = {}
     if momentum:
-        per = MOMENTUM_ALLOC / len(momentum)
+        per = momentum_alloc / len(momentum)
         for c in momentum:
             momentum_targets[c.ticker] = momentum_targets.get(c.ticker, 0) + per
             log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None,
@@ -67,7 +85,7 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict]]:
             print(f"  debate error for {c.ticker}: {e}")
             log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None, f"DEBATE_ERROR: {e}")
 
-    return momentum_targets, approved_bottoms
+    return momentum_targets, approved_bottoms, {"momentum": momentum_alloc, "bottom": bottom_alloc}
 
 
 def get_vix() -> float | None:
@@ -123,13 +141,13 @@ def main(force: bool = False) -> dict:
             print(f"  aged-close failed: {e}")
 
     universe = DEFAULT_LIQUID_50
-    momentum_targets, approved_bottoms = build_targets(universe)
+    momentum_targets, approved_bottoms, sleeve_alloc = build_targets(universe)
 
     # Combine all targets for portfolio-level risk check
     combined_targets = dict(momentum_targets)
     if approved_bottoms:
         total_bottom = sum(b["position_pct"] for b in approved_bottoms)
-        scale = min(1.0, BOTTOM_ALLOC / total_bottom) if total_bottom > 0 else 0
+        scale = min(1.0, sleeve_alloc["bottom"] / total_bottom) if total_bottom > 0 else 0
         for b in approved_bottoms:
             t = b["candidate"].ticker
             combined_targets[t] = combined_targets.get(t, 0) + b["position_pct"] * scale
