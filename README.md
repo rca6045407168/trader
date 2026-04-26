@@ -82,6 +82,10 @@ Multiple safety layers run on every daily execution:
 | v0.8 | survivorship-bias quantification, Monte Carlo bootstrap, crash performance | 7 stress sub-tests |
 | v0.9 | kill switch, validation, reconciliation, idempotency, tests | 38 unit tests |
 
+## Architecture & research paper
+
+The full design rationale, evaluation framework, and v2.0/v3.0 roadmap is in [docs/PAPER.md](docs/PAPER.md). Read this for: how the system judges its own performance (Sharpe / Sortino / Calmar / Deflated Sharpe / PBO), how multi-strategy ensembles work (AQR / Two Sigma / Renaissance approaches), how online learning fits in (bandit allocators, regime detectors), and the v3.0 architecture target.
+
 ## Realistic expectations
 
 Walk-forward + survivorship-bias correction both converge on:
