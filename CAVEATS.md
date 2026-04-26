@@ -66,6 +66,26 @@ After a 20% drawdown, you'll want to turn it off. After a hot 30% gain, you'll w
 ### 18. The "who's accountable" problem
 When the algo loses money, you have to remember: YOU built it, YOU deployed it, YOU are accountable. The Bull/Bear/Risk debate gives you a paper trail of *why* each trade was taken — use the journal to learn, not to blame.
 
+## Empirical findings from this codebase's signal tests
+
+### Bottom-catch signal: validated, but with a non-obvious tweak
+
+Forward-return test on 2,206 triggers across liquid-50 over 2015-2025:
+- 5-day mean: +0.94%, win 60.7%
+- 20-day mean: +2.29%, win 62.5%
+- 60-day mean: +6.92%, win 70.0%
+
+Breakdown by composite score (20-day forward):
+
+| Score bucket | Mean | Win rate | n |
+|---|---|---|---|
+| 0.55-0.65 | +1.7% | 59.9% | 724 |
+| 0.65-0.75 | +3.5% | 65.1% | 373 |
+| 0.75-0.85 | +3.4% | 65.4% | 350 |
+| 0.85-1.00 | +0.8% | 60.4% | 450 |
+
+**Lesson: the highest-conviction signals are NOT the best.** When the score crosses 0.85 (RSI<25 AND z<-2.5 AND volume spike AND trend intact), the average forward return is *worse* than the 0.65-0.85 bucket. Extreme oversold often means the selloff continues. Threshold updated to 0.65 to skip the weak tail; high-score trades still route through the Bull/Bear/Risk debate to filter catastrophic-looking ones.
+
 ## Empirical findings from this codebase's backtests (2015-2025, liquid-50)
 
 ### In-sample (2015-2025) vs out-of-sample (2021-2025) Sharpe decay

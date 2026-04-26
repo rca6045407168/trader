@@ -57,14 +57,18 @@ def backtest_momentum(
     top_n: int = 5,
     initial_capital: float = 100_000.0,
     slippage_bps: float = 5.0,
-    regime_filter: bool = False,
-    regime_ma: int = 200,
+    regime_filter: str | None = None,
+    regime_fast_ma: int = 50,
+    regime_slow_ma: int = 200,
 ) -> BacktestResult:
     """Monthly-rebalanced top-N momentum.
 
-    regime_filter: when True, only hold positions if SPY's last close > its
-      regime_ma-day moving average. Otherwise go to cash. This costs some upside
-      in choppy bull markets but cuts max-drawdown by ~30-50% in major crashes.
+    regime_filter:
+      None        — always invested.
+      "slow_ma"   — only invested when SPY > slow MA (default 200d). Whipsaw-prone.
+      "cross"     — only invested when SPY fast-MA (50d) > slow-MA (200d). "Golden cross" rule.
+                    Slower to enter and exit, fewer whipsaws than slow_ma.
+      "smooth"    — weight = clip((SPY/slow_ma - 1) * 10, 0, 1). Gradient instead of binary.
     """
     end = end or pd.Timestamp.today().strftime("%Y-%m-%d")
     prices = fetch_history(universe, start=start, end=end)
@@ -87,10 +91,18 @@ def backtest_momentum(
     spy_full = fetch_history(["SPY"], start=start, end=end)["SPY"]
 
     if regime_filter:
-        spy_ma = spy_full.rolling(regime_ma).mean()
-        in_uptrend_daily = (spy_full > spy_ma).astype(float)
-        in_uptrend_monthly = in_uptrend_daily.resample("ME").last().reindex(monthly.index).fillna(0)
-        weights = weights.mul(in_uptrend_monthly, axis=0)
+        spy_slow = spy_full.rolling(regime_slow_ma).mean()
+        if regime_filter == "slow_ma":
+            in_regime = (spy_full > spy_slow).astype(float)
+        elif regime_filter == "cross":
+            spy_fast = spy_full.rolling(regime_fast_ma).mean()
+            in_regime = (spy_fast > spy_slow).astype(float)
+        elif regime_filter == "smooth":
+            in_regime = ((spy_full / spy_slow - 1) * 10).clip(0, 1)
+        else:
+            raise ValueError(f"unknown regime_filter: {regime_filter}")
+        in_regime_monthly = in_regime.resample("ME").last().reindex(monthly.index).fillna(0)
+        weights = weights.mul(in_regime_monthly, axis=0)
 
     turnover = weights.diff().abs().sum(axis=1).fillna(0)
     slippage_drag = turnover * (slippage_bps / 10_000)

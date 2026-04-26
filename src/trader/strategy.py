@@ -66,7 +66,7 @@ def rank_momentum(
 
 def find_bottoms(
     universe: list[str],
-    min_score: float = 0.55,
+    min_score: float = 0.65,
     max_candidates: int = 10,
 ) -> list[Candidate]:
     """Scan the universe for high-confluence oversold-bounce setups."""

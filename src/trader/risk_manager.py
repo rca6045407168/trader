@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 from .journal import recent_snapshots
 
-MAX_POSITION_PCT = 0.05
+MAX_POSITION_PCT = 0.10  # Option B: moderate concentration. With TOP_N=5, max deployment ~50%.
 MAX_GROSS_EXPOSURE = 0.95
 MAX_DAILY_LOSS_PCT = 0.03
 MAX_DRAWDOWN_HALT_PCT = 0.08
