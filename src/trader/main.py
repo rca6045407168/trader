@@ -17,7 +17,7 @@ from .config import TOP_N, USE_DEBATE, DRY_RUN
 from .universe import DEFAULT_LIQUID_50
 from .strategy import rank_momentum, find_bottoms
 from .critic import debate
-from .execute import place_target_weights, place_bracket_order, get_client, get_last_price
+from .execute import place_target_weights, place_bracket_order, get_client, get_last_price, close_aged_bottom_catches
 from .order_planner import plan_momentum_entry, plan_bottom_entry
 from .risk_manager import check_account_risk
 from .journal import init_db, log_decision, log_order, log_daily_snapshot
@@ -85,6 +85,17 @@ def main() -> dict:
     init_db()
     print(f"\n=== trader daily run @ {datetime.now().isoformat()} ===")
     print(f"  TOP_N={TOP_N}  USE_DEBATE={USE_DEBATE}  DRY_RUN={DRY_RUN}")
+
+    # v0.7: time-exit aged bottom-catch positions (20 trading days)
+    print(f"\n[{datetime.now():%H:%M:%S}] checking for aged bottom-catch positions to close...")
+    if not DRY_RUN:
+        try:
+            aged_closes = close_aged_bottom_catches(max_age_days=20)
+            for r in aged_closes:
+                print(f"  CLOSING (aged): {r['symbol']} (opened {r.get('opened', 'unknown')[:10]})")
+                log_order(r["symbol"], "sell", 0, None, r.get("status", ""), r.get("error"))
+        except Exception as e:
+            print(f"  aged-close failed: {e}")
 
     universe = DEFAULT_LIQUID_50
     momentum_targets, approved_bottoms = build_targets(universe)

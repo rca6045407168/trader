@@ -44,6 +44,50 @@ def get_last_price(symbol: str) -> float:
     return float(resp[symbol].price)
 
 
+def close_aged_bottom_catches(max_age_days: int = 20, dry_run: bool = False) -> list[dict]:
+    """Close any open bottom-catch positions older than max_age_days.
+
+    Reads the journal for bottom-catch orders, finds matching open positions,
+    and closes them. v0.7 design: bottom-catches use a 20-day time exit since
+    brackets killed the mean-reversion edge (see CAVEATS.md H8).
+    """
+    from datetime import datetime, timedelta
+    from .journal import _conn
+
+    if dry_run:
+        return []
+
+    cutoff = datetime.utcnow() - timedelta(days=max_age_days)
+    with _conn() as c:
+        rows = c.execute(
+            """SELECT DISTINCT ticker, MIN(ts) as opened
+               FROM orders
+               WHERE side = 'BUY' AND ticker IN (
+                   SELECT ticker FROM decisions WHERE style = 'BOTTOM_CATCH'
+               )
+               AND status = 'submitted'
+               GROUP BY ticker"""
+        ).fetchall()
+
+    aged = [r for r in rows if datetime.fromisoformat(r["opened"]) < cutoff]
+    if not aged:
+        return []
+
+    client = get_client()
+    open_positions = {p.symbol for p in client.get_all_positions()}
+    out = []
+    for r in aged:
+        sym = r["ticker"]
+        if sym not in open_positions:
+            continue
+        try:
+            client.close_position(sym)
+            out.append({"symbol": sym, "action": "time_exit_20d", "opened": r["opened"], "status": "closed"})
+        except Exception as e:
+            out.append({"symbol": sym, "action": "time_exit_20d", "status": "error", "error": str(e)})
+    return out
+
+
 def place_target_weights(
     targets: dict[str, float], min_order_usd: float = 50.0, dry_run: bool = False,
 ) -> list[dict]:
@@ -146,6 +190,10 @@ def place_bracket_order(plan: OrderPlan, dry_run: bool = False) -> dict:
         common["order_class"] = OrderClass.BRACKET
         common["stop_loss"] = StopLossRequest(stop_price=plan.stop_loss_price)
         common["take_profit"] = TakeProfitRequest(limit_price=plan.take_profit_price)
+    elif plan.stop_loss_price and not plan.take_profit_price:
+        # OTO order class: parent + single stop child (no take). Used for v0.7 bottom-catch.
+        common["order_class"] = OrderClass.OTO
+        common["stop_loss"] = StopLossRequest(stop_price=plan.stop_loss_price)
 
     if plan.order_type == "LIMIT" and plan.limit_price:
         req = LimitOrderRequest(limit_price=plan.limit_price, **common)

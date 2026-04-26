@@ -66,6 +66,71 @@ After a 20% drawdown, you'll want to turn it off. After a hot 30% gain, you'll w
 ### 18. The "who's accountable" problem
 When the algo loses money, you have to remember: YOU built it, YOU deployed it, YOU are accountable. The Bull/Bear/Risk debate gives you a paper trail of *why* each trade was taken — use the journal to learn, not to blame.
 
+## v0.8 stress test results (5 historical crashes + bias quantification)
+
+### Crash performance (strategy vs SPY through named drawdowns)
+
+| Crash | Strategy CAGR | SPY CAGR | Strategy MaxDD | SPY MaxDD | Verdict |
+|---|---|---|---|---|---|
+| 2015-Q3 China devaluation | +23.5% | +2.4% | -11.2% | -8.5% | OUTPERFORMS |
+| 2018-Q4 Powell selloff | -0.4% | +3.2% | **-27.4%** | -13.5% | UNDERPERFORMS |
+| 2020 COVID | +110.4% | +15.8% | -14.7% | -19.4% | OUTPERFORMS (suspect: NVDA/TSLA tail) |
+| 2022 bear market | -4.5% | -0.2% | -21.2% | -20.3% | UNDERPERFORMS |
+| 2025 tariff selloff | +12.3% | -4.1% | -14.5% | -7.6% | OUTPERFORMS |
+
+**Pattern**: outperforms 3 of 5 crashes. Underperforms during regime changes when the previous winners (which the strategy holds) get rotated out (2018 Q4 = FAANG implosion, 2022 = tech bear). The 2018-Q4 -27% drawdown is the worst observed — plan for at least one such period in any 5-year window.
+
+### Survivorship-bias quantified (the most important v0.8 finding)
+
+| Universe | CAGR 2015-2025 | Sharpe | MaxDD |
+|---|---|---|---|
+| Current top-50 (deployed) | 30.4% | 1.16 | -32.8% |
+| **2015-known top-50 (less biased)** | **15.7%** | **0.82** | **-17.2%** |
+
+Delta = ~14.7% CAGR / -0.34 Sharpe / +15.6% MaxDD inflation. The current-top-50 backtest is roughly 2x optimistic on returns. The 2015-top-50 result (15.7% / 0.82) **converges with the v0.5 walk-forward OOS (17% / 0.83)** — two independent methods agree on real expected return.
+
+**Use 15-17% CAGR / 0.80-0.85 Sharpe as your real expectation.**
+
+### Slippage sensitivity (5→50 bps)
+
+| Slippage | CAGR | Sharpe |
+|---|---|---|
+| 5 bps | 30.4% | 1.16 |
+| 10 bps | 30.0% | 1.15 |
+| 25 bps | 29.0% | 1.12 |
+| 50 bps | 27.3% | 1.06 |
+| 100 bps | 24.0% | 0.96 |
+
+Strategy is robust to slippage. At realistic 8-15bps Alpaca paper, only loses ~50bps CAGR. Even at 100bps unrealistic-bad slippage, still beats SPY.
+
+### Monte Carlo block bootstrap
+
+Realized Sharpe 1.16 sits at the 41.5th percentile of bootstrapped distribution (1000 iterations, 3-month blocks). Strategy is **NOT path-dependent**, slightly unlucky vs random shuffle.
+
+### Top-N tradeoff
+
+| N | CAGR | Sharpe | MaxDD |
+|---|---|---|---|
+| 3 | 40.7% | 1.24 | **-38.7%** |
+| **5 (deployed)** | 30.4% | 1.16 | -32.8% |
+| 10 | 22.3% | 1.11 | -21.9% |
+| 20 | 18.9% | 1.11 | -22.3% |
+
+Top-3 has highest in-sample CAGR but a -38.7% drawdown is operationally painful. Top-5 is the deployed sweet spot. Top-10 reduces drawdown by 1/3 at the cost of ~8% CAGR.
+
+## v0.7 — fixed bottom-catch exit logic
+
+Original bracket (stop -1.5 ATR + take +3 ATR + trail 1 ATR) gave back 36% of the +2.29%/20d edge. Tested 4 alternatives:
+
+| Mode | Description | Mean | Win |
+|---|---|---|---|
+| A | time-only 20d | +2.23% | 63.1% |
+| **B** | **time + wide cat-stop -3.5 ATR** | **+2.29%** | **61.0%** |
+| C | time + signal exit (MA20 / RSI>50) | +1.83% | 71.3% |
+| D | time + take +4 ATR | +2.20% | 64.2% |
+
+Mode B deployed: full +2.29% edge preserved, with -3.5 ATR catastrophic stop only firing on tail events.
+
 ## v0.5 walk-forward results (the canonical numbers to trust)
 
 **Train: 2015-01 to 2020-12  |  Test: 2021-01 to 2025-04 (held out)**
