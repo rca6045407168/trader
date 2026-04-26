@@ -23,8 +23,11 @@ from .risk_manager import check_account_risk
 from .journal import init_db, log_decision, log_order, log_daily_snapshot
 from .notify import notify
 
-MOMENTUM_ALLOC = 0.80
-BOTTOM_ALLOC = 0.20
+# Sleeve allocations — v0.5 walk-forward result.
+# Fixed 60/40 chosen as deployable proxy for risk-parity 2-sleeve (Sharpe 1.38 OOS).
+# Risk-parity itself needs 12 months of live monthly returns to bootstrap — v0.6 work.
+MOMENTUM_ALLOC = 0.60
+BOTTOM_ALLOC = 0.40
 MAX_BOTTOMS_TO_DEBATE = 5
 
 

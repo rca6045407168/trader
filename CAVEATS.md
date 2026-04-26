@@ -66,6 +66,26 @@ After a 20% drawdown, you'll want to turn it off. After a hot 30% gain, you'll w
 ### 18. The "who's accountable" problem
 When the algo loses money, you have to remember: YOU built it, YOU deployed it, YOU are accountable. The Bull/Bear/Risk debate gives you a paper trail of *why* each trade was taken — use the journal to learn, not to blame.
 
+## v0.5 walk-forward results (the canonical numbers to trust)
+
+**Train: 2015-01 to 2020-12  |  Test: 2021-01 to 2025-04 (held out)**
+
+| Config | OOS Sharpe | OOS CAGR | OOS MaxDD | Decay | Status |
+|---|---|---|---|---|---|
+| Risk-parity 2-sleeve | **1.38** | 21.8% | -15.0% | 35.8% | best validated |
+| Fixed 60/30/10 | 1.33 | 21.7% | -16.4% | 30.7% | (3-sleeve, retired) |
+| Equal 33/33/33 | 1.31 | 17.2% | -19.2% | 34.8% | (3-sleeve, retired) |
+| **Fixed 60/40 (deployed)** | ~1.25 (interp) | ~22% | ~-16% | ~32% | **current** |
+| Fixed 80/20 (was deployed) | 1.15 | 21.7% | -15.8% | 31.6% | superseded |
+| Risk-parity 3-sleeve | 0.99 | 12.4% | -23.8% | 45.5% | overfit — dropped |
+| Momentum-only | 0.83 | 17.1% | -17.4% | 40.8% | borderline |
+
+Key lessons:
+- The **bottom-catch sleeve adds real diversification** (SPY corr +0.21, OOS Sharpe lifts from 0.83 → 1.15-1.38)
+- The **52-week breakout signal works alone (+1.06%/20d) but DOESN'T add ensemble value** — too correlated with momentum, drags Sharpe in 3-sleeve form
+- **Counter-intuitive: skipping bottom-catches in deep crashes HURTS** — the -20% SPY drawdown trades had +14.10% mean forward return. The fear-extreme bounces are the alpha. Filter dropped.
+- **Risk-parity weighting** between sleeves is the next upgrade (Sharpe 1.38 OOS vs 1.15 fixed). Needs 12 months of live data to bootstrap vol estimates — v0.6 work.
+
 ## Empirical findings from this codebase's signal tests
 
 ### Bottom-catch signal: validated, but with a non-obvious tweak

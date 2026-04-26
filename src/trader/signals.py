@@ -88,6 +88,37 @@ def atr(ohlc: pd.DataFrame, window: int = 14) -> float:
     return float(val) if not pd.isna(val) else 0.0
 
 
+def breakout_52w_score(prices: pd.Series, lookback_days: int = 252, proximity: float = 0.02) -> tuple[float, dict]:
+    """52-week-high breakout signal.
+
+    Fires when today's close is within `proximity` of the trailing 52-week high
+    AND today's close > yesterday's close (confirming follow-through).
+
+    Academic basis: George & Hwang (2004) showed the 52-week high anomaly is
+    distinct from price momentum — stocks near 52w highs continue to outperform
+    even after controlling for momentum factor exposure.
+
+    Returns (score 0-1, components).
+    """
+    if len(prices) < lookback_days + 2:
+        return 0.0, {"distance_from_52w": float("nan"), "daily_change": float("nan")}
+    high_52w = float(prices.iloc[-lookback_days:].max())
+    last = float(prices.iloc[-1])
+    prev = float(prices.iloc[-2])
+    distance = (last - high_52w) / high_52w  # negative = below high, 0 = AT high
+    daily_change = (last - prev) / prev
+    components = {"distance_from_52w": distance, "daily_change": daily_change, "high_52w": high_52w}
+
+    score = 0.0
+    if -proximity <= distance <= 0:
+        score += 0.5
+    if distance == 0:  # exactly at high
+        score += 0.2
+    if daily_change > 0:
+        score += 0.3
+    return score, components
+
+
 def bottom_catch_score(ohlc: pd.DataFrame) -> tuple[float, dict]:
     """Composite oversold-bounce score in [0, 1]. Returns (score, components).
 
