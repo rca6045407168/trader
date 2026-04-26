@@ -8,4 +8,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from trader.main import main
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force", action="store_true")
+    args = parser.parse_args()
+    main(force=args.force)

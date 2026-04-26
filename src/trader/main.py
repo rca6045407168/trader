@@ -22,6 +22,8 @@ from .order_planner import plan_momentum_entry, plan_bottom_entry
 from .risk_manager import check_account_risk
 from .journal import init_db, log_decision, log_order, log_daily_snapshot
 from .notify import notify
+from .kill_switch import check_kill_triggers
+from .validation import validate_targets, DataQualityError
 
 # Sleeve allocations — v0.5 walk-forward result.
 # Fixed 60/40 chosen as deployable proxy for risk-parity 2-sleeve (Sharpe 1.38 OOS).
@@ -81,10 +83,33 @@ def get_vix() -> float | None:
         return None
 
 
-def main() -> dict:
+def main(force: bool = False) -> dict:
     init_db()
     print(f"\n=== trader daily run @ {datetime.now().isoformat()} ===")
     print(f"  TOP_N={TOP_N}  USE_DEBATE={USE_DEBATE}  DRY_RUN={DRY_RUN}")
+
+    # v0.9: idempotency check — don't re-place orders if we already ran today
+    if not force and not DRY_RUN:
+        from .journal import recent_snapshots
+        today_snaps = recent_snapshots(days=1)
+        today_iso = datetime.utcnow().date().isoformat()
+        if any(s["date"] == today_iso for s in today_snaps):
+            print("  IDEMPOTENT: today's snapshot already exists. Use force=True to re-run.")
+            return {"skipped": True, "reason": "already_ran_today"}
+
+    # v0.9: kill-switch pre-flight (manual halt, missing keys, equity drawdown triggers)
+    print(f"\n[{datetime.now():%H:%M:%S}] kill-switch pre-flight...")
+    try:
+        live_equity = float(get_client().get_account().equity) if not DRY_RUN else 100_000.0
+    except Exception:
+        live_equity = None
+    halt, reasons = check_kill_triggers(equity=live_equity)
+    if halt:
+        for r in reasons:
+            print(f"  HALT: {r}")
+        notify(f"Kill switch tripped: {'; '.join(reasons)}", level="warn")
+        return {"halted": True, "kill_switch_reasons": reasons}
+    print("  kill switch clear.")
 
     # v0.7: time-exit aged bottom-catch positions (20 trading days)
     print(f"\n[{datetime.now():%H:%M:%S}] checking for aged bottom-catch positions to close...")
@@ -134,6 +159,17 @@ def main() -> dict:
         return {"halted": True, "reason": risk.reason}
 
     final_targets = risk.adjusted_targets
+
+    # v0.9: validate targets before any order leaves the system
+    try:
+        target_check = validate_targets(final_targets)
+        for w in target_check["warnings"]:
+            print(f"  validation warn: {w}")
+    except DataQualityError as e:
+        print(f"  HALT: target validation failed — {e}")
+        notify(f"Target validation HALT: {e}", level="warn")
+        return {"halted": True, "reason": str(e)}
+
     print("\nFinal target allocation (post-risk):")
     for t, w in sorted(final_targets.items(), key=lambda x: -x[1]):
         print(f"  {t:6s}  {w*100:5.2f}%")
@@ -201,4 +237,8 @@ def main() -> dict:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force", action="store_true", help="override idempotency guard")
+    args = parser.parse_args()
+    main(force=args.force)

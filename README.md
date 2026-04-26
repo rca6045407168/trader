@@ -36,15 +36,59 @@ cp .env.example .env
 # Backtest momentum on liquid 50, 2015-now
 python scripts/run_backtest.py
 
+# Walk-forward parameter sweep
+python scripts/run_optimizer.py
+
 # Dry-run today's trade decisions (no orders placed)
 DRY_RUN=true python scripts/run_daily.py
 
 # Place actual paper orders
 python scripts/run_daily.py
 
+# Override idempotency (force re-run if you already ran today)
+python scripts/run_daily.py --force
+
 # Nightly self-review (run after market close, before next open)
 python scripts/run_postmortem.py
+
+# Reconcile journal vs Alpaca positions
+python scripts/run_reconcile.py
+
+# Manual kill switch (arms a flag at /tmp/trader_halt)
+python scripts/halt.py on "flash crash"
+python scripts/halt.py off
+python scripts/halt.py status
 ```
+
+## v0.9 operational hardening
+
+Multiple safety layers run on every daily execution:
+
+1. **Kill switch** (`kill_switch.py`) — 6 triggers (manual flag, missing keys, equity drawdown over week/month/peak)
+2. **Risk manager** (`risk_manager.py`) — 9 layers (position cap, gross exposure, daily loss, drawdown, vol scaling, sector cap, etc.)
+3. **Data validation** (`validation.py`) — raises on empty/short/bad price data; warns on splits, stale data, concentration
+4. **Reconciliation** (`reconcile.py`) — compares journal expected vs Alpaca actual positions
+5. **Idempotency** — won't re-trade same day unless `--force`
+6. **38 unit tests** covering risk_manager, journal, order_planner, validation, kill_switch, signals
+
+## Strategy iterations (see `CAVEATS.md` for empirical findings)
+
+| Version | Key change | Validated by |
+|---|---|---|
+| v0.1 | initial momentum + bottom-catch + Bull/Bear/Risk swarm | unit tests |
+| v0.2 | walk-forward winner: 12m / top-5 (was 6m / top-10) | walk-forward optimizer |
+| v0.5 | bottom-catch threshold 0.55 → 0.65; allocation 80/20 → 60/40 | 7-hypothesis stress run |
+| v0.7 | bottom-catch exit redesign: brackets dropped (gave back 36% of edge) | 4-mode exit comparison |
+| v0.8 | survivorship-bias quantification, Monte Carlo bootstrap, crash performance | 7 stress sub-tests |
+| v0.9 | kill switch, validation, reconciliation, idempotency, tests | 38 unit tests |
+
+## Realistic expectations
+
+Walk-forward + survivorship-bias correction both converge on:
+- **CAGR: 15-17%** (not the 30% in-sample backtest — that's bias-inflated)
+- **Sharpe: 0.80-0.85** out-of-sample (vs 1.16 in-sample)
+- **Max drawdown: -25 to -35% expected at least once per 5 years**
+- **Worst observed crash drawdown: -27% (2018-Q4 Powell selloff)**
 
 ## Architecture
 
