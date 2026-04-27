@@ -1,29 +1,34 @@
-"""Detailed daily report assembly.
+"""Detailed daily report assembly (v2.6).
 
-Builds the email body for a daily-run completion email. Aimed at telling
-Richard, in one scroll, everything he'd want to know:
-  - what the system decided and why
-  - what risk gates fired
-  - what orders went out
-  - what positions he now holds + P&L
-  - how he's tracking vs SPY
-  - what anomalies are firing today (advisory)
-  - what to watch for tomorrow
+Designed to answer three questions in one scroll:
+  1. Did anything notable happen today?
+  2. What's coming up that affects the portfolio?
+  3. Should I do anything as the operator?
 
-Structured as plain text so it renders cleanly in any email client.
+Followed by detailed data sections for verification.
 """
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
+import calendar
+import math
+import statistics
 import pandas as pd
+
+PT = ZoneInfo("America/Los_Angeles")
+STARTING_CAPITAL = 100_000.0
+STRATEGY_VERSION = "v2.6"
 
 
 def _section(title: str, body: str) -> str:
     return f"=== {title} ===\n{body}\n"
 
 
-def _fmt_pct(x: float, plus: bool = True) -> str:
+def _fmt_pct(x: float | None, plus: bool = True) -> str:
+    if x is None:
+        return "n/a"
     sign = "+" if plus and x >= 0 else ""
     return f"{sign}{x * 100:.2f}%"
 
@@ -32,6 +37,70 @@ def _fmt_money(x: float, sign: bool = False) -> str:
     if sign:
         return f"${x:+,.2f}"
     return f"${x:,.2f}"
+
+
+def _now_pt() -> str:
+    return datetime.now(PT).strftime("%Y-%m-%d %H:%M %Z")
+
+
+def _next_monthly_rebalance(today: date) -> date:
+    """Last business day of the current month, or next month if past it."""
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    candidate = date(today.year, today.month, last_day)
+    while candidate.weekday() >= 5:
+        candidate -= timedelta(days=1)
+    if candidate <= today:
+        if today.month == 12:
+            ny, nm = today.year + 1, 1
+        else:
+            ny, nm = today.year, today.month + 1
+        last_day = calendar.monthrange(ny, nm)[1]
+        candidate = date(ny, nm, last_day)
+        while candidate.weekday() >= 5:
+            candidate -= timedelta(days=1)
+    return candidate
+
+
+def _explain_order(r: dict) -> str:
+    """Generate a one-line rationale for an order line."""
+    sym = r.get("symbol", "?")
+    status = r.get("status", "")
+    side = r.get("side", "")
+    notional = r.get("notional", 0)
+    if status == "below_min":
+        return f"  {sym:6s}  HOLD     —  current allocation already within $50 of target (no trade needed)"
+    if status == "submitted":
+        action = "trim" if side == "sell" else "top-up"
+        return f"  {sym:6s}  {side.upper():4s}     {_fmt_money(notional)}  rebalance {action} to bring weight back to target"
+    if status == "error":
+        return f"  {sym:6s}  ERROR    {_fmt_money(notional)}  {r.get('error', '')}"
+    if status == "closed":
+        return f"  {sym:6s}  CLOSE    —  not in target portfolio anymore"
+    return f"  {sym:6s}  {status:8s}  {_fmt_money(notional)}"
+
+
+def _scan_upcoming(today: date, days_ahead: int = 7) -> list[Any]:
+    """Scan anomalies for today + next N days. Returns list of (date, anomaly)."""
+    from .anomalies import scan_anomalies
+    out = []
+    for offset in range(days_ahead + 1):
+        d = today + timedelta(days=offset)
+        for a in scan_anomalies(d):
+            out.append((d, a))
+    return out
+
+
+def _daily_vol_band(snapshots: list[dict]) -> float | None:
+    """Return rolling realized 1-σ daily return from recent snapshots, or None if insufficient."""
+    if not snapshots or len(snapshots) < 5:
+        return None
+    eqs = [s["equity"] for s in snapshots if s.get("equity")]
+    if len(eqs) < 5:
+        return None
+    rets = [eqs[i] / eqs[i + 1] - 1 for i in range(len(eqs) - 1)]
+    if len(rets) < 4:
+        return None
+    return statistics.stdev(rets)
 
 
 def build_daily_report(
@@ -54,50 +123,132 @@ def build_daily_report(
     spy_today_return: float | None,
     yesterday_equity: float | None,
     anomalies_today: list[Any] | None = None,
+    sleeve_pnl: dict[str, dict] | None = None,
+    recent_snapshots: list[dict] | None = None,
+    is_first_trading_day: bool = False,
 ) -> tuple[str, str]:
     """Returns (subject, body)."""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M %Z").strip()
-
-    # ---- HEADER (1 line summary used as subject seed) ----
-    day_pnl = equity_after - (yesterday_equity or 100_000)
-    day_pct = day_pnl / (yesterday_equity or 100_000) if yesterday_equity else 0
-    cum_pnl = equity_after - 100_000
-    cum_pct = cum_pnl / 100_000
-
-    spy_str = f"SPY {_fmt_pct(spy_today_return)}" if spy_today_return is not None else "SPY n/a"
-    alpha_str = ""
-    if spy_today_return is not None and yesterday_equity:
-        alpha = day_pct - spy_today_return
-        alpha_str = f" alpha {_fmt_pct(alpha)}"
-
-    subject = f"day {_fmt_pct(day_pct)}{alpha_str} | equity {_fmt_money(equity_after)}"
-
-    # ---- BODY SECTIONS ----
     sections = []
 
-    # 1. Account snapshot
+    # ---- COMPUTE ALL THE NUMBERS UP FRONT ----
     deployed = equity_after - cash_after
     deployed_pct = deployed / equity_after if equity_after else 0
+    cash_pct = cash_after / equity_after if equity_after else 0
+    today = date.today()
+
+    # Day P&L: prefer yesterday's snapshot; fall back to starting capital with disclaimer
+    if yesterday_equity:
+        day_pnl = equity_after - yesterday_equity
+        day_pct = day_pnl / yesterday_equity
+        day_basis_note = ""
+    else:
+        day_pnl = equity_after - STARTING_CAPITAL
+        day_pct = day_pnl / STARTING_CAPITAL
+        day_basis_note = " (vs $100k start; no prior snapshot yet)"
+
+    cum_pnl = equity_after - STARTING_CAPITAL
+    cum_pct = cum_pnl / STARTING_CAPITAL
+    alpha = (day_pct - spy_today_return) if spy_today_return is not None else None
+
+    # Drawdown from peak in our snapshot history
+    max_eq = STARTING_CAPITAL
+    if recent_snapshots:
+        all_eqs = [s["equity"] for s in recent_snapshots if s.get("equity")] + [equity_after]
+        if all_eqs:
+            max_eq = max(max_eq, max(all_eqs))
+    dd_from_peak = (equity_after / max_eq) - 1
+
+    # Daily realized vol (rough proxy for "what's normal")
+    daily_vol = _daily_vol_band(recent_snapshots or [])
+    sigma_today = day_pnl / (yesterday_equity or STARTING_CAPITAL) / daily_vol if daily_vol else None
+
+    # Upcoming events (today + next 7 calendar days)
+    upcoming = _scan_upcoming(today, days_ahead=7)
+    today_anomalies = anomalies_today or [a for d, a in upcoming if d == today]
+    future_anomalies = [(d, a) for d, a in upcoming if d > today]
+
+    # Next monthly rebalance
+    next_rebal = _next_monthly_rebalance(today)
+    days_to_rebal = (next_rebal - today).days
+
+    # ---- SUBJECT (lead with biggest signal) ----
+    subject_parts = []
+    if future_anomalies:
+        # FOMC tomorrow > today's micro-P&L
+        d, a = future_anomalies[0]
+        days_until = (d - today).days
+        prefix = "TOMORROW" if days_until == 1 else f"{days_until}d"
+        subject_parts.append(f"{prefix}: {a.name}")
+    subject_parts.append(f"day {_fmt_pct(day_pct)}")
+    if alpha is not None:
+        subject_parts.append(f"alpha {_fmt_pct(alpha)}")
+    subject_parts.append(f"equity {_fmt_money(equity_after)}")
+    subject = " | ".join(subject_parts)
+
+    # ---- (1) AT-A-GLANCE — answers all 3 questions in 6 lines ----
+    notable = []
+    if abs(day_pct) > (daily_vol or 0.005) * 2 and daily_vol:
+        notable.append(f"day move > 2σ ({_fmt_pct(day_pct)} vs ±{daily_vol*100*2:.2f}% band)")
+    if dd_from_peak < -0.05:
+        notable.append(f"drawdown {_fmt_pct(dd_from_peak)} from peak")
+    submitted = [r for r in rebalance_results if r.get("status") == "submitted"]
+    if submitted:
+        notable.append(f"{len(submitted)} order(s) executed (rest skipped within rebalance band)")
+    if approved_bottoms:
+        notable.append(f"{len(approved_bottoms)} bottom-catch trade(s) opened")
+    if not notable:
+        notable.append("no rotation; micro-rebalance only" if submitted else "no trading activity (allocations already on target)")
+
+    next_event = ""
+    if future_anomalies:
+        d, a = future_anomalies[0]
+        days_until = (d - today).days
+        when = "tomorrow" if days_until == 1 else f"in {days_until} days ({d})"
+        next_event = f"  Next event: {a.name} {when} ({a.confidence} confidence, +{a.expected_alpha_bps}bps expected)"
+    else:
+        next_event = f"  Next event: monthly rebalance in {days_to_rebal} days ({next_rebal})"
+
+    action = "No human action recommended — system healthy."
+    if dd_from_peak < -0.08:
+        action = "REVIEW — drawdown approaches kill-switch threshold (-8%)."
+    elif risk_warnings:
+        action = "Note vol scaling active; no manual action needed."
+
+    sections.append(_section(
+        "AT-A-GLANCE",
+        f"Today:    " + "; ".join(notable) + "\n"
+        + next_event + "\n"
+        f"  Action:  {action}"
+    ))
+
+    # ---- (2) ACCOUNT ----
+    sigma_str = ""
+    if sigma_today is not None and abs(sigma_today) > 0.01:
+        sigma_str = f"  ({sigma_today:+.2f}σ vs realized vol band)"
+    spy_str = f"SPY {_fmt_pct(spy_today_return)}" if spy_today_return is not None else "SPY n/a"
+    alpha_str = f", alpha {_fmt_pct(alpha)}" if alpha is not None else ""
     sections.append(_section(
         "ACCOUNT",
         f"Equity:    {_fmt_money(equity_after)}\n"
-        f"Cash:      {_fmt_money(cash_after)}  ({(cash_after/equity_after*100 if equity_after else 0):.0f}%)\n"
+        f"Cash:      {_fmt_money(cash_after)}  ({cash_pct*100:.0f}%)\n"
         f"Deployed:  {_fmt_money(deployed)}  ({deployed_pct*100:.0f}%)\n"
-        f"Day P&L:   {_fmt_money(day_pnl, sign=True)}  ({_fmt_pct(day_pct)})  vs {spy_str}{alpha_str}\n"
-        f"Total P&L: {_fmt_money(cum_pnl, sign=True)}  ({_fmt_pct(cum_pct)}) since $100k start"
+        f"Day P&L:   {_fmt_money(day_pnl, sign=True)}  ({_fmt_pct(day_pct)}){day_basis_note}{sigma_str}\n"
+        f"           vs {spy_str}{alpha_str}\n"
+        f"Total:     {_fmt_money(cum_pnl, sign=True)}  ({_fmt_pct(cum_pct)}) since $100k start\n"
+        f"Drawdown:  {_fmt_pct(dd_from_peak)} from rolling peak ({_fmt_money(max_eq)})"
     ))
 
-    # 2. Decisions made today
+    # ---- (3) DECISIONS ----
     decisions_lines = []
     if momentum_picks:
-        decisions_lines.append(f"Momentum sleeve picked top {len(momentum_picks)} by 12-month trailing return:")
+        decisions_lines.append(f"Momentum: top {len(momentum_picks)} by 12-month trailing return (rebalance monthly)")
         for c in momentum_picks:
             ret = c.rationale.get("trailing_return", 0)
             decisions_lines.append(
                 f"  {c.ticker:6s}  12m return {_fmt_pct(ret):>8s}  ATR {c.atr_pct*100:.1f}%"
             )
     if bottom_candidates:
-        decisions_lines.append(f"\nBottom-catch scan: {len(bottom_candidates)} candidates passed threshold (score >= 0.65):")
+        decisions_lines.append(f"\nBottom-catch: {len(bottom_candidates)} candidates passed threshold (score >= 0.65)")
         for c in bottom_candidates[:5]:
             comp = c.rationale
             decisions_lines.append(
@@ -105,7 +256,7 @@ def build_daily_report(
                 f"BB-z {comp.get('bollinger_z', 0):+.2f}  trend {'OK' if comp.get('trend_intact') else 'broken'}"
             )
     else:
-        decisions_lines.append("\nBottom-catch scan: 0 candidates today (no oversold setup met threshold).")
+        decisions_lines.append(f"\nBottom-catch: 0 oversold setups today (sleeve allocation cap is {sleeve_alloc.get('bottom', 0)*100:.0f}%; nothing deployed)")
 
     if approved_bottoms:
         decisions_lines.append(f"\nApproved by Bull/Bear/Risk debate: {len(approved_bottoms)}")
@@ -115,39 +266,42 @@ def build_daily_report(
 
     sections.append(_section("DECISIONS", "\n".join(decisions_lines) or "no actionable signals today"))
 
-    # 3. Sleeve allocation math
-    sections.append(_section(
-        "SLEEVE WEIGHTS",
-        f"Momentum:     {sleeve_alloc.get('momentum', 0)*100:.0f}%\n"
-        f"Bottom-catch: {sleeve_alloc.get('bottom', 0)*100:.0f}%\n"
-        f"Method:       {sleeve_method}  (uses backtest priors until 6+ months of live data accumulate)"
-    ))
+    # ---- (4) SLEEVE WEIGHTS + ATTRIBUTION ----
+    actual_mom_deployed = sum(v for k, v in final_targets.items() if k in {p.ticker for p in momentum_picks})
+    actual_bot_deployed = sum(v for k, v in final_targets.items() if k not in {p.ticker for p in momentum_picks})
+    sleeve_lines = [
+        f"Cap:   momentum {sleeve_alloc.get('momentum', 0)*100:.0f}% / bottom-catch {sleeve_alloc.get('bottom', 0)*100:.0f}% (method: {sleeve_method})",
+        f"Today: momentum {actual_mom_deployed*100:.1f}% deployed / bottom-catch {actual_bot_deployed*100:.1f}% deployed",
+    ]
+    if sleeve_pnl:
+        sleeve_lines.append("\nSleeve P&L (cumulative since strategy start):")
+        for sleeve in ("MOMENTUM", "BOTTOM_CATCH"):
+            d = sleeve_pnl.get(sleeve, {})
+            unrealized = d.get("unrealized_pl", 0)
+            realized = d.get("realized_pl", 0)
+            sleeve_lines.append(
+                f"  {sleeve:14s}  realized {_fmt_money(realized, sign=True)}  unrealized {_fmt_money(unrealized, sign=True)}"
+            )
+    sections.append(_section("SLEEVE", "\n".join(sleeve_lines)))
 
-    # 4. Risk gates
+    # ---- (5) RISK GATES ----
     risk_lines = []
     if vix is not None:
         risk_lines.append(f"VIX: {vix:.1f}")
-    if risk_warnings:
-        for w in risk_warnings:
-            risk_lines.append(f"  WARN: {w}")
+    for w in (risk_warnings or []):
+        risk_lines.append(f"  WARN: {w}")
     risk_lines.append(f"Final target gross: {sum(final_targets.values())*100:.1f}%")
     risk_lines.append(f"Number of positions targeted: {len(final_targets)}")
+    if daily_vol:
+        risk_lines.append(f"Realized 1σ daily vol (rolling): ±{daily_vol*100:.2f}%")
     sections.append(_section("RISK GATES", "\n".join(risk_lines)))
 
-    # 5. Orders submitted
+    # ---- (6) ORDERS — with rationale ----
     order_lines = []
     if rebalance_results:
         order_lines.append("Momentum rebalance:")
         for r in rebalance_results:
-            sym = r.get("symbol", "?")
-            side = r.get("side", "")
-            notional = r.get("notional", 0)
-            status = r.get("status", "")
-            err = r.get("error")
-            line = f"  {sym:6s}  {side:6s}  {_fmt_money(notional)}  {status}"
-            if err:
-                line += f"  ERROR: {err}"
-            order_lines.append(line)
+            order_lines.append(_explain_order(r))
     if bracket_results:
         order_lines.append("\nBottom-catch brackets:")
         for r in bracket_results:
@@ -156,9 +310,9 @@ def build_daily_report(
         order_lines = ["No orders this run (no changes from current allocation)."]
     sections.append(_section("ORDERS", "\n".join(order_lines)))
 
-    # 6. Positions
+    # ---- (7) POSITIONS — with age + next decision date ----
     if positions_now:
-        pos_lines = []
+        pos_lines = ["(next reconsidered at monthly rebalance: {} \u2014 in {} days)".format(next_rebal, days_to_rebal)]
         sorted_pos = sorted(positions_now.items(), key=lambda x: -x[1].get("market_value", 0))
         for sym, p in sorted_pos:
             mv = p.get("market_value", 0)
@@ -166,68 +320,85 @@ def build_daily_report(
             plpc = p.get("unrealized_plpc", 0) * 100
             entry = p.get("avg_entry_price", 0)
             now_p = p.get("current_price", 0)
+            age = p.get("age_days")
+            age_str = f"  age {age}d" if age is not None else ""
+            sleeve = p.get("sleeve") or ""
             pos_lines.append(
                 f"  {sym:6s}  {_fmt_money(mv):>10s}  entry {_fmt_money(entry):>8s}  now {_fmt_money(now_p):>8s}  "
-                f"P&L {_fmt_money(pl, sign=True):>9s}  ({plpc:+.2f}%)"
+                f"P&L {_fmt_money(pl, sign=True):>9s}  ({plpc:+.2f}%){age_str}{('  '+sleeve) if sleeve else ''}"
             )
         sections.append(_section(f"POSITIONS ({len(positions_now)})", "\n".join(pos_lines)))
 
-    # 7. Narrative analysis (Claude-generated) — WHY decisions, short/long-term factors
+    # ---- (8) UPCOMING EVENTS ----
+    if today_anomalies or future_anomalies:
+        upc_lines = []
+        if today_anomalies:
+            upc_lines.append("TODAY:")
+            for a in today_anomalies:
+                upc_lines.append(
+                    f"  {a.name} [{a.confidence}]  +{a.expected_alpha_bps}bps expected  →  {a.target_symbol}\n"
+                    f"    {a.rationale}"
+                )
+        if future_anomalies:
+            upc_lines.append("\nUPCOMING (next 7 days):")
+            seen = set()
+            for d, a in future_anomalies:  # already in date order
+                if a.name in seen:
+                    continue  # only show soonest occurrence per anomaly type
+                seen.add(a.name)
+                days_until = (d - today).days
+                when = "tomorrow" if days_until == 1 else f"in {days_until}d ({d})"
+                upc_lines.append(
+                    f"  {a.name} {when}  [{a.confidence}]  +{a.expected_alpha_bps}bps expected"
+                )
+        sections.append(_section("UPCOMING EVENTS", "\n".join(upc_lines)))
+
+    # ---- (9) ANALYSIS (LLM) ----
     try:
         from .narrative import generate_narrative
         narrative_state = {
             "run_id": run_id,
             "account": {
-                "equity": equity_after,
-                "cash": cash_after,
-                "deployed": deployed,
-                "day_pnl": day_pnl,
-                "day_pct": day_pct,
-                "cum_pnl": cum_pnl,
-                "cum_pct": cum_pct,
+                "equity": equity_after, "cash": cash_after, "deployed": deployed,
+                "day_pnl": day_pnl, "day_pct": day_pct,
+                "cum_pnl": cum_pnl, "cum_pct": cum_pct,
                 "yesterday_equity": yesterday_equity,
+                "drawdown_from_peak": dd_from_peak,
             },
-            "market": {"spy_today_return": spy_today_return, "vix": vix},
+            "market": {"spy_today_return": spy_today_return, "vix": vix, "alpha_today": alpha},
             "decisions": {
                 "momentum_picks": [
-                    {
-                        "ticker": c.ticker,
-                        "trailing_return": c.rationale.get("trailing_return", 0),
-                        "atr_pct": c.atr_pct,
-                    } for c in momentum_picks
+                    {"ticker": c.ticker, "trailing_return": c.rationale.get("trailing_return", 0),
+                     "atr_pct": c.atr_pct} for c in momentum_picks
                 ],
                 "bottom_candidates_count": len(bottom_candidates),
             },
-            "sleeve_alloc": {**sleeve_alloc, "method": sleeve_method},
+            "sleeve_alloc": {**sleeve_alloc, "method": sleeve_method,
+                             "actual_momentum_deployed": actual_mom_deployed,
+                             "actual_bottom_deployed": actual_bot_deployed},
             "risk_warnings": risk_warnings,
             "orders": rebalance_results + bracket_results,
             "positions": positions_now or {},
-            "anomalies_today": anomalies_today or [],
+            "anomalies_today": today_anomalies,
+            "upcoming_events": [(str(d), a.name, a.confidence, a.expected_alpha_bps) for d, a in future_anomalies],
+            "next_monthly_rebalance": str(next_rebal),
+            "days_to_rebalance": days_to_rebal,
         }
         narrative_text = generate_narrative(narrative_state)
         if narrative_text:
-            sections.append(_section("ANALYSIS (LLM-generated)", narrative_text))
+            sections.append(_section("ANALYSIS (LLM)", narrative_text))
     except Exception as e:
-        sections.append(_section("ANALYSIS (LLM-generated)", f"(narrative unavailable: {type(e).__name__})"))
+        sections.append(_section("ANALYSIS (LLM)", f"(narrative unavailable: {type(e).__name__}: {e})"))
 
-    # 8. Anomalies on the radar today
-    if anomalies_today:
-        anom_lines = []
-        for a in anomalies_today:
-            anom_lines.append(
-                f"  {a.name} [{a.confidence}]  +{a.expected_alpha_bps}bps expected  →  {a.target_symbol}\n"
-                f"    {a.rationale}"
-            )
-        sections.append(_section("ANOMALIES FIRING TODAY (advisory, not auto-traded)", "\n".join(anom_lines)))
-
-    # 8. Footer
+    # ---- (10) META ----
     sections.append(_section(
         "META",
         f"Run ID: {run_id}\n"
-        f"Generated: {timestamp}\n"
-        f"Strategy version: v2.2\n"
-        f"Realistic expected CAGR (post-DSR): 10-12%\n"
+        f"Generated: {_now_pt()}\n"
+        f"Strategy version: {STRATEGY_VERSION}\n"
+        f"Realistic expected CAGR (post-DSR correction): 10-12%\n"
         f"Last walk-forward OOS Sharpe: 0.76\n"
+        f"Next monthly rebalance: {next_rebal}\n"
         f"Repo: https://github.com/rca6045407168/trader"
     ))
 
@@ -236,7 +407,8 @@ def build_daily_report(
 
 
 def fetch_alpaca_position_dicts(client) -> dict[str, dict]:
-    """Helper: pull current positions and convert to plain dicts for the report."""
+    """Pull current Alpaca positions and merge with journal lot data (sleeve, age)."""
+    from .journal import _conn
     out = {}
     for p in client.get_all_positions():
         out[p.symbol] = {
@@ -247,11 +419,25 @@ def fetch_alpaca_position_dicts(client) -> dict[str, dict]:
             "current_price": float(p.current_price),
             "qty": float(p.qty),
         }
+    # Enrich with lot metadata
+    try:
+        with _conn() as c:
+            rows = c.execute(
+                """SELECT symbol, sleeve, opened_at FROM position_lots
+                   WHERE closed_at IS NULL"""
+            ).fetchall()
+        for r in rows:
+            if r["symbol"] in out:
+                opened = pd.Timestamp(r["opened_at"])
+                age = (pd.Timestamp.now() - opened).days
+                out[r["symbol"]]["sleeve"] = r["sleeve"]
+                out[r["symbol"]]["age_days"] = max(age, 0)
+    except Exception:
+        pass
     return out
 
 
 def fetch_spy_today_return() -> float | None:
-    """Helper: today's SPY close-to-close return (nullable on data failure)."""
     try:
         from .data import fetch_history
         spy = fetch_history(["SPY"], start=(datetime.now() - pd.Timedelta(days=10)).strftime("%Y-%m-%d"))["SPY"]
@@ -263,7 +449,6 @@ def fetch_spy_today_return() -> float | None:
 
 
 def fetch_yesterday_equity() -> float | None:
-    """Last daily snapshot equity (excluding today's)."""
     from .journal import recent_snapshots
     snaps = recent_snapshots(days=7)
     today_iso = datetime.utcnow().date().isoformat()
@@ -271,3 +456,42 @@ def fetch_yesterday_equity() -> float | None:
         if s["date"] != today_iso:
             return float(s["equity"]) if s["equity"] else None
     return None
+
+
+def fetch_recent_snapshots(days: int = 30) -> list[dict]:
+    from .journal import recent_snapshots
+    return recent_snapshots(days=days) or []
+
+
+def fetch_sleeve_pnl(positions_now: dict[str, dict]) -> dict[str, dict]:
+    """Sleeve-level P&L summary from journal lots + current unrealized."""
+    from .journal import _conn
+    out = {"MOMENTUM": {"realized_pl": 0.0, "unrealized_pl": 0.0},
+           "BOTTOM_CATCH": {"realized_pl": 0.0, "unrealized_pl": 0.0}}
+    try:
+        with _conn() as c:
+            # Realized
+            rows = c.execute(
+                """SELECT sleeve, SUM(realized_pnl) as total
+                   FROM position_lots WHERE closed_at IS NOT NULL
+                   GROUP BY sleeve"""
+            ).fetchall()
+            for r in rows:
+                if r["sleeve"] in out:
+                    out[r["sleeve"]]["realized_pl"] = float(r["total"] or 0)
+            # Unrealized — split by sleeve via lots
+            lot_rows = c.execute(
+                """SELECT symbol, sleeve, qty, open_price FROM position_lots
+                   WHERE closed_at IS NULL"""
+            ).fetchall()
+            for lot in lot_rows:
+                sym = lot["symbol"]
+                if sym not in positions_now:
+                    continue
+                current_price = positions_now[sym].get("current_price", 0)
+                lot_unrealized = (current_price - (lot["open_price"] or 0)) * (lot["qty"] or 0)
+                if lot["sleeve"] in out:
+                    out[lot["sleeve"]]["unrealized_pl"] += lot_unrealized
+    except Exception:
+        pass
+    return out

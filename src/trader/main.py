@@ -25,7 +25,10 @@ from .notify import notify
 from .kill_switch import check_kill_triggers
 from .validation import validate_targets, DataQualityError
 from .reconcile import reconcile
-from .report import build_daily_report, fetch_alpaca_position_dicts, fetch_spy_today_return, fetch_yesterday_equity
+from .report import (
+    build_daily_report, fetch_alpaca_position_dicts, fetch_spy_today_return,
+    fetch_yesterday_equity, fetch_recent_snapshots, fetch_sleeve_pnl,
+)
 from .anomalies import scan_anomalies
 from datetime import date as _date
 
@@ -288,6 +291,8 @@ def main(force: bool = False) -> dict:
         spy_today = fetch_spy_today_return()
         yest_eq = fetch_yesterday_equity()
         anomalies = scan_anomalies(_date.today())
+        recent_snaps = fetch_recent_snapshots(days=30)
+        sleeve_pnl = fetch_sleeve_pnl(positions_now or {})
 
         subject, body = build_daily_report(
             run_id=run_id,
@@ -308,6 +313,9 @@ def main(force: bool = False) -> dict:
             spy_today_return=spy_today,
             yesterday_equity=yest_eq,
             anomalies_today=anomalies,
+            sleeve_pnl=sleeve_pnl,
+            recent_snapshots=recent_snaps,
+            is_first_trading_day=(yest_eq is None),
         )
         notify(body, subject=subject)
     except Exception as e:
