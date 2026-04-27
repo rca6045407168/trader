@@ -23,6 +23,7 @@ from .risk_manager import check_account_risk
 from .journal import init_db, log_decision, log_order, log_daily_snapshot, start_run, finish_run, open_lot
 from .notify import notify
 from .kill_switch import check_kill_triggers
+from .alerts import alert_halt, alert_kill_switch
 from .validation import validate_targets, DataQualityError
 from .reconcile import reconcile
 from .report import (
@@ -136,7 +137,11 @@ def main(force: bool = False) -> dict:
     if halt:
         for r in reasons:
             print(f"  HALT: {r}")
-        notify(f"Kill switch tripped: {'; '.join(reasons)}", level="warn")
+        # v2.7: structured kill-switch alert (bypasses stub guard via 80+ char body)
+        try:
+            alert_kill_switch(reasons)
+        except Exception as e:
+            print(f"  alert_kill_switch failed: {e}")
         return {"halted": True, "kill_switch_reasons": reasons}
     print("  kill switch clear.")
 
@@ -146,13 +151,23 @@ def main(force: bool = False) -> dict:
             client = get_client()
             rep = reconcile(client)
             if rep["halt_recommended"]:
-                msg = f"Reconciliation HALT: {rep['summary']}"
-                print(f"  {msg}")
+                print(f"  Reconciliation HALT: {rep['summary']}")
                 for x in rep["unexpected"][:3]:
-                    print(f"    UNEXPECTED: {x['symbol']} ${x['actual_value']:,.2f}")
+                    print(f"    UNEXPECTED: {x['symbol']} qty {x.get('actual_qty')}")
                 for x in rep["missing"][:3]:
-                    print(f"    MISSING: {x['symbol']} ${x['expected_value']:,.2f}")
-                notify(msg, level="warn")
+                    print(f"    MISSING: {x['symbol']} qty {x.get('expected_qty')}")
+                # v2.7: rich halt alert with structured detail
+                try:
+                    alert_halt(
+                        reason=f"Reconciliation drift: {rep['summary']}",
+                        detail={
+                            "unexpected": [x["symbol"] for x in rep["unexpected"]],
+                            "missing": [x["symbol"] for x in rep["missing"]],
+                            "size_mismatches": len(rep["size_mismatch"]),
+                        },
+                    )
+                except Exception as e:
+                    print(f"  alert_halt failed: {e}")
                 return {"halted": True, "reason": "reconciliation_drift", "detail": rep}
             print(f"  reconcile: {rep['summary']}")
         except Exception as e:

@@ -166,6 +166,41 @@ Original bracket (stop -1.5 ATR + take +3 ATR + trail 1 ATR) gave back 36% of th
 
 Mode B deployed: full +2.29% edge preserved, with -3.5 ATR catastrophic stop only firing on tail events.
 
+## v2.7 STATUS (2026-04-27)
+
+Live: paper trading ~$99,937 equity, 5 momentum positions held, 0 bottom-catch.
+Cloud: GitHub Actions runs daily orchestrator + weekly digest. Email pipeline live.
+Tests: 76 passing. Repo: https://github.com/rca6045407168/trader
+
+DEPLOYED + VERIFIED:
+- 12-month momentum sleeve (top-5 liquid-50, monthly rebalance, walk-forward 0.76 Sharpe OOS)
+- Bottom-catch sleeve (4-signal confluence, 60% sleeve cap, nothing fired live yet)
+- Risk-parity sleeve weighting (40/60 from priors; uses live data after 6+ months)
+- 9-layer risk manager + 6-trigger kill switch
+- Reconciliation (lot-based qty comparison, halts on drift)
+- Position lots: per-sleeve FIFO accounting
+- 4 tested anomaly detectors: pre-FOMC, OPEX, year-end, pre-holiday
+- Rich daily emails: at-a-glance + 9 sections + LLM analysis
+- True alpha (Jensen) with β, R², tracking error
+- Critical alerts (alerts.py): halts/kill-switch/API-failure bypass daily summary
+- Weekly digest workflow: Sunday 5pm PT recap
+
+OPEN (from CRITIQUE.md, in priority order):
+- B6 Bull/Bear/Risk debate is unmeasured — could be theatrical at $0.05/trade
+- B12 Regression-check thresholds were themselves fit
+- B14 Journal lives in GH Actions artifact (90d retention; not durable)
+- B22 No proper model registry beyond git
+- B23 No A/B / shadow framework for new strategy candidates
+- Earnings-drift sleeve (PEAD): not built (needs earnings calendar API)
+- Crypto sleeve via Alpaca crypto API
+- VRP / box spreads (need IBKR or TastyTrade, not Alpaca)
+
+REALISTIC TARGET (post-DSR correction):
+- 10-12% pretax CAGR, 0.5-0.7 Sharpe
+- Tax drag: 47% STCG eats 83% of pretax in taxable → run in Roth IRA only
+
+---
+
 ## v1.8 Deflated Sharpe — the most honest result yet (and most uncomfortable)
 
 Deflated Sharpe Ratio (Bailey & Lopez de Prado 2014) corrects for selection bias from multiple-trial testing. Applied to our deployed strategy:

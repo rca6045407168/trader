@@ -148,7 +148,18 @@ def build_daily_report(
 
     cum_pnl = equity_after - STARTING_CAPITAL
     cum_pct = cum_pnl / STARTING_CAPITAL
-    alpha = (day_pct - spy_today_return) if spy_today_return is not None else None
+    excess_return = (day_pct - spy_today_return) if spy_today_return is not None else None
+
+    # v2.7: true alpha (Jensen's) requires beta. We can only compute it once
+    # we have ~10+ days of history, so until then we report excess return.
+    beta_alpha = None
+    try:
+        from .perf_metrics import fetch_portfolio_and_spy_returns, compute_beta_alpha
+        p_rets, s_rets = fetch_portfolio_and_spy_returns(days=30)
+        if len(p_rets) >= 5 and len(s_rets) >= 5:
+            beta_alpha = compute_beta_alpha(p_rets, s_rets)
+    except Exception:
+        beta_alpha = None
 
     # Drawdown from peak in our snapshot history
     max_eq = STARTING_CAPITAL
@@ -226,16 +237,26 @@ def build_daily_report(
     if sigma_today is not None and abs(sigma_today) > 0.01:
         sigma_str = f"  ({sigma_today:+.2f}σ vs realized vol band)"
     spy_str = f"SPY {_fmt_pct(spy_today_return)}" if spy_today_return is not None else "SPY n/a"
-    alpha_str = f", alpha {_fmt_pct(alpha)}" if alpha is not None else ""
+    excess_str = f", excess {_fmt_pct(excess_return)}" if excess_return is not None else ""
+    alpha_lines = []
+    if beta_alpha and not math.isnan(beta_alpha.get("beta", float("nan"))):
+        alpha_lines.append(
+            f"True alpha (Jensen, n={beta_alpha['n_obs']} obs): \u03b2={beta_alpha['beta']:.2f}, "
+            f"\u03b1={beta_alpha['alpha_annualized']*100:+.2f}%/yr, "
+            f"R\u00b2={beta_alpha['r_squared']:.2f}, TE={beta_alpha['tracking_error']*100:.2f}%/period"
+        )
+    elif yesterday_equity is None:
+        alpha_lines.append("True alpha (Jensen): need >=5 days of history; reporting excess return only")
     sections.append(_section(
         "ACCOUNT",
         f"Equity:    {_fmt_money(equity_after)}\n"
         f"Cash:      {_fmt_money(cash_after)}  ({cash_pct*100:.0f}%)\n"
         f"Deployed:  {_fmt_money(deployed)}  ({deployed_pct*100:.0f}%)\n"
         f"Day P&L:   {_fmt_money(day_pnl, sign=True)}  ({_fmt_pct(day_pct)}){day_basis_note}{sigma_str}\n"
-        f"           vs {spy_str}{alpha_str}\n"
+        f"           vs {spy_str}{excess_str}\n"
         f"Total:     {_fmt_money(cum_pnl, sign=True)}  ({_fmt_pct(cum_pct)}) since $100k start\n"
         f"Drawdown:  {_fmt_pct(dd_from_peak)} from rolling peak ({_fmt_money(max_eq)})"
+        + ("\n" + "\n".join(alpha_lines) if alpha_lines else "")
     ))
 
     # ---- (3) DECISIONS ----
