@@ -20,7 +20,7 @@ from .critic import debate
 from .execute import place_target_weights, place_bracket_order, get_client, get_last_price, close_aged_bottom_catches
 from .order_planner import plan_momentum_entry, plan_bottom_entry
 from .risk_manager import check_account_risk
-from .journal import init_db, log_decision, log_order, log_daily_snapshot
+from .journal import init_db, log_decision, log_order, log_daily_snapshot, start_run, finish_run, open_lot
 from .notify import notify
 from .kill_switch import check_kill_triggers
 from .validation import validate_targets, DataQualityError
@@ -106,14 +106,18 @@ def main(force: bool = False) -> dict:
     print(f"\n=== trader daily run @ {datetime.now().isoformat()} ===")
     print(f"  TOP_N={TOP_N}  USE_DEBATE={USE_DEBATE}  DRY_RUN={DRY_RUN}")
 
-    # v0.9: idempotency check — don't re-place orders if we already ran today
-    if not force and not DRY_RUN:
-        from .journal import recent_snapshots
-        today_snaps = recent_snapshots(days=1)
-        today_iso = datetime.utcnow().date().isoformat()
-        if any(s["date"] == today_iso for s in today_snaps):
-            print("  IDEMPOTENT: today's snapshot already exists. Use force=True to re-run.")
-            return {"skipped": True, "reason": "already_ran_today"}
+    # v1.3 (B5 FIX): durable run sentinel BEFORE any orders. Idempotent against
+    # crashes between order placement and snapshot.
+    run_id = f"{datetime.utcnow().date().isoformat()}-{datetime.utcnow().strftime('%H%M%S')}"
+    if not DRY_RUN:
+        if not start_run(run_id, notes=f"main() entry; force={force}"):
+            if not force:
+                print("  IDEMPOTENT: today's run already started/completed. Use --force to re-run.")
+                return {"skipped": True, "reason": "already_ran_today"}
+            else:
+                # force=True: create a new run id so we can still track this attempt
+                run_id = f"{run_id}-FORCE"
+                start_run(run_id, notes="forced re-run")
 
     # v0.9: kill-switch pre-flight (manual halt, missing keys, equity drawdown triggers)
     print(f"\n[{datetime.now():%H:%M:%S}] kill-switch pre-flight...")
@@ -245,12 +249,16 @@ def main(force: bool = False) -> dict:
         f"Run complete. {len(final_targets)} targets, "
         f"{len(rebalance_results)} momentum orders, {len(bracket_results)} bottom-catch brackets."
     )
+    if not DRY_RUN:
+        finish_run(run_id, status="completed",
+                   notes=f"{len(final_targets)} targets, {len(rebalance_results)} mom, {len(bracket_results)} bot")
     return {
         "targets": final_targets,
         "momentum_orders": rebalance_results,
         "bracket_orders": bracket_results,
         "vix": vix,
         "equity": equity,
+        "run_id": run_id,
     }
 
 

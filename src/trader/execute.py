@@ -45,44 +45,69 @@ def get_last_price(symbol: str) -> float:
 
 
 def close_aged_bottom_catches(max_age_days: int = 20, dry_run: bool = False) -> list[dict]:
-    """Close any open bottom-catch positions older than max_age_days.
+    """v1.3 (B1 FIX): close open bottom-catch LOTS older than max_age_days.
 
-    Reads the journal for bottom-catch orders, finds matching open positions,
-    and closes them. v0.7 design: bottom-catches use a 20-day time exit since
-    brackets killed the mean-reversion edge (see CAVEATS.md H8).
+    The previous version queried the orders table by ticker, which mis-targeted
+    momentum positions whenever a ticker had ever been a bottom-catch. The fix
+    is to query the new position_lots table (sleeve-tagged at open) and only
+    close lots that were actually opened by the BOTTOM_CATCH sleeve.
+
+    For symbols with mixed sleeves (e.g. NVDA held by both momentum and
+    bottom-catch), this only closes the qty corresponding to bottom-catch lots
+    by submitting a SELL of that exact qty rather than close_position().
     """
-    from datetime import datetime, timedelta
-    from .journal import _conn
+    from .journal import open_lots_for_sleeve, close_lots_fifo
 
     if dry_run:
         return []
 
-    cutoff = datetime.utcnow() - timedelta(days=max_age_days)
-    with _conn() as c:
-        rows = c.execute(
-            """SELECT DISTINCT ticker, MIN(ts) as opened
-               FROM orders
-               WHERE side = 'BUY' AND ticker IN (
-                   SELECT ticker FROM decisions WHERE style = 'BOTTOM_CATCH'
-               )
-               AND status = 'submitted'
-               GROUP BY ticker"""
-        ).fetchall()
-
-    aged = [r for r in rows if datetime.fromisoformat(r["opened"]) < cutoff]
-    if not aged:
+    aged_lots = open_lots_for_sleeve("BOTTOM_CATCH", max_age_days=max_age_days)
+    if not aged_lots:
         return []
 
+    from alpaca.trading.requests import MarketOrderRequest
+    from alpaca.trading.enums import OrderSide, TimeInForce
+
     client = get_client()
-    open_positions = {p.symbol for p in client.get_all_positions()}
+    open_positions = {p.symbol: float(p.qty) for p in client.get_all_positions()}
     out = []
-    for r in aged:
-        sym = r["ticker"]
-        if sym not in open_positions:
+
+    # Group aged lots by symbol
+    by_symbol: dict[str, float] = {}
+    by_symbol_lots: dict[str, list] = {}
+    for lot in aged_lots:
+        by_symbol[lot["symbol"]] = by_symbol.get(lot["symbol"], 0) + lot["qty"]
+        by_symbol_lots.setdefault(lot["symbol"], []).append(lot)
+
+    for sym, qty_to_close in by_symbol.items():
+        held = open_positions.get(sym, 0)
+        if held <= 0:
+            # We have lots in our journal but no actual position — maybe stop fired
+            # without us tracking it. Mark lots closed at last known price (best effort).
+            try:
+                last = get_last_price(sym)
+                close_lots_fifo(sym, "BOTTOM_CATCH", qty_to_close, last)
+                out.append({"symbol": sym, "action": "orphan_lots_reconciled", "qty": qty_to_close})
+            except Exception as e:
+                out.append({"symbol": sym, "action": "orphan_lots_reconciled", "status": "error", "error": str(e)})
             continue
+
+        sell_qty = min(qty_to_close, held)
         try:
-            client.close_position(sym)
-            out.append({"symbol": sym, "action": "time_exit_20d", "opened": r["opened"], "status": "closed"})
+            order = client.submit_order(MarketOrderRequest(
+                symbol=sym, qty=sell_qty, side=OrderSide.SELL,
+                time_in_force=TimeInForce.DAY,
+            ))
+            # Close lots in journal at the (estimated) fill price
+            try:
+                last = get_last_price(sym)
+            except Exception:
+                last = 0.0
+            close_lots_fifo(sym, "BOTTOM_CATCH", sell_qty, last, str(order.id))
+            out.append({
+                "symbol": sym, "action": "time_exit_20d",
+                "qty": sell_qty, "order_id": str(order.id), "status": "submitted",
+            })
         except Exception as e:
             out.append({"symbol": sym, "action": "time_exit_20d", "status": "error", "error": str(e)})
     return out
