@@ -14,7 +14,28 @@ from .journal import recent_snapshots, _conn
 
 
 def get_expected_positions() -> dict[str, float]:
-    """Reconstruct expected positions from journal: latest daily_snapshot OR sum of orders."""
+    """v1.8 (B9 partial fix): expected positions = open lots from position_lots
+    if available, else fall back to latest daily_snapshot.
+
+    The lots table updates in real-time on every order; daily_snapshot only
+    updates at end-of-day. Lot-based reconciliation matches Alpaca state
+    even immediately after an order fills, before the snapshot runs.
+    """
+    from .journal import _conn
+    with _conn() as c:
+        rows = c.execute(
+            """SELECT symbol, sleeve, qty, open_price
+               FROM position_lots WHERE closed_at IS NULL"""
+        ).fetchall()
+    if rows:
+        # Aggregate by symbol; convert qty * open_price -> $ value (rough — mark-to-market
+        # would be better but we don't have current prices in this layer)
+        out: dict[str, float] = {}
+        for r in rows:
+            v = (r["qty"] or 0) * (r["open_price"] or 0)
+            out[r["symbol"]] = out.get(r["symbol"], 0) + v
+        return out
+    # Fallback to last daily snapshot
     snaps = recent_snapshots(days=2)
     if snaps:
         return json.loads(snaps[0]["positions_json"])

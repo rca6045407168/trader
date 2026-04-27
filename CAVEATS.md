@@ -166,6 +166,49 @@ Original bracket (stop -1.5 ATR + take +3 ATR + trail 1 ATR) gave back 36% of th
 
 Mode B deployed: full +2.29% edge preserved, with -3.5 ATR catastrophic stop only firing on tail events.
 
+## v1.8 Deflated Sharpe — the most honest result yet (and most uncomfortable)
+
+Deflated Sharpe Ratio (Bailey & Lopez de Prado 2014) corrects for selection bias from multiple-trial testing. Applied to our deployed strategy:
+
+| Effective trials assumed | Observed Sharpe | DSR (probability of real edge) | Verdict |
+|---|---|---|---|
+| 3 (most generous, treats iterations as one) | 1.09 | **47.4%** | Coin flip |
+| 5 (some independent variants) | 1.09 | **<1%** | Cannot distinguish from random |
+| 12 (literal hypothesis count) | 1.09 | **<1%** | Cannot distinguish from random |
+
+**Implication:** the in-sample Sharpe of 1.09 is statistically indistinguishable from "test 12 random strategies, pick the best" — even under the most generous trial count.
+
+We have an OOS test (2021-2025 walk-forward) that gave Sharpe 0.76. That IS independent evidence. But:
+- DSR says the in-sample is selection-biased
+- OOS Sharpe is positive (0.76) but not high
+- Both are consistent with: strategy has SOME edge, less than the in-sample Sharpe suggests
+
+**Updated honest expectation after DSR correction: 10-12% CAGR, 0.4-0.6 Sharpe.** Earlier estimates of 17% CAGR / 0.83 Sharpe should be considered upper-bound (achievable only if 2021-2025 OOS reflects true edge rather than continued bias).
+
+This is humbling. The strategy may still beat SPY by 1-3% annual after costs, but "meaningful retail alpha" is closer to 1-3% than the 5-7% we'd been targeting.
+
+## Anomaly empirical re-test (v1.7 + v1.8)
+
+Four additional anomalies tested on real 2015-2025 data instead of trusting citations:
+
+| Anomaly | Published claim | **Empirical** | Status |
+|---|---|---|---|
+| Pre-FOMC drift | +49bps | **+22bps**, single-day Sharpe 2.35 | High conf, half-strength but real |
+| Turn-of-month | +70bps | **+18bps vs +15.5bps random = +2.5bps edge** | DEAD |
+| OPEX week (Mon-Thu) | +20bps | +10.5bps, 56.5% win | Low conf |
+| Year-end reversal (IWM) | +200bps | **+139bps**, 50% win | Half-strength |
+| Sell-in-May differential | +200bps annualized | **+110bps annualized** | Weakened |
+| Pre-holiday (Ariel 1990) | +12bps excess | **+11.8bps excess, 64.8% win** | **Real, replicated almost exactly** |
+
+Real retail edge from stacking these (post-empirical adjustment):
+- Pre-FOMC: 22bps × 8 events ≈ +1.8%/yr
+- Pre-holiday: 12bps × 9 events ≈ +1.1%/yr
+- Year-end reversal: ~139bps once/yr ≈ +1.4%/yr
+- OPEX: 10bps × 12 events ≈ +1.2%/yr
+- **Total: ~5-6% annual, before stacking with momentum/bottom-catch**
+
+This is the realistic edge ceiling. Anyone promising 30%+ retail returns is wrong or trading hopium.
+
 ## v0.5 walk-forward results (the canonical numbers to trust)
 
 **Train: 2015-01 to 2020-12  |  Test: 2021-01 to 2025-04 (held out)**
