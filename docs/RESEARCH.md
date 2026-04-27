@@ -26,16 +26,16 @@ If a strategy claims to exploit one of the above on retail infrastructure, **it 
 
 These persist because they're behaviorally driven, capacity-constrained, or unattractive to large players. Each adds 1-4% per year of uncorrelated alpha *if* you systematize them. **No single one is the answer.** The retail edge comes from compounding 4-5 of these.
 
-### Calendar effects
+### Calendar effects (with v1.7 empirical re-test)
 
-| Anomaly | Effect | Citation | Implementable now? |
+| Anomaly | Published claim | **Our 2015-2025 measurement** | Status |
 |---|---|---|---|
-| Pre-FOMC drift | +49bps avg in 24h before FOMC | Lucca & Moench (2015, JF) | Yes, scanner shipped |
-| Turn-of-month | +70bps cumulative -1 to +3 days | Etf et al. (2008) | Yes, scanner shipped |
-| Sell-in-May | -200bps May-Oct vs Nov-Apr | Bouman & Jacobsen (2002) | Easy add |
-| Year-end reversal | +200bps Jan small-cap loser bounce | Reinganum (1983) | Yes, scanner shipped |
-| OPEX week dealer flows | +20bps Mon-Wed of OPEX | Stoll & Whaley (1987) | Yes, scanner shipped |
-| Holiday effect | +12bps per pre-holiday day | Ariel (1990) | Easy add |
+| Pre-FOMC drift | +49bps (Lucca-Moench 2015) | **+22bps, Sharpe 2.35 single-day** | High conf, half-strength but real |
+| Turn-of-month | +70bps -1 to +3 (Etf 2008) | **+18bps vs +15.5bps random = +2.5bps edge** | **DEAD** — don't deploy |
+| OPEX week | +20bps Mon-Wed (Stoll-Whaley 1987) | **+10.5bps Mon-Thu, 56.5% win** | Low conf, half-strength |
+| Sell-in-May | -200bps May-Oct (Bouman-Jacobsen 2002) | not yet retested | Pending |
+| Year-end reversal | +200bps Jan small-cap (Reinganum 1983) | not yet retested | Pending |
+| Holiday effect | +12bps pre-holiday (Ariel 1990) | not yet retested | Pending |
 
 ### Event-driven
 

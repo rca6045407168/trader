@@ -29,6 +29,8 @@ def test_pre_fomc_fires_one_day_before():
     assert a is not None
     assert "FOMC" in a.rationale
     assert a.confidence == "high"
+    # v1.7: empirical 2015-2025 showed +22bps not +49bps
+    assert a.expected_alpha_bps == 22
 
 
 def test_pre_fomc_silent_far_from_meeting():

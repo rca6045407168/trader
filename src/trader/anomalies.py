@@ -38,8 +38,11 @@ def _third_friday_of_month(year: int, month: int) -> date:
 
 def detect_turn_of_month(asof: date) -> Anomaly | None:
     """Turn-of-month: pension flows on the 1st often boost the index.
-    Trade: long SPY from -1 to +3 trading days of month-end.
-    Etf et al. (2008) doc'd ~70bps avg per turn over 1928-2007.
+
+    Etf et al. (2008) claimed +70bps cumulative -1 to +3 over 1928-2007.
+    OUR 2015-2025 BACKTEST: +18bps vs +15.5bps random baseline = +2.5bps edge.
+    Anomaly is essentially DEAD in modern markets. Confidence downgraded to 'low'
+    and expected_alpha_bps reduced from 30 → 3 (basically advisory only).
     """
     next_month_first = (asof.replace(day=28) + timedelta(days=4)).replace(day=1)
     days_until = (next_month_first - asof).days
@@ -51,17 +54,18 @@ def detect_turn_of_month(asof: date) -> Anomaly | None:
             category="calendar",
             fire_window=(entry, exit_d),
             expected_direction="long_spy",
-            expected_alpha_bps=30,
+            expected_alpha_bps=3,  # was 30 — empirical 2015-2025 shows it's gone
             target_symbol="SPY",
-            rationale=f"Pension flows hit on {next_month_first}. Long SPY through day +3.",
-            confidence="medium",
+            rationale=f"Pension flows hit on {next_month_first}. NOTE: empirical 2015-2025 edge is only +2.5bps over random; deploy with caution or skip.",
+            confidence="low",
         )
     return None
 
 
 def detect_opex_week(asof: date) -> Anomaly | None:
-    """Options expiration: dealer hedging tends to dampen vol Mon-Wed of OPEX week,
-    then unwind Thu-Fri can be volatile. Stoll & Whaley (1987), Ni et al (2005).
+    """Options expiration: dealer hedging tends to dampen vol Mon-Wed of OPEX week.
+    Stoll & Whaley (1987) claim: +20bps Mon-Wed.
+    OUR 2015-2025 BACKTEST: +10.5bps Mon-Thu, 56.5% win rate. Half-strength but persistent.
     """
     third_fri = _third_friday_of_month(asof.year, asof.month)
     days_until_opex = (third_fri - asof).days
@@ -71,9 +75,9 @@ def detect_opex_week(asof: date) -> Anomaly | None:
             category="event",
             fire_window=(asof, third_fri),
             expected_direction="long_spy",
-            expected_alpha_bps=20,
+            expected_alpha_bps=10,  # was 20 — empirical halved
             target_symbol="SPY",
-            rationale=f"OPEX is {third_fri}. Dealer-flow effect: long SPY Mon-Wed, exit Thu morning.",
+            rationale=f"OPEX is {third_fri}. Empirical 2015-2025: +10bps Mon-Thu, 56.5% win.",
             confidence="low",
         )
     return None
@@ -87,9 +91,12 @@ KNOWN_FOMC_DATES_2026 = [
 
 def detect_pre_fomc(asof: date) -> Anomaly | None:
     """Pre-FOMC drift: equities have abnormally positive returns in the 24h
-    before FOMC announcements. Lucca & Moench (2015) documented +49bps avg
-    pre-announcement drift since 1994; ~80% of the equity premium concentrated
-    in this window.
+    before FOMC announcements.
+
+    Lucca & Moench (2015, JF) claim: +49bps avg pre-announcement drift since 1994.
+    OUR 2015-2025 BACKTEST: +21.5bps mean, single-day Sharpe 2.35. Half the
+    published value but still strong on a risk-adjusted basis (one of the highest
+    Sharpes available to retail).
     """
     upcoming = [d for d in KNOWN_FOMC_DATES_2026 if 0 <= (d - asof).days <= 1]
     if upcoming:
@@ -99,9 +106,9 @@ def detect_pre_fomc(asof: date) -> Anomaly | None:
             category="event",
             fire_window=(asof, fomc),
             expected_direction="long_spy",
-            expected_alpha_bps=49,
+            expected_alpha_bps=22,  # was 49 — empirical half-strength but Sharpe 2.35
             target_symbol="SPY",
-            rationale=f"FOMC tomorrow {fomc}. Lucca-Moench: +49bps avg pre-announcement drift.",
+            rationale=f"FOMC tomorrow {fomc}. Empirical +22bps avg, Sharpe 2.35 (Lucca-Moench claim was +49bps; halved post-2015).",
             confidence="high",
         )
     return None
