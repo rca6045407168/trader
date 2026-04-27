@@ -13,54 +13,67 @@ import json
 from .journal import recent_snapshots, _conn
 
 
-def get_expected_positions() -> dict[str, float]:
-    """v1.8 (B9 partial fix): expected positions = open lots from position_lots
-    if available, else fall back to latest daily_snapshot.
+def get_expected_positions_qty() -> dict[str, float]:
+    """v1.9 fix: expected SHARE COUNT per symbol (not dollar value).
 
-    The lots table updates in real-time on every order; daily_snapshot only
-    updates at end-of-day. Lot-based reconciliation matches Alpaca state
-    even immediately after an order fills, before the snapshot runs.
+    Reconciliation should compare share counts (which don't change with market
+    moves) not dollar values (which drift with price every minute). The previous
+    qty * open_price formulation always mismatched by the unrealized P&L.
     """
     from .journal import _conn
     with _conn() as c:
         rows = c.execute(
-            """SELECT symbol, sleeve, qty, open_price
-               FROM position_lots WHERE closed_at IS NULL"""
+            """SELECT symbol, qty FROM position_lots WHERE closed_at IS NULL"""
+        ).fetchall()
+    out: dict[str, float] = {}
+    for r in rows:
+        out[r["symbol"]] = out.get(r["symbol"], 0) + (r["qty"] or 0)
+    return out
+
+
+def get_expected_positions() -> dict[str, float]:
+    """Legacy interface: expected DOLLAR value. Kept for backwards compatibility."""
+    from .journal import _conn
+    with _conn() as c:
+        rows = c.execute(
+            """SELECT symbol, qty, open_price FROM position_lots WHERE closed_at IS NULL"""
         ).fetchall()
     if rows:
-        # Aggregate by symbol; convert qty * open_price -> $ value (rough — mark-to-market
-        # would be better but we don't have current prices in this layer)
         out: dict[str, float] = {}
         for r in rows:
             v = (r["qty"] or 0) * (r["open_price"] or 0)
             out[r["symbol"]] = out.get(r["symbol"], 0) + v
         return out
-    # Fallback to last daily snapshot
     snaps = recent_snapshots(days=2)
     if snaps:
         return json.loads(snaps[0]["positions_json"])
     return {}
 
 
+def get_actual_positions_qty(client) -> dict[str, float]:
+    """v1.9: actual SHARE COUNT per symbol (not market value)."""
+    return {p.symbol: float(p.qty) for p in client.get_all_positions()}
+
+
 def get_actual_positions(client) -> dict[str, float]:
-    """Pull current Alpaca positions."""
+    """Legacy: actual dollar market value."""
     return {p.symbol: float(p.market_value) for p in client.get_all_positions()}
 
 
-def reconcile(client, tolerance_usd: float = 50.0) -> dict:
-    """Compare expected vs actual; return diff report.
+def reconcile(client, qty_tolerance: float = 0.001) -> dict:
+    """v1.9: reconcile by SHARE QUANTITY, not dollar value.
+
+    Quantities don't drift with price. Tolerance is fractional shares only
+    (Alpaca rounds to ~4 decimal places, so 0.001 covers rounding).
 
     Returns:
       {
-        "matched": [...],
-        "missing": [...],     # in expected, not actual (closed by stop, or order failed)
-        "unexpected": [...],  # in actual, not expected (someone clicked? bug?)
-        "size_mismatch": [...],  # both sides but >tolerance_usd different
-        "halt_recommended": bool,
+        matched / missing / unexpected / size_mismatch lists,
+        halt_recommended: bool,
       }
     """
-    expected = get_expected_positions()
-    actual = get_actual_positions(client)
+    expected = get_expected_positions_qty()
+    actual = get_actual_positions_qty(client)
 
     matched, missing, unexpected, size_mismatch = [], [], [], []
     all_syms = set(expected) | set(actual)
@@ -68,13 +81,13 @@ def reconcile(client, tolerance_usd: float = 50.0) -> dict:
         e = expected.get(sym, 0)
         a = actual.get(sym, 0)
         if e == 0 and a > 0:
-            unexpected.append({"symbol": sym, "actual_value": a})
+            unexpected.append({"symbol": sym, "actual_qty": a})
         elif e > 0 and a == 0:
-            missing.append({"symbol": sym, "expected_value": e})
-        elif abs(e - a) > tolerance_usd:
+            missing.append({"symbol": sym, "expected_qty": e})
+        elif abs(e - a) > qty_tolerance:
             size_mismatch.append({"symbol": sym, "expected": e, "actual": a, "diff": a - e})
         else:
-            matched.append({"symbol": sym, "value": a})
+            matched.append({"symbol": sym, "qty": a})
 
     halt = bool(unexpected) or len(missing) > 1 or len(size_mismatch) > 2
     return {

@@ -143,6 +143,7 @@ def place_target_weights(
             except Exception as e:
                 out.append({"symbol": symbol, "side": "close", "status": "error", "error": str(e)})
 
+    from .journal import open_lot
     for symbol, target_pct in targets.items():
         target_value = equity * target_pct
         current_value = positions.get(symbol, 0.0)
@@ -157,17 +158,57 @@ def place_target_weights(
         )
         try:
             order = client.submit_order(req)
+            order_id = str(order.id)
             out.append({
                 "symbol": symbol, "side": side.value,
                 "notional": round(abs(delta), 2),
-                "order_id": str(order.id), "status": "submitted",
+                "order_id": order_id, "status": "submitted",
             })
+            # v1.9 (B7 fix): track momentum positions in lots so reconcile works.
+            # We don't know the fill price yet at submit time — use last_price as estimate.
+            if side == OrderSide.BUY:
+                try:
+                    last = get_last_price(symbol)
+                    qty_est = round(abs(delta) / last, 4)
+                    open_lot(symbol, "MOMENTUM", qty=qty_est, open_price=last, open_order_id=order_id)
+                except Exception:
+                    pass  # journal write is best-effort
         except Exception as e:
             out.append({
                 "symbol": symbol, "side": side.value,
                 "notional": round(abs(delta), 2),
                 "status": "error", "error": str(e),
             })
+    return out
+
+
+def backfill_momentum_lots_from_positions() -> list[dict]:
+    """v1.9 one-shot helper: write position_lots rows for any Alpaca momentum positions
+    that aren't already tracked. Used to repair the B7 gap on existing accounts.
+    """
+    from .journal import _conn, open_lot
+    client = get_client()
+    positions = client.get_all_positions()
+    out = []
+    with _conn() as c:
+        already = {r["symbol"] for r in c.execute(
+            "SELECT DISTINCT symbol FROM position_lots WHERE closed_at IS NULL"
+        ).fetchall()}
+    for p in positions:
+        if p.symbol in already:
+            out.append({"symbol": p.symbol, "action": "skipped_already_tracked"})
+            continue
+        # Tag as MOMENTUM by default (correct for current state since all 5 paper
+        # positions are momentum picks). Bottom-catch positions would be tagged
+        # at order time after this fix.
+        lot_id = open_lot(
+            p.symbol, "MOMENTUM",
+            qty=float(p.qty),
+            open_price=float(p.avg_entry_price),
+            open_order_id=None,
+        )
+        out.append({"symbol": p.symbol, "action": "backfilled", "lot_id": lot_id,
+                    "qty": float(p.qty), "avg_entry": float(p.avg_entry_price)})
     return out
 
 

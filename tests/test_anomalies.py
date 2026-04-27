@@ -52,3 +52,19 @@ def test_scan_combines_detectors():
     # April 28 2026: pre-FOMC fires, nothing else
     anomalies = scan_anomalies(date(2026, 4, 28))
     assert any(a.name == "Pre-FOMC drift" for a in anomalies)
+
+
+def test_pre_holiday_detector_fires_day_before():
+    from trader.anomalies import detect_pre_holiday
+    # April 3 2026 is Good Friday; day before = April 2
+    a = detect_pre_holiday(date(2026, 4, 2))
+    assert a is not None
+    assert a.target_symbol == "SPY"
+    assert a.expected_alpha_bps == 12
+    assert a.confidence == "medium"
+
+
+def test_pre_holiday_silent_far_from_holiday():
+    from trader.anomalies import detect_pre_holiday
+    a = detect_pre_holiday(date(2026, 6, 1))  # mid-year, no holiday near
+    assert a is None

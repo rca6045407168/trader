@@ -24,6 +24,7 @@ from .journal import init_db, log_decision, log_order, log_daily_snapshot, start
 from .notify import notify
 from .kill_switch import check_kill_triggers
 from .validation import validate_targets, DataQualityError
+from .reconcile import reconcile
 
 # Sleeve allocations — v1.2 risk-parity with backtest priors.
 # OOS results (v1.1 walk-forward 2021-2025):
@@ -132,6 +133,24 @@ def main(force: bool = False) -> dict:
         notify(f"Kill switch tripped: {'; '.join(reasons)}", level="warn")
         return {"halted": True, "kill_switch_reasons": reasons}
     print("  kill switch clear.")
+
+    # v1.9 (B9 partial fix wired in): reconciliation pre-flight
+    if not DRY_RUN:
+        try:
+            client = get_client()
+            rep = reconcile(client)
+            if rep["halt_recommended"]:
+                msg = f"Reconciliation HALT: {rep['summary']}"
+                print(f"  {msg}")
+                for x in rep["unexpected"][:3]:
+                    print(f"    UNEXPECTED: {x['symbol']} ${x['actual_value']:,.2f}")
+                for x in rep["missing"][:3]:
+                    print(f"    MISSING: {x['symbol']} ${x['expected_value']:,.2f}")
+                notify(msg, level="warn")
+                return {"halted": True, "reason": "reconciliation_drift", "detail": rep}
+            print(f"  reconcile: {rep['summary']}")
+        except Exception as e:
+            print(f"  reconcile failed (non-fatal): {e}")
 
     # v0.7: time-exit aged bottom-catch positions (20 trading days)
     print(f"\n[{datetime.now():%H:%M:%S}] checking for aged bottom-catch positions to close...")

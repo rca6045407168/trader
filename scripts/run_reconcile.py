@@ -18,15 +18,15 @@ def main():
     if rep["missing"]:
         print("\nMISSING (in journal but not in Alpaca — may have stopped out):")
         for m in rep["missing"]:
-            print(f"  {m['symbol']}: expected ${m['expected_value']:,.2f}")
+            print(f"  {m['symbol']}: expected qty {m['expected_qty']}")
     if rep["unexpected"]:
         print("\nUNEXPECTED (in Alpaca but not in journal):")
         for u in rep["unexpected"]:
-            print(f"  {u['symbol']}: actual ${u['actual_value']:,.2f}")
+            print(f"  {u['symbol']}: actual qty {u['actual_qty']}")
     if rep["size_mismatch"]:
-        print("\nSIZE MISMATCH:")
+        print("\nSIZE MISMATCH (qty):")
         for s in rep["size_mismatch"]:
-            print(f"  {s['symbol']}: expected ${s['expected']:,.2f}  actual ${s['actual']:,.2f}  diff ${s['diff']:+,.2f}")
+            print(f"  {s['symbol']}: expected {s['expected']}  actual {s['actual']}  diff {s['diff']:+}")
     print()
     if rep["halt_recommended"]:
         print("⚠️  HALT RECOMMENDED — manual review required before next trading run.")
