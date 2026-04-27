@@ -2,15 +2,15 @@
   "_comment": "Pre-approved tool permissions for scheduled-task autonomy. Without these, scheduled tasks hang waiting for permission prompts that no human will see at the cron time.",
   "permissions": {
     "allow": [
-      "Bash(cd /Users/richardchen/FlexHaul/trader:*)",
-      "Bash(source /Users/richardchen/FlexHaul/trader/.venv/bin/activate:*)",
-      "Bash(python /Users/richardchen/FlexHaul/trader/scripts/*:*)",
+      "Bash(cd /Users/richardchen/trader:*)",
+      "Bash(source /Users/richardchen/trader/.venv/bin/activate:*)",
+      "Bash(python /Users/richardchen/trader/scripts/*:*)",
       "Bash(python -c *)",
-      "Bash(python /Users/richardchen/FlexHaul/trader/scripts/run_daily.py*)",
-      "Bash(python /Users/richardchen/FlexHaul/trader/scripts/run_postmortem.py*)",
-      "Bash(python /Users/richardchen/FlexHaul/trader/scripts/run_reconcile.py*)",
-      "Bash(python /Users/richardchen/FlexHaul/trader/scripts/run_optimizer.py*)",
-      "Bash(python /Users/richardchen/FlexHaul/trader/scripts/regression_check.py*)",
+      "Bash(python /Users/richardchen/trader/scripts/run_daily.py*)",
+      "Bash(python /Users/richardchen/trader/scripts/run_postmortem.py*)",
+      "Bash(python /Users/richardchen/trader/scripts/run_reconcile.py*)",
+      "Bash(python /Users/richardchen/trader/scripts/run_optimizer.py*)",
+      "Bash(python /Users/richardchen/trader/scripts/regression_check.py*)",
       "Bash(date*)"
     ]
   }

@@ -18,28 +18,43 @@ import smtplib
 import socket
 from email.message import EmailMessage
 from datetime import datetime
+# Importing config triggers load_dotenv() which populates os.environ
+from . import config  # noqa: F401
 
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-EMAIL_TO = os.getenv("EMAIL_TO", "richard.chen.1989@gmail.com")
-EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER)
+def _env(key: str, default: str = "") -> str:
+    """Read env at call time so we see any .env loaded by config import."""
+    return os.getenv(key, default)
+
+
+# Module-level constants kept for tests / external readers; resolved at import.
+SMTP_HOST = _env("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(_env("SMTP_PORT", "587"))
+SMTP_USER = _env("SMTP_USER", "")
+SMTP_PASS = _env("SMTP_PASS", "")
+EMAIL_TO = _env("EMAIL_TO", "richard.chen.1989@gmail.com")
+EMAIL_FROM = _env("EMAIL_FROM", SMTP_USER)
 
 
 def _send_email(subject: str, body: str, level: str = "info") -> bool:
-    if not SMTP_USER or not SMTP_PASS:
+    # Re-read at call time so .env updates take effect without a reimport
+    user = _env("SMTP_USER", SMTP_USER)
+    password = _env("SMTP_PASS", SMTP_PASS)
+    host = _env("SMTP_HOST", SMTP_HOST)
+    port = int(_env("SMTP_PORT", str(SMTP_PORT)))
+    to = _env("EMAIL_TO", EMAIL_TO)
+    sender = _env("EMAIL_FROM", user)
+    if not user or not password:
         return False
     msg = EmailMessage()
     msg["Subject"] = f"[trader/{level}] {subject}"
-    msg["From"] = EMAIL_FROM or SMTP_USER
-    msg["To"] = EMAIL_TO
+    msg["From"] = sender or user
+    msg["To"] = to
     msg.set_content(body)
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+        with smtplib.SMTP(host, port, timeout=15) as s:
             s.starttls()
-            s.login(SMTP_USER, SMTP_PASS)
+            s.login(user, password)
             s.send_message(msg)
         return True
     except (smtplib.SMTPException, socket.error, OSError) as e:

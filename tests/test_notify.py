@@ -12,18 +12,19 @@ def test_notify_console_always_works(capsys):
 
 
 def test_notify_email_skipped_when_no_credentials(monkeypatch):
-    monkeypatch.setattr("trader.notify.SMTP_USER", "")
-    monkeypatch.setattr("trader.notify.SMTP_PASS", "")
+    # v2.0: notify reads env at call time, so set env vars not module attrs
+    monkeypatch.setenv("SMTP_USER", "")
+    monkeypatch.setenv("SMTP_PASS", "")
     from trader.notify import notify
     result = notify("hello")
     assert result["email"] is False
 
 
 def test_notify_email_attempted_when_credentials_set(monkeypatch):
-    monkeypatch.setattr("trader.notify.SMTP_USER", "sender@gmail.com")
-    monkeypatch.setattr("trader.notify.SMTP_PASS", "app-password")
-    monkeypatch.setattr("trader.notify.EMAIL_TO", "richard.chen.1989@gmail.com")
-    monkeypatch.setattr("trader.notify.EMAIL_FROM", "sender@gmail.com")
+    monkeypatch.setenv("SMTP_USER", "sender@gmail.com")
+    monkeypatch.setenv("SMTP_PASS", "app-password")
+    monkeypatch.setenv("EMAIL_TO", "richard.chen.1989@gmail.com")
+    monkeypatch.setenv("EMAIL_FROM", "sender@gmail.com")
 
     fake_smtp = MagicMock()
     fake_smtp.__enter__ = MagicMock(return_value=fake_smtp)
