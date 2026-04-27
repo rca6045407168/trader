@@ -172,7 +172,45 @@ def build_daily_report(
             )
         sections.append(_section(f"POSITIONS ({len(positions_now)})", "\n".join(pos_lines)))
 
-    # 7. Anomalies on the radar today
+    # 7. Narrative analysis (Claude-generated) — WHY decisions, short/long-term factors
+    try:
+        from .narrative import generate_narrative
+        narrative_state = {
+            "run_id": run_id,
+            "account": {
+                "equity": equity_after,
+                "cash": cash_after,
+                "deployed": deployed,
+                "day_pnl": day_pnl,
+                "day_pct": day_pct,
+                "cum_pnl": cum_pnl,
+                "cum_pct": cum_pct,
+                "yesterday_equity": yesterday_equity,
+            },
+            "market": {"spy_today_return": spy_today_return, "vix": vix},
+            "decisions": {
+                "momentum_picks": [
+                    {
+                        "ticker": c.ticker,
+                        "trailing_return": c.rationale.get("trailing_return", 0),
+                        "atr_pct": c.atr_pct,
+                    } for c in momentum_picks
+                ],
+                "bottom_candidates_count": len(bottom_candidates),
+            },
+            "sleeve_alloc": {**sleeve_alloc, "method": sleeve_method},
+            "risk_warnings": risk_warnings,
+            "orders": rebalance_results + bracket_results,
+            "positions": positions_now or {},
+            "anomalies_today": anomalies_today or [],
+        }
+        narrative_text = generate_narrative(narrative_state)
+        if narrative_text:
+            sections.append(_section("ANALYSIS (LLM-generated)", narrative_text))
+    except Exception as e:
+        sections.append(_section("ANALYSIS (LLM-generated)", f"(narrative unavailable: {type(e).__name__})"))
+
+    # 8. Anomalies on the radar today
     if anomalies_today:
         anom_lines = []
         for a in anomalies_today:
