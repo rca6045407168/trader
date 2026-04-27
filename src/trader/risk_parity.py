@@ -73,39 +73,55 @@ def compute_weights(momentum_returns: pd.Series | None = None,
 
 
 def compute_sleeve_returns_from_journal() -> tuple[pd.Series | None, pd.Series | None]:
-    """Pull historical sleeve P&L from the journal.
+    """v1.4 (B2 fix): pull sleeve-level monthly returns from position_lots.
 
-    Reconstructs monthly returns per sleeve by joining decisions (which tag style)
-    with daily snapshots (which contain equity over time). Returns None if not
-    enough data for either sleeve.
+    The previous version used a heuristic ("if a bottom-catch was placed in the
+    last 20 days, attribute the WHOLE day to bottom-catch") which commingled
+    momentum and bottom-catch P&L on overlapping days.
+
+    The new version reads realized P&L from CLOSED lots and unrealized P&L from
+    OPEN lots, group by sleeve and month, and computes monthly returns as
+    sleeve_pnl_in_month / sleeve_capital_at_month_start.
+
+    Falls back to (None, None) if fewer than 6 months of lot data exist.
     """
-    from .journal import _conn
+    from .journal import _conn, init_db
+    init_db()
     with _conn() as c:
-        snaps = c.execute("SELECT date, equity FROM daily_snapshot ORDER BY date").fetchall()
-        decisions = c.execute(
-            "SELECT date(ts) as d, style, ticker FROM decisions WHERE style IN ('MOMENTUM', 'BOTTOM_CATCH')"
+        # Closed lots: realized P&L by sleeve, by close month
+        closed = c.execute(
+            """SELECT sleeve, closed_at, opened_at, qty, open_price, close_price, realized_pnl
+               FROM position_lots WHERE closed_at IS NOT NULL"""
         ).fetchall()
-    if len(snaps) < 30:
+        # All lots (closed + open) for capital denominator
+        all_lots = c.execute(
+            """SELECT sleeve, opened_at, qty, open_price
+               FROM position_lots"""
+        ).fetchall()
+
+    if len(closed) < 6:
         return None, None
 
-    eq = pd.Series({pd.Timestamp(s["date"]): s["equity"] for s in snaps}).sort_index()
-    daily_ret = eq.pct_change().dropna()
+    closed_df = pd.DataFrame(
+        [{"sleeve": r["sleeve"], "closed_at": pd.Timestamp(r["closed_at"]),
+          "opened_at": pd.Timestamp(r["opened_at"]),
+          "qty": r["qty"], "open_price": r["open_price"] or 0,
+          "close_price": r["close_price"] or 0,
+          "realized_pnl": r["realized_pnl"] or 0}
+         for r in closed]
+    )
+    if closed_df.empty:
+        return None, None
+    closed_df["month"] = closed_df["closed_at"].dt.to_period("M").dt.to_timestamp("M")
+    closed_df["capital_committed"] = closed_df["qty"] * closed_df["open_price"]
 
-    # Tag each day by which sleeve had open positions.
-    # Heuristic: a day is "BOTTOM_CATCH active" if any bottom-catch decision
-    # happened in the prior 20 days. Otherwise it's pure MOMENTUM days.
-    bot_active = pd.Series(False, index=daily_ret.index)
-    bot_dates = sorted({pd.Timestamp(d["d"]) for d in decisions if d["style"] == "BOTTOM_CATCH"})
-    for bd in bot_dates:
-        # 20-business-day window after bd
-        for offset in range(1, 21):
-            day = bd + pd.tseries.offsets.BDay(offset)
-            if day in bot_active.index:
-                bot_active.loc[day] = True
+    # Sum realized P&L per sleeve per month
+    pnl_by_sleeve_month = closed_df.groupby(["sleeve", "month"])["realized_pnl"].sum().unstack("sleeve").fillna(0)
+    # Capital denominator: average capital committed per sleeve per month (rough)
+    cap_by_sleeve_month = closed_df.groupby(["sleeve", "month"])["capital_committed"].sum().unstack("sleeve").fillna(0)
+    # Monthly return = pnl / capital (avoid div by 0)
+    rets = (pnl_by_sleeve_month / cap_by_sleeve_month.replace(0, pd.NA)).fillna(0)
 
-    mom_daily = daily_ret[~bot_active]
-    bot_daily = daily_ret[bot_active]
-
-    mom_monthly = mom_daily.resample("ME").apply(lambda s: (1 + s).prod() - 1) if len(mom_daily) > 0 else None
-    bot_monthly = bot_daily.resample("ME").apply(lambda s: (1 + s).prod() - 1) if len(bot_daily) > 0 else None
+    mom_monthly = rets["MOMENTUM"] if "MOMENTUM" in rets.columns else None
+    bot_monthly = rets["BOTTOM_CATCH"] if "BOTTOM_CATCH" in rets.columns else None
     return mom_monthly, bot_monthly

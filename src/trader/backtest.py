@@ -119,6 +119,112 @@ def backtest_momentum(
                           benchmark_equity=bench_equity, weights=weights)
 
 
+def backtest_momentum_realistic(
+    universe: list[str],
+    start: str = "2015-01-01",
+    end: str | None = None,
+    lookback_months: int = 12,
+    skip_months: int = 1,
+    top_n: int = 5,
+    initial_capital: float = 100_000.0,
+    slippage_bps: float = 5.0,
+) -> BacktestResult:
+    """v1.4 (B4 fix): rebalance at month-end-close DECISION, but trade at the
+    OPEN of the next trading day. This is what actually happens in production:
+    we generate orders 4:10pm PT, Alpaca queues them, they fill at market open.
+
+    The slippage between month-end CLOSE and next-day OPEN is real and material.
+    Empirically ~30-100bps absolute per-name on rebalance days. The original
+    backtest assumed instantaneous close-to-close fills, overstating CAGR by
+    ~3-7% annually (per CRITIQUE.md B4).
+    """
+    from .data import fetch_history_with_open
+
+    end = end or pd.Timestamp.today().strftime("%Y-%m-%d")
+    close_df, open_df = fetch_history_with_open(universe, start=start, end=end)
+    close_df = close_df.dropna(axis=1, thresh=int(len(close_df) * 0.5))
+    open_df = open_df[close_df.columns]
+
+    # Daily index
+    daily_close = close_df
+    daily_open = open_df
+
+    # Identify month-end rebalance dates (last trading day of each month)
+    monthly_close = daily_close.resample("ME").last().ffill(limit=2)
+
+    L, S = lookback_months, skip_months
+    lookback = monthly_close.shift(S) / monthly_close.shift(S + L) - 1
+
+    # For each rebalance month, decide weights based on data through that month-end close
+    target_weights_by_rebal = pd.DataFrame(0.0, index=monthly_close.index, columns=monthly_close.columns)
+    for d in monthly_close.index:
+        scores = lookback.loc[d].dropna()
+        if len(scores) < top_n:
+            continue
+        winners = scores.nlargest(top_n).index
+        target_weights_by_rebal.loc[d, winners] = 1.0 / top_n
+
+    # Now build a realistic month-by-month return series:
+    # At each rebalance date T (month-end close), we DECIDE weights.
+    # We TRADE at the open of T+1 (next trading day after T).
+    # We HOLD until next rebalance T' (next month-end close), then trade out at T'+1 open.
+    # Period return for a held name = (open_T'+1 / open_T+1) - 1
+    # Plus a small final drift from open_T'+1 to close_T'+1 (we approximate as 0
+    # since the next entry happens immediately).
+
+    rebal_dates = list(target_weights_by_rebal.index)
+    period_returns = pd.Series(0.0, index=rebal_dates)
+
+    def _next_trading_day_after(T_calendar):
+        """Given a (possibly non-trading-day) calendar date, return the next
+        trading day that follows the LAST trading day on or before T_calendar."""
+        # last trading day on or before T_calendar (handles weekend month-ends)
+        last_trade_idx = daily_close.index.get_indexer([T_calendar], method="ffill")[0]
+        if last_trade_idx < 0 or last_trade_idx + 1 >= len(daily_close.index):
+            return None
+        return daily_open.index[last_trade_idx + 1]
+
+    for i, T in enumerate(rebal_dates):
+        if i + 1 >= len(rebal_dates):
+            break
+        T_next = rebal_dates[i + 1]
+        T_plus_1 = _next_trading_day_after(T)
+        T_next_plus_1 = _next_trading_day_after(T_next)
+        if T_plus_1 is None or T_next_plus_1 is None:
+            continue
+
+        weights = target_weights_by_rebal.loc[T]
+        held = weights[weights > 0]
+        if len(held) == 0:
+            continue
+        try:
+            buy_prices = daily_open.loc[T_plus_1, held.index]
+            sell_prices = daily_open.loc[T_next_plus_1, held.index]
+        except KeyError:
+            continue
+        if buy_prices.isna().any() or sell_prices.isna().any():
+            continue
+        per_name_returns = (sell_prices / buy_prices - 1)
+        period_returns.loc[T_next] = float((per_name_returns * held).sum())
+
+    # Slippage: ~5bps both legs of every rebalance turnover
+    turnover = target_weights_by_rebal.diff().abs().sum(axis=1).fillna(0)
+    slippage_drag = turnover * (slippage_bps / 10_000)
+    net_ret = period_returns - slippage_drag
+
+    equity = (1 + net_ret.fillna(0)).cumprod() * initial_capital
+
+    spy_close, spy_open = fetch_history_with_open(["SPY"], start=start, end=end)
+    spy_monthly = spy_close["SPY"].resample("ME").last()
+    spy_ret = spy_monthly.pct_change().fillna(0)
+    bench_equity = (1 + spy_ret).cumprod() * initial_capital
+
+    return BacktestResult(
+        equity=equity, monthly_returns=net_ret.fillna(0),
+        benchmark_equity=bench_equity, weights=target_weights_by_rebal,
+    )
+
+
 def plot_equity(result: BacktestResult, name: str = "momentum") -> Path:
     import matplotlib
     matplotlib.use("Agg")
