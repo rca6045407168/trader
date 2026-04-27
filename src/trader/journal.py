@@ -226,12 +226,18 @@ def close_lots_fifo(symbol: str, sleeve: str, qty: float, close_price: float,
             else:
                 # partial close: reduce qty on existing, insert closed sub-lot
                 c.execute("UPDATE position_lots SET qty = qty - ? WHERE id = ?", (close_qty, lot["id"]))
+                # sqlite3.Row uses [] indexing only; no .get(). Pull opened_at
+                # explicitly with a fallback.
+                lot_opened_at = c.execute(
+                    "SELECT opened_at FROM position_lots WHERE id = ?", (lot["id"],)
+                ).fetchone()
+                opened_at_value = lot_opened_at["opened_at"] if lot_opened_at else datetime.utcnow().isoformat()
                 c.execute(
                     """INSERT INTO position_lots
                        (symbol, sleeve, opened_at, qty, open_price, open_order_id,
                         closed_at, close_price, close_order_id, realized_pnl)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (symbol, sleeve, lot.get("opened_at") or datetime.utcnow().isoformat(),
+                    (symbol, sleeve, opened_at_value,
                      close_qty, lot["open_price"], None,
                      datetime.utcnow().isoformat(), close_price, close_order_id, realized),
                 )
