@@ -94,9 +94,11 @@ def detect_pre_fomc(asof: date) -> Anomaly | None:
     before FOMC announcements.
 
     Lucca & Moench (2015, JF) claim: +49bps avg pre-announcement drift since 1994.
-    OUR 2015-2025 BACKTEST: +21.5bps mean, single-day Sharpe 2.35. Half the
-    published value but still strong on a risk-adjusted basis (one of the highest
-    Sharpes available to retail).
+    v1.7 BACKTEST (full 2015-2025): +21.5bps mean, Sharpe 2.35.
+    v2.0 WALK-FORWARD (train 2015-2020 / test 2021-2025):
+      Train: +27.5bps, Sharpe 2.97
+      Test: +13.1bps, Sharpe 1.44 (decay 51.6%, win 52.9%)
+    Verdict: signal real but borderline for auto-deploy. Scanner-only for now.
     """
     upcoming = [d for d in KNOWN_FOMC_DATES_2026 if 0 <= (d - asof).days <= 1]
     if upcoming:
