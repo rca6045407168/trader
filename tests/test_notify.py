@@ -32,7 +32,8 @@ def test_notify_email_attempted_when_credentials_set(monkeypatch):
 
     with patch("trader.notify.smtplib.SMTP", return_value=fake_smtp):
         from trader.notify import notify
-        result = notify("the test passed", level="info", subject="test subject")
+        # v2.5: stub guard requires >=80 chars; pass allow_stub=True for tests
+        result = notify("the test passed " * 8, level="info", subject="test subject", allow_stub=True)
 
     assert result["email"] is True
     fake_smtp.starttls.assert_called_once()

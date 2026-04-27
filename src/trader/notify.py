@@ -62,12 +62,42 @@ def _send_email(subject: str, body: str, level: str = "info") -> bool:
         return False
 
 
-def notify(msg: str, level: str = "info", subject: str | None = None) -> dict:
-    """Console-print + email. Returns delivery status."""
+_STUB_PHRASES = {"hello", "hi", "test", "ping", "stub", "placeholder", "tbd", "todo"}
+
+
+def _is_stub(msg: str, subject: str | None) -> str | None:
+    """Return reason string if message is a stub; None if substantive."""
+    body = (msg or "").strip()
+    if not body or len(body) < 80:
+        return f"body too short ({len(body)} chars; min 80 of real content)"
+    if body.lower() in _STUB_PHRASES:
+        return f"body is a stub phrase ({body!r})"
+    s = (subject or "").strip().lower()
+    if any(t in s for t in ("<task name", "<headline", "<one-line")):
+        return "subject contains unfilled template placeholders"
+    if any(t in body.lower() for t in ("<key finding", "<recommended action", "<task name")):
+        return "body contains unfilled template placeholders"
+    return None
+
+
+def notify(msg: str, level: str = "info", subject: str | None = None,
+           allow_stub: bool = False) -> dict:
+    """Console-print + email. Returns delivery status.
+
+    v2.5: REFUSES stubs by default. Caller must pass allow_stub=True to bypass.
+    The stub guard is at this level (not just CLI) so direct Python callers
+    can't send 'hello' / placeholder emails either.
+    """
     timestamp = datetime.now().isoformat(timespec="seconds")
     print(f"[{level.upper()}] {msg}")
+
+    if not allow_stub:
+        reason = _is_stub(msg, subject)
+        if reason:
+            print(f"[notify] REFUSED stub email ({reason}); not sending.")
+            return {"console": True, "email": False, "refused": reason}
+
     if subject is None:
-        # First line of msg as subject (truncated), full msg as body
         first_line = msg.splitlines()[0] if msg else "trader notification"
         subject = first_line[:80]
     body = f"{timestamp}\n\n{msg}"
@@ -76,9 +106,11 @@ def notify(msg: str, level: str = "info", subject: str | None = None) -> dict:
 
 
 def notify_test() -> dict:
-    """Verify email pipeline end-to-end."""
+    """Verify email pipeline end-to-end. Bypasses stub guard since the body is intentional."""
     return notify(
-        "Email pipeline test — if you see this in your inbox, the trader system can reach you.",
+        "Email pipeline test — if you see this in your inbox, the trader system can reach you. "
+        "This is the only auto-generated test message; production emails carry real trading data.",
         level="info",
         subject="trader email test",
+        allow_stub=False,  # body is now long enough not to need bypass
     )
