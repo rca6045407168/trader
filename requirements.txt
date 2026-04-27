@@ -1,6 +1,7 @@
 # Core
 pandas>=2.1
 numpy>=1.26
+scipy>=1.11
 yfinance>=0.2.40
 lxml>=5.0
 python-dotenv>=1.0
