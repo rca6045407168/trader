@@ -25,6 +25,9 @@ from .notify import notify
 from .kill_switch import check_kill_triggers
 from .validation import validate_targets, DataQualityError
 from .reconcile import reconcile
+from .report import build_daily_report, fetch_alpaca_position_dicts, fetch_spy_today_return, fetch_yesterday_equity
+from .anomalies import scan_anomalies
+from datetime import date as _date
 
 # Sleeve allocations — v1.2 risk-parity with backtest priors.
 # OOS results (v1.1 walk-forward 2021-2025):
@@ -264,10 +267,57 @@ def main(force: bool = False) -> dict:
         except Exception as e:
             print(f"  snapshot failed: {e}")
 
-    notify(
-        f"Run complete. {len(final_targets)} targets, "
-        f"{len(rebalance_results)} momentum orders, {len(bracket_results)} bottom-catch brackets."
-    )
+    # v2.3: build the rich email instead of one-liner
+    try:
+        if not DRY_RUN:
+            client = get_client()
+            acct = client.get_account()
+            equity_after = float(acct.equity)
+            cash_after = float(acct.cash)
+            positions_now = fetch_alpaca_position_dicts(client)
+        else:
+            equity_after = equity
+            cash_after = equity
+            positions_now = {}
+
+        # Re-scan for daily picks/candidates so the report has the structured data
+        from .strategy import rank_momentum, find_bottoms
+        momentum_picks_for_report = rank_momentum(universe, top_n=TOP_N)
+        bottom_candidates_for_report = find_bottoms(universe)
+
+        spy_today = fetch_spy_today_return()
+        yest_eq = fetch_yesterday_equity()
+        anomalies = scan_anomalies(_date.today())
+
+        subject, body = build_daily_report(
+            run_id=run_id,
+            momentum_picks=momentum_picks_for_report,
+            bottom_candidates=bottom_candidates_for_report,
+            approved_bottoms=approved_bottoms,
+            sleeve_alloc=sleeve_alloc,
+            sleeve_method="prior_only" if not yest_eq else "sample",
+            final_targets=final_targets,
+            risk_warnings=risk.warnings,
+            rebalance_results=rebalance_results,
+            bracket_results=bracket_results,
+            vix=vix,
+            equity_before=equity,
+            equity_after=equity_after,
+            cash_after=cash_after,
+            positions_now=positions_now,
+            spy_today_return=spy_today,
+            yesterday_equity=yest_eq,
+            anomalies_today=anomalies,
+        )
+        notify(body, subject=subject)
+    except Exception as e:
+        # Fallback to terse notification if the rich report fails
+        print(f"  rich-report failed ({e}), falling back to terse notify")
+        notify(
+            f"Run complete. {len(final_targets)} targets, "
+            f"{len(rebalance_results)} momentum orders, {len(bracket_results)} bottom-catch brackets.",
+            subject="trader run complete (fallback)"
+        )
     if not DRY_RUN:
         finish_run(run_id, status="completed",
                    notes=f"{len(final_targets)} targets, {len(rebalance_results)} mom, {len(bracket_results)} bot")
