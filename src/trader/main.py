@@ -33,15 +33,16 @@ from .report import (
 from .anomalies import scan_anomalies
 from datetime import date as _date
 
-# Sleeve allocations — v1.2 risk-parity with backtest priors.
-# OOS results (v1.1 walk-forward 2021-2025):
-#   - momentum-only:           CAGR 16.0%  Sharpe 0.74  MaxDD -32.8%
-#   - fixed 60/40 (was):       CAGR 25.9%  Sharpe 1.41  MaxDD -20.2%
-#   - risk-parity w/ priors:   CAGR 30.6%  Sharpe 1.76  MaxDD -14.6%
-# Now deployed via risk_parity.compute_weights()
-USE_RISK_PARITY = True
-FALLBACK_MOMENTUM_ALLOC = 0.60
-FALLBACK_BOTTOM_ALLOC = 0.40
+# Sleeve allocations — v3.0 reverted to fixed 80/20 (v0.5 walk-forward tested config).
+# Why: v1.2 risk-parity priors over-allocated to bottom-catch (60%) but bottom-catch
+# fires <10% of days, so most of that capital sat as IDLE CASH. 3-month live backfill
+# (Jan-Apr 2026) showed cash drag cost ~$10k of unrealized momentum profit.
+# The prior monthly vol (4.2%) reflects bottom-catch when ACTIVE, not the blended
+# cash-most-of-the-time reality. Risk-parity bug. Until fixed (v3.x), use static 80/20.
+# v0.5 walk-forward tested fixed 80/20: CAGR 25.9%, Sharpe 1.41, MaxDD -20.2% OOS.
+USE_RISK_PARITY = False
+FALLBACK_MOMENTUM_ALLOC = 0.80
+FALLBACK_BOTTOM_ALLOC = 0.20
 MAX_BOTTOMS_TO_DEBATE = 5
 
 

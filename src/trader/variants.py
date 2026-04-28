@@ -64,6 +64,140 @@ def momentum_top10_diluted(universe: list[str], equity: float,
     return {c.ticker: weight for c in picks}
 
 
+def calendar_anomalies(universe: list[str], equity: float,
+                       account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW: SPY-only bets on empirically-validated calendar anomalies.
+
+    Combines 4 effects from v1.7 / v1.8 empirical retests (sources cited
+    in CAVEATS.md):
+      - Pre-FOMC drift: long SPY 1 day before FOMC (8 events/yr).
+        Lucca-Moench claim +49bps; our 2015-2025: +21.5bps, Sharpe 2.35.
+      - Pre-holiday drift: long SPY day before US market holidays (9/yr).
+        Ariel 1990 claim +12bps; our 2015-2025: +11.8bps excess. REPLICATED.
+      - OPEX week: long SPY Mon-Thu of third Friday week (12/yr).
+        Stoll-Whaley 1987 claim +20bps; our 2015-2025: +10.5bps.
+      - Year-end reversal: long IWM Dec 20 → Jan 31.
+        Reinganum 1983 claim +200bps; our 2015-2025: +139bps.
+
+    Does NOTHING on days that don't match a fired anomaly. Otherwise allocates
+    a fraction of equity to SPY (or IWM for year-end). All advisory until 30+
+    days of evidence accumulate via the A/B framework.
+    """
+    from datetime import date
+    from .anomalies import (
+        scan_anomalies, detect_pre_fomc, detect_pre_holiday,
+        detect_opex_week, detect_year_end_reversal,
+    )
+
+    today = date.today()
+    triggered = scan_anomalies(today)
+    if not triggered:
+        return {}
+
+    # Allocation: weight by confidence + alpha estimate, cap total at 20%
+    weight_for_conf = {"high": 0.10, "medium": 0.05, "low": 0.02}
+    targets: dict[str, float] = {}
+    for a in triggered:
+        w = weight_for_conf.get(a.confidence, 0)
+        if w <= 0:
+            continue
+        # use IWM for year-end (tax-loss reversal); SPY for the rest
+        sym = "IWM" if a.target_symbol == "IWM" else "SPY"
+        targets[sym] = targets.get(sym, 0) + w
+    # Cap total at 20% of capital so we don't overfit a noisy day
+    total = sum(targets.values())
+    if total > 0.20:
+        scale = 0.20 / total
+        targets = {k: v * scale for k, v in targets.items()}
+    return targets
+
+
+# (live + 2 prior shadows registered above)
+register_variant(
+    variant_id="calendar_anomalies_v1",
+    name="calendar_anomalies",
+    version="1.0",
+    status="shadow",
+    fn=calendar_anomalies,
+    description="Pre-FOMC + pre-holiday + OPEX + year-end reversal sleeve. "
+                "All 4 components empirically retested; alpha ~+1.8% (FOMC) + "
+                "+1.1% (holidays) + +1.2% (OPEX) + +1.4% (year-end IWM) annual. "
+                "Total stackable ~5-6% per yr if uncorrelated. "
+                "3-month backfill (Jan-Apr 2026): +0.05% — most of window had no triggers.",
+    params={"max_alloc": 0.20, "events": ["pre_fomc", "pre_holiday", "opex", "year_end"]},
+)
+
+
+# v3.0 aggressive variants — registered as shadows after 3-month backfill showed
+# they crushed live in mom-friendly regime. Need 30+ days of live evidence before promotion.
+def momentum_top3_concentrated(universe: list[str], equity: float,
+                                 account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW: top-3 momentum (more concentrated). 3-mo backfill +16.66% vs LIVE +10.58%."""
+    picks = rank_momentum(universe, top_n=3)
+    if not picks:
+        return {}
+    weight = 0.40 / len(picks)  # keep same sleeve allocation for fair comparison
+    return {c.ticker: weight for c in picks}
+
+
+def momentum_full_allocation(universe: list[str], equity: float,
+                              account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW: top-5 momentum at FULL 80% allocation (fix cash drag)."""
+    picks = rank_momentum(universe, top_n=5)
+    if not picks:
+        return {}
+    weight = 0.80 / len(picks)
+    return {c.ticker: weight for c in picks}
+
+
+def momentum_top3_full(universe: list[str], equity: float,
+                        account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW: top-3 + 80% allocation. Most aggressive. Highest expected return + drawdown."""
+    picks = rank_momentum(universe, top_n=3)
+    if not picks:
+        return {}
+    weight = 0.80 / len(picks)
+    return {c.ticker: weight for c in picks}
+
+
+register_variant(
+    variant_id="momentum_top3_concentrated_v1",
+    name="momentum_top3_concentrated",
+    version="1.0",
+    status="shadow",
+    fn=momentum_top3_concentrated,
+    description="Top-3 momentum, same 40% sleeve. 3-mo backfill: +16.66% vs LIVE +10.58%, "
+                "Sharpe 4.82, MaxDD -0.85% (vs -0.59% LIVE). Statistically better in 3-mo "
+                "sample (p=0.026). Watch for regime-change drawdown (top-3 had -38% MaxDD in "
+                "10-yr backtest vs top-5 -32%).",
+    params={"top_n": 3, "alloc": 0.40},
+)
+
+register_variant(
+    variant_id="momentum_full_allocation_v1",
+    name="momentum_full_allocation",
+    version="1.0",
+    status="shadow",
+    fn=momentum_full_allocation,
+    description="Top-5 at 80% allocation (vs LIVE's risk-parity 40%). 3-mo backfill: +22.08% "
+                "vs LIVE +10.58%, Sharpe 4.90, MaxDD -1.18%. Eliminates cash drag. Same picks, "
+                "more capital deployed.",
+    params={"top_n": 5, "alloc": 0.80},
+)
+
+register_variant(
+    variant_id="momentum_top3_full_v1",
+    name="momentum_top3_full",
+    version="1.0",
+    status="shadow",
+    fn=momentum_top3_full,
+    description="Top-3 + 80% — most aggressive. 3-mo backfill: +35.55% vs LIVE +10.58%, "
+                "Sharpe 4.82, MaxDD -1.69%. Stat-significant outperformance (p<0.01). "
+                "Doubles concentration risk. Track over 30+ days before promotion.",
+    params={"top_n": 3, "alloc": 0.80},
+)
+
+
 # Register variants on import
 register_variant(
     variant_id="momentum_top5_eq_v1",
