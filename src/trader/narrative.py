@@ -27,9 +27,12 @@ You have full numeric context. Write three sections:
 
 2. SHORT-TERM FACTORS — what's affecting today and this week.
    - Reference today's SPY move, VIX level, and named events (FOMC tomorrow, earnings season, etc.) IF the data shows them.
-   - Explain individual position moves where attributable (e.g., "GOOGL +2.4% likely on broad tech bid given SPY +0.77%").
-   - Flag concentration risk if all positions move together.
-   - Be honest when moves are 'noise' / unexplained.
+   - **For any position that moved >2% in the OPPOSITE direction of SPY, USE web_search to find the catalyst.**
+     Search query format: "<ticker> stock today" or "<ticker> news <today's date>"
+     If you find a real catalyst (earnings miss, M&A, sector news, regulatory), state it concretely.
+     Example: "AMD -4% likely on WSJ report that OpenAI missed revenue targets, sparking AI compute spending concerns."
+   - Flag concentration risk if multiple positions move together for the same reason.
+   - Be honest when moves are unexplained noise.
 
 3. LONG-TERM FACTORS — multi-month and multi-year picture.
    - Reference the deflated-Sharpe-corrected expectation (10-12% CAGR, 0.5-0.7 Sharpe).
@@ -81,15 +84,33 @@ def generate_narrative(state: dict[str, Any]) -> str | None:
 
     try:
         client = Anthropic()
+        # v2.8: enable Anthropic web search so the LLM can pull TODAY's news
+        # for positions that moved >2σ vs SPY. Cost ~$0.05-0.10 per call extra.
         resp = client.messages.create(
             model=os.getenv("CRITIC_MODEL", "claude-sonnet-4-6"),
-            max_tokens=900,
+            max_tokens=1500,
             system=SYSTEM_PROMPT,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
             messages=[{"role": "user", "content": user_prompt}],
         )
-        return resp.content[0].text
+        # Extract text content from response (may include tool_use blocks)
+        text_parts = []
+        for block in resp.content:
+            if hasattr(block, "text"):
+                text_parts.append(block.text)
+        return "\n".join(text_parts) if text_parts else "(narrative produced no text)"
     except Exception as e:
-        return f"(narrative unavailable: {type(e).__name__})"
+        # Fall back to no-tool call if web search isn't available on this account
+        try:
+            resp = client.messages.create(
+                model=os.getenv("CRITIC_MODEL", "claude-sonnet-4-6"),
+                max_tokens=900,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            return resp.content[0].text
+        except Exception as e2:
+            return f"(narrative unavailable: {type(e2).__name__}: {e2})"
 
 
 def _format_state_for_prompt(state: dict[str, Any]) -> str:

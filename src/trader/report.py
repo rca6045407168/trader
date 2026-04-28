@@ -331,6 +331,28 @@ def build_daily_report(
         order_lines = ["No orders this run (no changes from current allocation)."]
     sections.append(_section("ORDERS", "\n".join(order_lines)))
 
+    # ---- (6.5) ANOMALOUS MOVES — positions diverging materially from SPY today ----
+    if positions_now and spy_today_return is not None:
+        anomalous_lines = []
+        spy_pct = spy_today_return
+        for sym, p in positions_now.items():
+            # Use unrealized_plpc as a proxy for today's move (entry-to-now). It's not
+            # exactly today's move (could be cumulative) but a reasonable signal for
+            # divergence from market. For day-1 paper trading this approximates 'today'.
+            pos_pct = p.get("unrealized_plpc", 0)
+            divergence = pos_pct - spy_pct
+            if abs(divergence) > 0.02:  # >2% divergence from SPY
+                direction = "DOWN" if pos_pct < 0 else "UP"
+                anomalous_lines.append(
+                    f"  {sym}: {pos_pct*100:+.2f}%  ({direction} {abs(divergence)*100:.2f}% vs SPY)"
+                )
+        if anomalous_lines:
+            sections.append(_section(
+                "ANOMALOUS MOVES (>2% vs SPY)",
+                "\n".join(anomalous_lines) +
+                "\n\nThe LLM analysis below should explain these via web search."
+            ))
+
     # ---- (7) POSITIONS — with age + next decision date ----
     if positions_now:
         pos_lines = ["(next reconsidered at monthly rebalance: {} \u2014 in {} days)".format(next_rebal, days_to_rebal)]

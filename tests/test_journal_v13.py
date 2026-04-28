@@ -13,18 +13,23 @@ def temp_db(monkeypatch):
 
 
 def test_start_run_blocks_duplicate_same_day():
+    from datetime import datetime
     from trader.journal import start_run
-    assert start_run("2026-04-27-100000") is True
+    today = datetime.utcnow().date().isoformat()
+    assert start_run(f"{today}-100000") is True
     # second start on the same day should be blocked
-    assert start_run("2026-04-27-130000") is False
+    assert start_run(f"{today}-130000") is False
 
 
 def test_finish_run_marks_completed():
+    from datetime import datetime
     from trader.journal import start_run, finish_run, _conn
-    start_run("2026-04-27-100000")
-    finish_run("2026-04-27-100000", status="completed", notes="all good")
+    today = datetime.utcnow().date().isoformat()
+    run_id = f"{today}-100000"
+    start_run(run_id)
+    finish_run(run_id, status="completed", notes="all good")
     with _conn() as c:
-        row = c.execute("SELECT status, notes FROM runs WHERE run_id = '2026-04-27-100000'").fetchone()
+        row = c.execute("SELECT status, notes FROM runs WHERE run_id = ?", (run_id,)).fetchone()
     assert row["status"] == "completed"
     assert row["notes"] == "all good"
 
