@@ -341,6 +341,22 @@ def main(force: bool = False) -> dict:
             f"{len(rebalance_results)} momentum orders, {len(bracket_results)} bottom-catch brackets.",
             subject="trader run complete (fallback)"
         )
+    # v2.9: run shadow strategy variants in parallel with live (logs only, no orders)
+    try:
+        from . import variants  # registers variants on import
+        from .ab import run_shadows
+        market_context = {"spy_today_return": spy_today, "vix": vix,
+                          "equity": equity_after, "yesterday_equity": yest_eq}
+        shadow_results = run_shadows(
+            universe=universe, equity=equity_after,
+            account_state={"positions": positions_now or {}},
+            market_context=market_context,
+        )
+        if shadow_results:
+            print(f"\n[{datetime.now():%H:%M:%S}] shadow variants logged: {list(shadow_results.keys())}")
+    except Exception as e:
+        print(f"  shadow run failed (non-fatal): {e}")
+
     if not DRY_RUN:
         finish_run(run_id, status="completed",
                    notes=f"{len(final_targets)} targets, {len(rebalance_results)} mom, {len(bracket_results)} bot")

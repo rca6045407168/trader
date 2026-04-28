@@ -72,6 +72,27 @@ CREATE TABLE IF NOT EXISTS position_lots (
     realized_pnl REAL
 );
 CREATE INDEX IF NOT EXISTS idx_lots_sleeve_open ON position_lots (sleeve, closed_at);
+-- v2.9: A/B testing infrastructure for safe strategy iteration
+CREATE TABLE IF NOT EXISTS variants (
+    variant_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    status TEXT NOT NULL,  -- 'live' | 'shadow' | 'paper' | 'retired'
+    params_json TEXT,
+    description TEXT,
+    created_at TEXT NOT NULL,
+    promoted_at TEXT,
+    retired_at TEXT
+);
+CREATE TABLE IF NOT EXISTS shadow_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    variant_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    targets_json TEXT NOT NULL,
+    rationale TEXT,
+    market_context_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_shadow_variant_ts ON shadow_decisions (variant_id, ts);
 """
 
 
