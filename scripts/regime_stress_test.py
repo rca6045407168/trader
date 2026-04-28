@@ -13,6 +13,30 @@ the recent one. This script runs each variant through 5 known windows:
 For each variant + window: total return, Sharpe, MaxDD, alpha vs SPY.
 End: ranking by Sharpe across regimes. Best variant is one that consistently
 wins or ties, not one that dominates in one regime and crashes in others.
+
+============================================================================
+v3.3 RESULTS (2026-04-27 run) — top3_eq_80 confirmed robust; new variants killed
+============================================================================
+Top-3 family ties for best mean Sharpe (+1.48) across all 5 regimes.
+Allocation (40/80/100) only scales return + DD linearly — Sharpe unchanged.
+
+KILLED candidates (do NOT promote):
+  - dual_momentum_gem (Antonacci): -0.36 Sharpe — bad regime timer (long AGG into
+    rate-cut '18, long SPY into '22 bear).
+  - combined_top3_dual (50/50): +1.01 Sharpe — dual half drags.
+  - top3_80 + anomaly_overlay (pre-FOMC + pre-holiday SPY tilt): +0.83 Sharpe —
+    overlay COST -14pp in 2022 bear (longing SPY into anomaly windows during a
+    selloff is a worst-case pattern).
+  - anomaly_only_spy: -1.01 Sharpe — calendar anomalies have no standalone alpha.
+
+System-design takeaway: scheduled-routine signals (anomaly scanner) stay
+ADVISORY-ONLY in trader-anomaly-scan. Don't bake them into portfolio weights.
+The empirical 2015-2025 edge already showed pre-FOMC and pre-holiday at half
+the published value; layering on top of momentum compounds whipsaw, not alpha.
+
+LIVE remains: momentum_top3_aggressive_v1 (top-3 at 80%). v3.2 shadow
+(top3_full_deploy at 100%) keeps running to gather live evidence on the
+upside-vs-DD tradeoff.
 """
 import sys
 from pathlib import Path
@@ -21,12 +45,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import math
 import statistics
+from functools import lru_cache
 import pandas as pd
 
 from trader.data import fetch_history
 from trader.universe import DEFAULT_LIQUID_50
 from trader.sectors import get_sector
-from trader.anomalies import scan_anomalies
+from trader.anomalies import scan_anomalies, KNOWN_FOMC_DATES_2026, US_HOLIDAYS_2026, _third_friday_of_month
 
 
 REGIMES = [
@@ -38,7 +63,14 @@ REGIMES = [
 ]
 
 
-def _momentum_picks_as_of(as_of, top_n=5, lookback_months=12, skip_months=1):
+@lru_cache(maxsize=4096)
+def _cached_picks_for_month(year, month, top_n, lookback_months, skip_months):
+    """Compute momentum picks once per (year, month, params) — picks are stable
+    intra-month since the 12-month lookback barely changes day-to-day."""
+    # Use last business day of the prior month as as_of (proxy for month-end rebalance)
+    as_of = pd.Timestamp(year=year, month=month, day=1) - pd.Timedelta(days=1)
+    while as_of.weekday() >= 5:  # back up to Friday if Sat/Sun
+        as_of -= pd.Timedelta(days=1)
     L = lookback_months * 21
     S = skip_months * 21
     start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
@@ -46,13 +78,17 @@ def _momentum_picks_as_of(as_of, top_n=5, lookback_months=12, skip_months=1):
         prices = fetch_history(DEFAULT_LIQUID_50, start=start_pad.strftime("%Y-%m-%d"),
                                end=as_of.strftime("%Y-%m-%d"))
     except Exception:
-        return []
+        return tuple()
     if prices.empty or len(prices) < L + S:
-        return []
+        return tuple()
     end_idx = -1 - S if S > 0 else -1
     start_idx = -(L + S) - 1
     rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
-    return rets.nlargest(top_n).index.tolist()
+    return tuple(rets.nlargest(top_n).index.tolist())
+
+
+def _momentum_picks_as_of(as_of, top_n=5, lookback_months=12, skip_months=1):
+    return list(_cached_picks_for_month(as_of.year, as_of.month, top_n, lookback_months, skip_months))
 
 
 def variant_top5_eq_40(as_of):  # current LIVE: top-5, 40% allocation
@@ -110,6 +146,161 @@ def variant_top3_eq_100(as_of):  # 100% all in (no bottom-catch reservation)
     return {x: 1.00 / len(p) for x in p} if p else {}
 
 
+def variant_dual_momentum_gem(as_of):
+    """Antonacci-style Global Equities Momentum:
+    - Compute trailing 12m return on SPY, ACWX (intl), AGG (bonds)
+    - If SPY 12m > T-bill (proxy: 4%), allocate to whichever of SPY / ACWX has higher 12m
+    - Else allocate to AGG (defensive)
+    - 100% allocation to one ETF
+    """
+    end = as_of
+    start = end - pd.Timedelta(days=400)  # ~13 months
+    try:
+        prices = fetch_history(["SPY", "ACWX", "AGG"], start=start.strftime("%Y-%m-%d"),
+                              end=end.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty or len(prices) < 252:
+        return {}
+    rets_12m = (prices.iloc[-1] / prices.iloc[-252] - 1).dropna()
+    spy_12m = rets_12m.get("SPY", float("nan"))
+    if pd.isna(spy_12m):
+        return {}
+    t_bill_threshold = 0.04
+    if spy_12m > t_bill_threshold:
+        # Pick higher of SPY vs ACWX
+        equities = rets_12m[rets_12m.index.isin(["SPY", "ACWX"])]
+        if equities.empty:
+            return {"SPY": 1.00}
+        winner = equities.idxmax()
+        return {winner: 1.00}
+    return {"AGG": 1.00}
+
+
+def variant_combined_momentum_dual(as_of):
+    """Combination: 50% top-3 momentum + 50% dual-momentum GEM.
+    Half the portfolio gets aggressive concentration; half gets regime-conditional defense.
+    """
+    mom_picks = _momentum_picks_as_of(as_of, 3)
+    gem = variant_dual_momentum_gem(as_of)
+    targets = {p: 0.50 / len(mom_picks) for p in mom_picks} if mom_picks else {}
+    for sym, w in gem.items():
+        targets[sym] = targets.get(sym, 0) + 0.50 * w
+    return targets
+
+
+# ---------------------------------------------------------------------------
+# Scheduled-routine signal incorporation
+# ---------------------------------------------------------------------------
+# The trader-anomaly-scan scheduled task surfaces calendar anomalies. The two
+# with strongest empirical edge in OUR 2015-2025 backtest were:
+#   - Pre-FOMC drift (+22bps avg, Sharpe 2.35) — high confidence
+#   - Pre-holiday drift (+12bps avg, 64.8% win) — medium confidence
+# Both are 1-day SPY-long tilts. To replay across regimes we need historical
+# FOMC + holiday schedules going back to 2018 (anomalies module only has 2026).
+
+# FOMC meeting dates 2018-2026 (announcement days, approximate from Fed records)
+HISTORICAL_FOMC_DATES = [
+    # 2018
+    pd.Timestamp("2018-01-31"), pd.Timestamp("2018-03-21"), pd.Timestamp("2018-05-02"),
+    pd.Timestamp("2018-06-13"), pd.Timestamp("2018-08-01"), pd.Timestamp("2018-09-26"),
+    pd.Timestamp("2018-11-08"), pd.Timestamp("2018-12-19"),
+    # 2019
+    pd.Timestamp("2019-01-30"), pd.Timestamp("2019-03-20"), pd.Timestamp("2019-05-01"),
+    pd.Timestamp("2019-06-19"), pd.Timestamp("2019-07-31"), pd.Timestamp("2019-09-18"),
+    pd.Timestamp("2019-10-30"), pd.Timestamp("2019-12-11"),
+    # 2020
+    pd.Timestamp("2020-01-29"), pd.Timestamp("2020-03-15"),  # emergency cut
+    pd.Timestamp("2020-04-29"), pd.Timestamp("2020-06-10"), pd.Timestamp("2020-07-29"),
+    pd.Timestamp("2020-09-16"), pd.Timestamp("2020-11-05"), pd.Timestamp("2020-12-16"),
+    # 2021
+    pd.Timestamp("2021-01-27"), pd.Timestamp("2021-03-17"), pd.Timestamp("2021-04-28"),
+    pd.Timestamp("2021-06-16"), pd.Timestamp("2021-07-28"), pd.Timestamp("2021-09-22"),
+    pd.Timestamp("2021-11-03"), pd.Timestamp("2021-12-15"),
+    # 2022
+    pd.Timestamp("2022-01-26"), pd.Timestamp("2022-03-16"), pd.Timestamp("2022-05-04"),
+    pd.Timestamp("2022-06-15"), pd.Timestamp("2022-07-27"), pd.Timestamp("2022-09-21"),
+    pd.Timestamp("2022-11-02"), pd.Timestamp("2022-12-14"),
+    # 2023
+    pd.Timestamp("2023-02-01"), pd.Timestamp("2023-03-22"), pd.Timestamp("2023-05-03"),
+    pd.Timestamp("2023-06-14"), pd.Timestamp("2023-07-26"), pd.Timestamp("2023-09-20"),
+    pd.Timestamp("2023-11-01"), pd.Timestamp("2023-12-13"),
+    # 2024
+    pd.Timestamp("2024-01-31"), pd.Timestamp("2024-03-20"), pd.Timestamp("2024-05-01"),
+    pd.Timestamp("2024-06-12"), pd.Timestamp("2024-07-31"), pd.Timestamp("2024-09-18"),
+    pd.Timestamp("2024-11-07"), pd.Timestamp("2024-12-18"),
+    # 2025
+    pd.Timestamp("2025-01-29"), pd.Timestamp("2025-03-19"), pd.Timestamp("2025-05-07"),
+    pd.Timestamp("2025-06-18"), pd.Timestamp("2025-07-30"), pd.Timestamp("2025-09-17"),
+    pd.Timestamp("2025-10-29"), pd.Timestamp("2025-12-10"),
+    # 2026
+    pd.Timestamp("2026-01-28"), pd.Timestamp("2026-03-18"), pd.Timestamp("2026-04-29"),
+    pd.Timestamp("2026-06-17"), pd.Timestamp("2026-07-29"), pd.Timestamp("2026-09-16"),
+    pd.Timestamp("2026-10-28"), pd.Timestamp("2026-12-09"),
+]
+
+
+def _us_holidays_for_year(year):
+    """Approximate US market holidays per year."""
+    return [
+        pd.Timestamp(f"{year}-01-01"),                          # New Year's
+        pd.Timestamp(f"{year}-01-15") + pd.tseries.offsets.Week(weekday=0),  # MLK 3rd Mon ~Jan 18-21
+        pd.Timestamp(f"{year}-02-15") + pd.tseries.offsets.Week(weekday=0),  # Presidents 3rd Mon
+        pd.Timestamp(f"{year}-04-03"),                          # Good Friday (approximate; varies)
+        pd.Timestamp(f"{year}-05-25") + pd.tseries.offsets.Week(weekday=0),  # Memorial last Mon
+        pd.Timestamp(f"{year}-07-04"),                          # July 4
+        pd.Timestamp(f"{year}-09-01") + pd.tseries.offsets.Week(weekday=0),  # Labor 1st Mon
+        pd.Timestamp(f"{year}-11-22") + pd.tseries.offsets.Week(weekday=3),  # Thanksgiving 4th Thu
+        pd.Timestamp(f"{year}-12-25"),                          # Christmas
+    ]
+
+
+def _is_pre_fomc(asof):
+    """True if asof is the day before an FOMC announcement."""
+    asof_d = pd.Timestamp(asof.date()) if hasattr(asof, "date") else pd.Timestamp(asof)
+    for f in HISTORICAL_FOMC_DATES:
+        if (f - asof_d).days == 1:
+            return True
+    return False
+
+
+def _is_pre_holiday(asof):
+    """True if asof is the day before a US market holiday."""
+    asof_d = pd.Timestamp(asof.date()) if hasattr(asof, "date") else pd.Timestamp(asof)
+    for h in _us_holidays_for_year(asof_d.year):
+        if (h - asof_d).days == 1:
+            return True
+    return False
+
+
+def variant_top3_80_anomaly_overlay(as_of):
+    """v3.1 LIVE (top-3 at 80%) + tactical SPY tilt during pre-FOMC and pre-holiday days.
+
+    On rebalance days that fall on/right before pre-FOMC or pre-holiday, ADD 10% SPY
+    on top of the momentum book (using cash buffer). On normal days, just top-3 at 80%.
+    Replay engine must call this daily so it can react to anomaly windows mid-month.
+    """
+    p = _momentum_picks_as_of(as_of, 3)
+    if not p:
+        return {}
+    targets = {x: 0.80 / 3 for x in p}
+    if _is_pre_fomc(as_of) or _is_pre_holiday(as_of):
+        # Tactical 10% SPY add — uses cash buffer; doesn't replace momentum
+        targets["SPY"] = targets.get("SPY", 0) + 0.10
+    return targets
+
+
+def variant_anomaly_only_spy(as_of):
+    """Pure anomaly sleeve: 100% SPY only on pre-FOMC + pre-holiday days, else 100% cash.
+
+    Tests whether the anomaly signal alone has standalone alpha. If this loses to cash,
+    the overlay variant's tilt isn't accretive — just noise.
+    """
+    if _is_pre_fomc(as_of) or _is_pre_holiday(as_of):
+        return {"SPY": 1.00}
+    return {}  # all cash
+
+
 VARIANTS = {
     "top5_eq_40 (curr LIVE pre-v3)": variant_top5_eq_40,
     "top5_eq_80 (v3.0)": variant_top5_eq_80,
@@ -120,18 +311,43 @@ VARIANTS = {
     "top1_eq_80 (max concentration)": variant_top1_eq_80,
     "top10_eq_80": variant_top10_eq_80,
     "sector_cap_5_80": variant_sector_cap_5_80,
+    "dual_momentum_gem (Antonacci)": variant_dual_momentum_gem,
+    "combined_top3_dual (50/50)": variant_combined_momentum_dual,
+    "top3_80 + anomaly overlay": variant_top3_80_anomaly_overlay,
+    "anomaly_only_spy (sleeve test)": variant_anomaly_only_spy,
+}
+
+# Variants that need daily decision evaluation (their weights change inside a month
+# due to calendar anomalies, regime detection, etc). Default = monthly only.
+DAILY_DECISION_VARIANTS = {
+    "top3_80 + anomaly overlay",
+    "anomaly_only_spy (sleeve test)",
 }
 
 
 def replay_window(variant_name, fn, start, end):
     bdays = pd.bdate_range(start, end)
     decisions = []
+    daily_decisions = variant_name in DAILY_DECISION_VARIANTS
     for d in bdays:
-        next_d = d + pd.Timedelta(days=1)
-        if next_d.month != d.month:
+        if daily_decisions:
+            # Call the variant every business day; only record when weights change
             t = fn(d)
-            if t:
-                decisions.append((d, t))
+            t_dict = dict(t) if t else {}
+            if not decisions:
+                if t_dict:
+                    decisions.append((d, t_dict))
+            else:
+                last_t = decisions[-1][1]
+                if t_dict != last_t:
+                    decisions.append((d, t_dict))
+        else:
+            # Standard monthly rebalance at month-end
+            next_d = d + pd.Timedelta(days=1)
+            if next_d.month != d.month:
+                t = fn(d)
+                if t:
+                    decisions.append((d, t))
     if not decisions:
         return None
 
