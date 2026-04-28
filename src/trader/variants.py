@@ -204,12 +204,38 @@ register_variant(
     variant_id="momentum_top3_full_v1",
     name="momentum_top3_full",
     version="1.0",
-    status="shadow",
+    status="retired",
     fn=momentum_top3_full,
-    description="Top-3 + 80% — most aggressive. 3-mo backfill: +35.55% vs LIVE +10.58%, "
-                "Sharpe 4.82, MaxDD -1.69%. Stat-significant outperformance (p<0.01). "
-                "Doubles concentration risk. Track over 30+ days before promotion.",
+    description="RETIRED v3.1: redundant with momentum_top3_aggressive_v1 (now LIVE). "
+                "Same parameters; consolidated.",
     params={"top_n": 3, "alloc": 0.80},
+)
+
+
+def momentum_top3_full_deploy(universe: list[str], equity: float,
+                               account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW: top-3 momentum at 100% allocation (no bottom-catch reservation).
+    5-regime test: same Sharpe 1.65 as 80%, but Mean CAGR +103% vs +74%; Worst MaxDD -32%.
+    Highest-return option per data; not promoted because -32% drawdown is qualitatively
+    different (behavioral panic threshold) than -26%."""
+    picks = rank_momentum(universe, top_n=3)
+    if not picks:
+        return {}
+    weight = 1.00 / len(picks)  # 33.3% per name
+    return {c.ticker: weight for c in picks}
+
+
+register_variant(
+    variant_id="momentum_top3_full_deploy_v1",
+    name="momentum_top3_full_deploy",
+    version="1.0",
+    status="shadow",
+    fn=momentum_top3_full_deploy,
+    description="SHADOW: top-3 at 100% (no cash reservation). 5-regime: Sharpe 1.65, "
+                "Mean CAGR +103%, Worst MaxDD -32.3%. Maximum-profit variant per data; "
+                "not LIVE because -32% MaxDD crosses behavioral panic threshold. "
+                "Worth tracking — if Richard wants more aggressive, this is the data point.",
+    params={"top_n": 3, "alloc": 1.00},
 )
 
 

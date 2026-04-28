@@ -95,11 +95,29 @@ def variant_sector_cap_5_80(as_of):  # 1-per-sector, 5 names, 80%
     return {x: 0.80 / len(sel) for x in sel} if sel else {}
 
 
+def variant_top2_eq_80(as_of):
+    p = _momentum_picks_as_of(as_of, 2)
+    return {x: 0.80 / len(p) for x in p} if p else {}
+
+
+def variant_top1_eq_80(as_of):
+    p = _momentum_picks_as_of(as_of, 1)
+    return {x: 0.80 for x in p} if p else {}
+
+
+def variant_top3_eq_100(as_of):  # 100% all in (no bottom-catch reservation)
+    p = _momentum_picks_as_of(as_of, 3)
+    return {x: 1.00 / len(p) for x in p} if p else {}
+
+
 VARIANTS = {
     "top5_eq_40 (curr LIVE pre-v3)": variant_top5_eq_40,
-    "top5_eq_80 (v3.0 LIVE)": variant_top5_eq_80,
+    "top5_eq_80 (v3.0)": variant_top5_eq_80,
     "top3_eq_40": variant_top3_eq_40,
-    "top3_eq_80 (most aggressive)": variant_top3_eq_80,
+    "top3_eq_80 (v3.1 LIVE)": variant_top3_eq_80,
+    "top3_eq_100 (no cash)": variant_top3_eq_100,
+    "top2_eq_80": variant_top2_eq_80,
+    "top1_eq_80 (max concentration)": variant_top1_eq_80,
     "top10_eq_80": variant_top10_eq_80,
     "sector_cap_5_80": variant_sector_cap_5_80,
 }
