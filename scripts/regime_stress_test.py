@@ -608,6 +608,154 @@ def _get_short_interest_pct(ticker: str) -> float:
     return float(si)
 
 
+# ---------------------------------------------------------------------------
+# v3.22: Combined residual + vol-targeting + crowding penalty
+# ---------------------------------------------------------------------------
+# The top-2 individual winners stacked. Each independent edge:
+#   v3.16 residual + vol-targeted: +0.07 mean Sharpe vs LIVE
+#   v3.21 crowding penalty:        +0.18 mean Sharpe vs LIVE
+# If edges are orthogonal, combining could yield +0.20 to +0.25 mean Sharpe.
+
+def variant_top3_combined_winners(as_of):
+    """v3.22: top-3 by RESIDUAL momentum (Blitz-Hanauer 2024) but among top-10
+    by RAW momentum, with crowding penalty (Lou-Polk 2024) AND inverse-vol
+    weighting (Baltas-Karyampas 2024).
+
+    Three layers:
+      1. Universe = top-10 by raw 12-1 momentum (DEFAULT_LIQUID_50)
+      2. Filter by residual momentum (factor-orthogonalized) — take top 5
+      3. Apply crowding penalty (short-interest z-score) — take top 3
+      4. Weight by inverse 60d vol, normalize to 80% gross
+    """
+    import numpy as np
+    import yfinance as yf
+    # Step 1: top-10 by raw momentum
+    top10, prices = _top10_momentum_picks(as_of)
+    if not top10 or prices.empty:
+        return {}
+
+    # Step 2: among top-10, rank by residual momentum (use raw rank if FF5 stale)
+    try:
+        ff5 = get_ff5_aligned()
+        scores = residual_momentum_score(prices, ff5, as_of,
+                                          lookback_months=12, skip_months=1,
+                                          regression_window_months=36)
+        # Filter scores to top10 only
+        scores_top10 = {k: v for k, v in scores.items() if k in top10}
+        if len(scores_top10) >= 5:
+            top5_residual = sorted(scores_top10.items(),
+                                   key=lambda kv: -kv[1])[:5]
+            top5_syms = [s for s, _ in top5_residual]
+        else:
+            top5_syms = top10[:5]
+    except Exception:
+        top5_syms = top10[:5]
+
+    # Step 3: crowding penalty among the top-5
+    si_values = {}
+    for sym in top5_syms:
+        try:
+            info = yf.Ticker(sym).info
+            si = info.get("shortPercentOfFloat")
+            if si is not None and si == si:
+                si_values[sym] = float(si)
+        except Exception:
+            continue
+
+    if len(si_values) >= 3:
+        # Apply crowding penalty: rank by inverse short interest
+        si_arr = np.array(list(si_values.values()))
+        si_mean = si_arr.mean()
+        si_std = si_arr.std()
+        if si_std > 0:
+            adjusted = {sym: -(si_values[sym] - si_mean) / si_std for sym in si_values}
+            top3_syms = [s for s, _ in sorted(adjusted.items(),
+                                                key=lambda kv: -kv[1])[:3]]
+        else:
+            top3_syms = list(si_values.keys())[:3]
+    else:
+        top3_syms = top5_syms[:3]
+
+    if not top3_syms:
+        return {}
+
+    # Step 4: inverse-vol weighting
+    inv_vols = {}
+    for sym in top3_syms:
+        if sym not in prices.columns:
+            inv_vols[sym] = 1.0
+            continue
+        rets = prices[sym].pct_change().dropna().iloc[-60:]
+        if len(rets) < 30:
+            inv_vols[sym] = 1.0
+            continue
+        vol = float(rets.std() * (252 ** 0.5))
+        inv_vols[sym] = 1.0 / max(vol, 0.01)
+    total = sum(inv_vols.values())
+    if total <= 0:
+        return {sym: 0.80 / 3 for sym in top3_syms}
+    return {sym: 0.80 * (inv / total) for sym, inv in inv_vols.items()}
+
+
+def variant_top3_crowding_penalty_pit(as_of):
+    """v3.23: PIT version of crowding penalty — honesty test on the +0.18 edge.
+    Uses point-in-time S&P 500 universe (no survivorship bias) to verify the
+    crowding signal isn't an artifact of today's-winners universe.
+    """
+    import numpy as np
+    import yfinance as yf
+    members = sp500_membership_at(as_of.strftime("%Y-%m-%d"))
+    if not members:
+        return {}
+    sample = list(members)[::max(1, len(members) // 150)][:150]
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(sample,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty or len(prices) < L + S:
+        return {}
+    end_idx = -1 - S
+    start_idx = -(L + S) - 1
+    rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
+    top10 = rets.nlargest(10).index.tolist()
+    if not top10:
+        return {}
+    mom_scores = {sym: float(rets[sym]) for sym in top10}
+    si_values = {}
+    for sym in top10:
+        try:
+            info = yf.Ticker(sym).info
+            si = info.get("shortPercentOfFloat")
+            if si is not None and si == si:
+                si_values[sym] = float(si)
+        except Exception:
+            continue
+    if len(si_values) < 5:
+        return {sym: 0.80 / 3 for sym in top10[:3]}
+    si_arr = np.array(list(si_values.values()))
+    si_mean = si_arr.mean()
+    si_std = si_arr.std()
+    if si_std <= 0:
+        return {sym: 0.80 / 3 for sym in top10[:3]}
+    mom_arr = np.array([mom_scores[s] for s in si_values])
+    mom_mean = mom_arr.mean()
+    mom_std = mom_arr.std()
+    if mom_std <= 0:
+        return {sym: 0.80 / 3 for sym in top10[:3]}
+    adjusted = {}
+    for sym in si_values:
+        mom_z = (mom_scores[sym] - mom_mean) / mom_std
+        si_z = (si_values[sym] - si_mean) / si_std
+        adjusted[sym] = mom_z - 0.5 * si_z
+    top3 = sorted(adjusted.items(), key=lambda kv: -kv[1])[:3]
+    return {sym: 0.80 / 3 for sym, _ in top3}
+
+
 def variant_top3_crowding_penalty(as_of):
     """v3.21: Among top-10 by 12-1 momentum, demote crowded names by short-
     interest z-score. Take top-3 by adjusted score.

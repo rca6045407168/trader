@@ -498,12 +498,14 @@ register_variant(
     status="shadow",
     fn=momentum_top3_crowding_penalty,
     description="SHADOW v3.21: top-3 momentum with short-interest crowding penalty "
-                "(Lou-Polk 2024 NBER, replicated by Cahan-Luo 2024 Wolfe Research). "
-                "5-regime mean Sharpe +1.72 — BEATS LIVE +1.54 by +0.18, the "
-                "STRONGEST EDGE EVER MEASURED in our backtest. Big wins in 2020-Q1 "
-                "(+9pp) and 2023 (+7pp). Worst MaxDD -26% (1pp worse than LIVE — "
-                "acceptable). Tied with v3.16 as top promotion candidate.",
-    params={"top_n": 3, "candidate_pool": 10, "crowding_weight": 0.5, "alloc": 0.80},
+                "(Lou-Polk 2024 NBER). v3.21 backtest on SURVIVOR universe showed "
+                "mean Sharpe +1.72 (+0.18 over LIVE). HOWEVER v3.23 PIT honesty "
+                "test revealed the edge is survivor-bias artifact: PIT mean Sharpe "
+                "+0.60 vs PIT baseline +0.98 (-0.38 — actually HURTS on honest "
+                "universe). Kept as shadow for live A/B evidence; do NOT promote "
+                "based on backtest alone. Real-world edge unknown.",
+    params={"top_n": 3, "candidate_pool": 10, "crowding_weight": 0.5, "alloc": 0.80,
+            "pit_validated": False, "pit_finding": "edge_negative_on_honest_universe"},
 )
 
 

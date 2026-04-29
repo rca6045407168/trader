@@ -63,14 +63,28 @@ When introducing new components (signals, sleeves, allocators):
   look bias in current quality metrics; structural quality may filter wrong
   way for momentum (filters OUT cyclicals that have momentum in those windows).
 
-## Variants under SHADOW with measured edge over LIVE
+## Variants under SHADOW (caveat: edges measured on SURVIVOR universe only)
 
-- v3.16 (top3_residual_voltgt): +1.61 mean Sharpe vs LIVE +1.54 (+0.07)
-- v3.21 (top3_crowding_penalty): +1.72 mean Sharpe vs LIVE +1.54 (+0.18) ← strongest
+- v3.16 (top3_residual_voltgt): +1.61 mean Sharpe vs LIVE +1.54 (+0.07).
+  NOT YET PIT-VALIDATED. Same survivor-bias risk as v3.21.
+- v3.21 (top3_crowding_penalty): +1.72 mean Sharpe vs LIVE +1.54 (+0.18) on
+  SURVIVOR universe. v3.23 PIT honesty test FAILED: PIT mean Sharpe +0.60
+  vs PIT baseline +0.98 (edge becomes -0.38 — actually HURTS on honest
+  universe). Kept as shadow for live A/B evidence but do NOT promote on
+  backtest alone.
 
-Both miss the strict gate by ~1-2pp on worst-MaxDD or regime-win count, but
-are the closest to promotion ever measured. After 30+ days of live shadow
-evidence, run paired_test() vs LIVE for promotion decision.
+## v3.22-v3.23 finding: PIT validation is non-negotiable
+
+Combined v3.22 (stacked residual + vol + crowding) underperformed LIVE
+significantly — edges don't stack, over-filtering kills the signal.
+
+Critical lesson: the +0.18 Sharpe edge in v3.21 was a SURVIVORSHIP-BIAS
+ARTIFACT. The signal works on today's-winners universe but breaks on the
+honest broader universe. From now on, ANY variant claiming Sharpe edge
+must pass:
+  1. Survivor backtest gate (≥3/5 regime wins, no worse worst-MaxDD)
+  2. **PIT validation gate (must beat PIT baseline by ≥0.10 mean Sharpe)**
+Without #2, claimed edges are likely survivor-bias.
 
 ## What's deployed
 
