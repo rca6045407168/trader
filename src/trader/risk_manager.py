@@ -5,10 +5,12 @@ through. This module is the last line of defense — every check here exists
 because real retail traders blew up without it.
 
 Layers (each one a separate kill switch):
-  1. Per-position size cap        — no single name > 5% of equity
+  1. Per-position size cap        — no single name > 30% of equity (margin
+                                     above 26.7% used by top-3-at-80%)
   2. Gross exposure cap           — always keep ≥5% cash buffer
   3. Daily loss limit             — halt new entries if down >3% intraday
-  4. Drawdown circuit breaker     — halt all new entries if -8% from 30d peak
+  4. Drawdown circuit breaker     — halt all new entries if -8% from peak
+                                     (180-day window — see DD_PEAK_LOOKBACK_DAYS)
   5. Volatility scaling           — cut size in half when VIX > 25
   6. Sector concentration cap     — max 30% to any GICS sector
   7. Earnings-window blackout     — don't enter 2 trading days before earnings
@@ -20,9 +22,14 @@ from dataclasses import dataclass, field
 from .journal import recent_snapshots
 
 MAX_POSITION_PCT = 0.30  # v3.1: top-3 at 80% sleeve needs 27% per name. Margin 30%.
+MAX_POSITION_SAFETY_MARGIN = 0.03  # v3.27: refuse to deploy if any target > MAX-margin
 MAX_GROSS_EXPOSURE = 0.95
 MAX_DAILY_LOSS_PCT = 0.03
 MAX_DRAWDOWN_HALT_PCT = 0.08
+# v3.27 FIX: was 30 days. The reviewer found that during a slow 60+ day
+# drawdown, the 30-day "peak" walks down with the drawdown and the kill
+# switch silently fails to fire. 180 days catches multi-quarter drawdowns.
+DD_PEAK_LOOKBACK_DAYS = 180
 MIN_ACCOUNT_FOR_DAYTRADE = 25_000
 MAX_SECTOR_PCT = 0.30
 WASH_SALE_LOOKBACK_DAYS = 30
@@ -65,9 +72,12 @@ def check_account_risk(
             "Limited to 3 day-trades per 5 business days."
         )
 
-    snapshots = recent_snapshots(days=30)
+    # v3.27: pull a longer window for peak detection (was 30 days — catches slow
+    # 60+ day drawdowns that previously masked the kill switch). For daily-loss
+    # check we only need 2 days, but the same query is cheap.
+    snapshots = recent_snapshots(days=DD_PEAK_LOOKBACK_DAYS)
 
-    # 1) Daily loss limit
+    # 1) Daily loss limit (only need 2 most recent days)
     if len(snapshots) >= 2:
         today, yest = snapshots[0], snapshots[1]
         if yest["equity"] and yest["equity"] > 0:
@@ -79,14 +89,37 @@ def check_account_risk(
                     warnings=warnings,
                 )
 
-    # 2) Drawdown circuit breaker
+    # 2) Drawdown circuit breaker — uses 180-day peak (v3.27 fix)
     if snapshots:
         peak = max(s["equity"] for s in snapshots if s["equity"])
         if peak and equity / peak - 1 < -MAX_DRAWDOWN_HALT_PCT:
             return RiskDecision(
                 proceed=False,
-                reason=f"HALT: drawdown {(equity/peak-1):.2%} from 30d peak ${peak:.0f}",
+                reason=f"HALT: drawdown {(equity/peak-1):.2%} from {DD_PEAK_LOOKBACK_DAYS}d peak ${peak:.0f}",
                 warnings=warnings,
+            )
+
+    # 2.5) Per-position safety check (v3.27): if any target exceeds the cap with
+    # less than the safety margin, REFUSE to deploy. Forces the operator to
+    # explicitly raise MAX_POSITION_PCT before promoting a more-concentrated
+    # variant. Catches the v3.27 reviewer concern: top-2-at-80%=40% would be
+    # silently clipped to 30%, dropping gross to 60%. Fail loudly instead.
+    if targets:
+        safety_threshold = MAX_POSITION_PCT - MAX_POSITION_SAFETY_MARGIN
+        excessive = {t: w for t, w in targets.items() if w > MAX_POSITION_PCT}
+        if excessive:
+            return RiskDecision(
+                proceed=False,
+                reason=(f"HALT: variant requested per-position weight > MAX_POSITION_PCT "
+                        f"({MAX_POSITION_PCT:.0%}). Names: {excessive}. "
+                        f"Raise MAX_POSITION_PCT explicitly before deploying."),
+                warnings=warnings,
+            )
+        near_cap = {t: w for t, w in targets.items() if w > safety_threshold}
+        if near_cap:
+            warnings.append(
+                f"per-position weights approaching cap (≤{MAX_POSITION_SAFETY_MARGIN:.0%} from "
+                f"{MAX_POSITION_PCT:.0%}): {near_cap}. Verify variant intent."
             )
 
     # 3) Per-position cap

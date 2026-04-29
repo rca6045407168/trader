@@ -62,8 +62,53 @@ def test_drawdown_halt(monkeypatch):
         {"date": f"2026-04-{i:02d}", "equity": 100_000 + (15_000 if i == 1 else 0)}
         for i in range(1, 26)
     ]
-    monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=30: snaps)
-    # equity 80k vs 30d peak 115k = -30% drawdown
+    monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: snaps)
+    # equity 80k vs peak 115k = -30% drawdown
     decision = check_account_risk(equity=80_000, targets={"AAPL": 0.05}, vix=15)
     assert not decision.proceed
     assert "drawdown" in decision.reason.lower()
+
+
+def test_slow_drawdown_caught_by_180d_window(monkeypatch):
+    """v3.27 regression: a slow 60-day drawdown was masked when peak window
+    was 30 days (peak walked down with the drawdown). With 180-day window,
+    peak is preserved and -8% threshold fires correctly."""
+    # Build snapshots: peak at $120k 90 days ago, declining to $109k today
+    # = -9.2% from true peak, should HALT
+    # But 30-day window's max would be ~$115k → only -5.2% → would NOT halt (the bug)
+    snaps = []
+    for i in range(180, 0, -1):
+        # Linear decline from peak 90 days ago
+        if i > 90:
+            equity = 100_000  # before peak
+        elif i > 0:
+            # Peak at i=90, then linear decline to today (i=0)
+            equity = 120_000 - ((90 - i) / 90) * 11_000  # 120k → 109k over 90 days
+        snaps.append({"date": f"day-{i}", "equity": equity})
+    snaps.reverse()  # newest-first per recent_snapshots contract
+    monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: snaps)
+    decision = check_account_risk(equity=109_000, targets={"AAPL": 0.05}, vix=15)
+    assert not decision.proceed, "Slow drawdown -9% from 90-day peak must HALT"
+    assert "drawdown" in decision.reason.lower()
+    assert "180" in decision.reason  # confirms longer window is reported
+
+
+def test_position_safety_margin_rejects_excessive_target(monkeypatch):
+    """v3.27 safety margin: variant requesting 35% per name (above the 30% cap)
+    should be REFUSED rather than silently clipped."""
+    monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: [])
+    # 0.35 > MAX_POSITION_PCT (0.30) — must REFUSE
+    targets = {"AAPL": 0.35, "MSFT": 0.10}
+    decision = check_account_risk(equity=100_000, targets=targets, vix=10)
+    assert not decision.proceed
+    assert "MAX_POSITION_PCT" in decision.reason or "position" in decision.reason.lower()
+
+
+def test_position_near_cap_warns(monkeypatch):
+    """v3.27: targets near the cap (within safety margin) should WARN but proceed."""
+    monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: [])
+    # 0.28 is within MAX_POSITION_SAFETY_MARGIN (0.03) of 0.30 — warn but proceed
+    targets = {"AAPL": 0.28, "MSFT": 0.10}
+    decision = check_account_risk(equity=100_000, targets=targets, vix=10)
+    assert decision.proceed
+    assert any("cap" in w.lower() for w in decision.warnings)
