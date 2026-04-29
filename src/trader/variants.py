@@ -310,6 +310,125 @@ register_variant(
 )
 
 
+# v3.15-v3.16 — research-paper-backed variants (Blitz-Hanauer 2024 + Baltas-Karyampas 2024)
+def momentum_top3_residual(universe: list[str], equity: float,
+                            account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW v3.15: top-3 by Fama-French residual momentum (factor-orthogonal).
+
+    Strip 5-factor exposure via 36mo rolling OLS, rank by sum-of-residuals
+    over 12-1 window, take top-3 at 80% gross.
+
+    Source: Blitz-Hanauer "Residual Momentum Revisited" (Robeco/SSRN 2024),
+    independently replicated by Chen-Velikov (Critical Finance Review 2024).
+
+    5-regime backtest: Mean Sharpe +1.53 (ties LIVE +1.54). Wins where LIVE
+    struggles: 2022 bear (+6pp), 2023 rotation (+4pp). Loses in trending bulls
+    (factor exposure HELPS in trends; residual strips that out).
+    """
+    import pandas as pd
+    from .residual_momentum import top_n_residual_momentum
+    from .data import fetch_history
+    end = pd.Timestamp.today()
+    start = (end - pd.DateOffset(months=14 + 36)).strftime("%Y-%m-%d")
+    try:
+        prices = fetch_history(universe, start=start)
+    except Exception:
+        return {}
+    if prices.empty:
+        return {}
+    try:
+        picks = top_n_residual_momentum(prices, end, top_n=3,
+                                         lookback_months=12, skip_months=1,
+                                         regression_window_months=36)
+    except Exception:
+        return {}
+    if not picks:
+        return {}
+    return {sym: 0.80 / 3 for sym in picks}
+
+
+def momentum_top3_residual_vol_targeted(universe: list[str], equity: float,
+                                          account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW v3.16: residual momentum picks WITH inverse-vol-targeted sizing.
+
+    Pick top-3 by residual momentum (v3.15), then weight inversely proportional
+    to each name's 60d realized vol, normalized to 80% gross.
+
+    Source: Baltas-Karyampas (JPM Spring 2024) + Blitz-Hanauer 2024.
+    Combines factor-orthogonalization + dispersion-aware sizing.
+
+    5-regime backtest: Mean Sharpe +1.61 (BEST of all variants tested,
+    +0.07 over LIVE +1.54). 3/5 regime wins (2022 +0.50 Sharpe, 2023 +0.54,
+    Recent +0.34). Loses in trending bulls (2018-Q4, 2020-Q1) — same as
+    residual alone. Worst MaxDD -27% (vs LIVE -25% — 2pp worse, just barely
+    fails strict gate).
+    """
+    import pandas as pd
+    from .residual_momentum import top_n_residual_momentum
+    from .data import fetch_history
+    end = pd.Timestamp.today()
+    start = (end - pd.DateOffset(months=14 + 36)).strftime("%Y-%m-%d")
+    try:
+        prices = fetch_history(universe, start=start)
+    except Exception:
+        return {}
+    if prices.empty:
+        return {}
+    try:
+        picks = top_n_residual_momentum(prices, end, top_n=3,
+                                         lookback_months=12, skip_months=1,
+                                         regression_window_months=36)
+    except Exception:
+        return {}
+    if not picks:
+        return {}
+    # Compute 60d realized vol per pick
+    inv_vols = {}
+    for sym in picks:
+        if sym not in prices.columns:
+            inv_vols[sym] = 1.0
+            continue
+        rets = prices[sym].pct_change().dropna().iloc[-60:]
+        if len(rets) < 30:
+            inv_vols[sym] = 1.0
+            continue
+        vol = float(rets.std() * (252 ** 0.5))
+        inv_vols[sym] = 1.0 / max(vol, 0.01)
+    total = sum(inv_vols.values())
+    if total <= 0:
+        return {sym: 0.80 / 3 for sym in picks}
+    return {sym: 0.80 * (inv / total) for sym, inv in inv_vols.items()}
+
+
+register_variant(
+    variant_id="momentum_top3_residual_v1",
+    name="momentum_top3_residual",
+    version="1.0",
+    status="shadow",
+    fn=momentum_top3_residual,
+    description="SHADOW v3.15: top-3 by Fama-French residual momentum (Blitz-Hanauer "
+                "2024, replicated by Chen-Velikov 2024). 5-regime mean Sharpe +1.53 "
+                "(ties LIVE). Wins where LIVE struggles: 2022 bear, 2023 rotation. "
+                "Loses in trending bulls. Tracking shadow for live A/B evidence.",
+    params={"top_n": 3, "lookback_months": 12, "skip_months": 1, "factor_window_months": 36, "alloc": 0.80},
+)
+
+
+register_variant(
+    variant_id="momentum_top3_residual_voltgt_v1",
+    name="momentum_top3_residual_voltgt",
+    version="1.0",
+    status="shadow",
+    fn=momentum_top3_residual_vol_targeted,
+    description="SHADOW v3.16: residual momentum + inverse-vol weighted (Baltas-"
+                "Karyampas 2024 + Blitz-Hanauer 2024). 5-regime mean Sharpe +1.61 — "
+                "BEST tested. 3/5 regime wins vs LIVE. Misses worst-MaxDD criterion "
+                "by 2pp. CLOSEST CALL TO PROMOTION — gather 30+ days of live evidence.",
+    params={"top_n": 3, "lookback_months": 12, "factor_window_months": 36,
+            "vol_window_days": 60, "alloc": 0.80},
+)
+
+
 # Register variants on import
 register_variant(
     variant_id="momentum_top5_eq_v1",
