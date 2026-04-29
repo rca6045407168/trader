@@ -121,6 +121,7 @@ from trader.vol_signals import (
     fetch_vol_term_structure, vix_term_backwardation,
     vix_3m_inversion, skew_extreme,
 )
+from trader.universe_pit import sp500_membership_at
 
 
 REGIMES = [
@@ -158,6 +159,77 @@ def _cached_picks_for_month(year, month, top_n, lookback_months, skip_months):
 
 def _momentum_picks_as_of(as_of, top_n=5, lookback_months=12, skip_months=1):
     return list(_cached_picks_for_month(as_of.year, as_of.month, top_n, lookback_months, skip_months))
+
+
+@lru_cache(maxsize=4096)
+def _cached_picks_pit(year, month, top_n, lookback_months, skip_months, universe_size):
+    """Same as _cached_picks_for_month but uses point-in-time S&P 500 membership.
+
+    For each rebalance date, fetch S&P 500 membership AS-OF that date, take the
+    top-N most liquid names from that universe (by recent price-times-volume proxy),
+    then rank them by trailing 12-month momentum.
+
+    This removes survivorship bias: we only see stocks that were actually in the
+    S&P 500 at that historical moment, not just the ones that survived to today.
+    """
+    as_of = pd.Timestamp(year=year, month=month, day=1) - pd.Timedelta(days=1)
+    while as_of.weekday() >= 5:
+        as_of -= pd.Timedelta(days=1)
+
+    members = sp500_membership_at(as_of.strftime("%Y-%m-%d"))
+    if not members:
+        return tuple()
+
+    L = lookback_months * 21
+    S = skip_months * 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+
+    # Restrict to a manageable subset of S&P 500 — sample ~150 names by stable
+    # alphabetical chunks to keep the price fetch tractable. The momentum signal
+    # naturally filters down to top-N anyway.
+    sample = list(members)
+    if len(sample) > universe_size:
+        # Take every Nth name for breadth across sectors (alphabetical = roughly
+        # uniform random for our purposes since SP500 isn't sector-sorted)
+        step = max(1, len(sample) // universe_size)
+        sample = sample[::step][:universe_size]
+
+    try:
+        prices = fetch_history(sample,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return tuple()
+    if prices.empty or len(prices) < L + S:
+        return tuple()
+    end_idx = -1 - S if S > 0 else -1
+    start_idx = -(L + S) - 1
+    rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
+    return tuple(rets.nlargest(top_n).index.tolist())
+
+
+def _momentum_picks_pit(as_of, top_n=3, lookback_months=12, skip_months=1,
+                        universe_size=150):
+    """Point-in-time version: pulls historical S&P 500 membership, samples
+    a manageable subset (default 150 names), ranks by 12mo momentum."""
+    return list(_cached_picks_pit(as_of.year, as_of.month, top_n,
+                                   lookback_months, skip_months, universe_size))
+
+
+def variant_top3_eq_80_pit(as_of):
+    """v3.8: same as LIVE (top-3 at 80%) but uses point-in-time S&P 500 universe.
+    The honesty test: does our edge survive when we can't peek at which stocks
+    will succeed in the future?"""
+    p = _momentum_picks_pit(as_of, top_n=3)
+    return {x: 0.80 / 3 for x in p} if p else {}
+
+
+def variant_top3_eq_80_pit_50(as_of):
+    """v3.8: PIT universe but restricted to ~50 names (matches DEFAULT_LIQUID_50
+    sample size). Tests whether the smaller universe size matters or if it's
+    purely the survivorship bias that's responsible for any delta."""
+    p = _momentum_picks_pit(as_of, top_n=3, universe_size=50)
+    return {x: 0.80 / 3 for x in p} if p else {}
 
 
 def variant_top5_eq_40(as_of):  # current LIVE: top-5, 40% allocation
@@ -656,6 +728,8 @@ VARIANTS = {
     "top3_macro_contrarian (v3.7)": variant_top3_macro_contrarian,
     "top3_credit_contrarian (v3.7)": variant_top3_credit_contrarian,
     "top3_vix_contrarian (v3.7)": variant_top3_vix_contrarian,
+    "top3_eq_80_PIT (v3.8 honesty)": variant_top3_eq_80_pit,
+    "top3_eq_80_PIT_50 (v3.8 small)": variant_top3_eq_80_pit_50,
 }
 
 # Daily-decision variants — see DAILY_DECISION_VARIANTS list above
@@ -675,7 +749,12 @@ DAILY_DECISION_VARIANTS = {
 }
 
 
-def replay_window(variant_name, fn, start, end):
+def replay_window(variant_name, fn, start, end, cost_bps=0.0):
+    """Replay a variant across a window. cost_bps applies per-trade slippage
+    + half-spread (one-way). 5bps is realistic for liquid US stocks via Alpaca:
+    ~1bp Alpaca commission (free), ~2bp half-spread, ~2bp slippage on aggressive
+    rebalance. 0bps gives the optimistic best-case (current default for backwards
+    compat with v3.7 and earlier results)."""
     # Set the macro/vol cache window so the v3.7 overlay variants can compute signals
     _CURRENT_WINDOW["start"] = start
     _CURRENT_WINDOW["end"] = end
@@ -732,6 +811,17 @@ def replay_window(variant_name, fn, start, end):
             if sym in weights.columns:
                 weights.iloc[ei:xi, weights.columns.get_loc(sym)] = w
     pr = (weights.shift(1) * daily_rets).sum(axis=1).fillna(0)
+
+    # v3.9: subtract transaction costs on rebalance days (when weights change).
+    # cost = sum(|delta_weight|) * cost_bps / 10000 — applied on the rebalance day.
+    if cost_bps > 0:
+        weight_diffs = weights.diff().abs().sum(axis=1).fillna(0)
+        # First row has 0 → first decision day weight_diffs equals sum of initial weights.
+        # That mirrors a real first-buy cost. Convert bps to decimal: 5 bps = 0.0005.
+        cost_decimal = cost_bps / 10_000.0
+        daily_costs = weight_diffs * cost_decimal
+        pr = pr - daily_costs
+
     pr = pr[pr.index >= start]
     if len(pr) < 5:
         return None
@@ -751,8 +841,11 @@ def replay_window(variant_name, fn, start, end):
 
 
 def main():
+    import os
+    cost_bps = float(os.getenv("STRESS_COST_BPS", "0"))
+    label = f" (costs={cost_bps}bps/trade)" if cost_bps > 0 else " (NO costs)"
     print("=" * 110)
-    print("REGIME STRESS TEST — variants across 5 historical windows")
+    print(f"REGIME STRESS TEST — variants across 5 historical windows{label}")
     print("=" * 110)
 
     # results[variant_name][regime_name] = stats
@@ -762,7 +855,7 @@ def main():
         print(f"\n>>> {regime_name}: {start.date()} to {end.date()}")
         for v_name, fn in VARIANTS.items():
             try:
-                r = replay_window(v_name, fn, start, end)
+                r = replay_window(v_name, fn, start, end, cost_bps=cost_bps)
                 if r:
                     results[v_name][regime_name] = r
                     print(f"  {v_name:35s}  total {r['total_pct']*100:>+7.2f}%  CAGR {r['cagr']*100:>+7.1f}%  "

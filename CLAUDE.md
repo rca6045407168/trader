@@ -11,6 +11,14 @@ backtest evidence. Don't promote a variant without 5-regime stress-test wins.
 Don't accept a "win in one regime" — survivorship-bias yourself by demanding
 robustness across 2018-Q4 / 2020-Q1 / 2022 / 2023 / recent.
 
+**Step back every 3-4 versions** and audit the system holistically. Don't just
+ship more variants — periodically ask: what's been tested, what hasn't, what
+hidden methodology bugs might be inflating our backtest numbers, what gaps
+exist between paper-trading and live-readiness? List 5-10 candidate
+modifications, prioritize by expected_value × probability × cost. Be willing
+to invalidate prior conclusions with better methodology (e.g., point-in-time
+universe could revise the +1.48 Sharpe down to OOS-honest +0.7).
+
 When introducing new components (signals, sleeves, allocators):
 1. Form the hypothesis explicitly (1-line: what edge, why does it persist)
 2. Backtest in `scripts/regime_stress_test.py` across all 5 regimes
