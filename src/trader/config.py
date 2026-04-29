@@ -27,5 +27,11 @@ LOOKBACK_MONTHS = int(os.getenv("LOOKBACK_MONTHS", "12"))
 USE_REGIME_FILTER = os.getenv("USE_REGIME_FILTER", "false").lower() == "true"
 USE_DEBATE = os.getenv("USE_DEBATE", "true").lower() == "true"
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
+# v3.28: production universe selection.
+#   "liquid_50" — hand-picked top-50 mega-caps (default, matches v3.x backtest survivor universe)
+#   "sp500"     — full current S&P 500 (~500 names; PIT-aligned with v3.8+ honest baseline)
+# Flip to "sp500" to align production with the PIT-honest baseline (+0.96 Sharpe).
+# Test the comparison via: python scripts/compare_live_universes.py
+LIVE_UNIVERSE = os.getenv("LIVE_UNIVERSE", "liquid_50").lower()
 CRITIC_MODEL = os.getenv("CRITIC_MODEL", "claude-sonnet-4-6")
 POSTMORTEM_MODEL = os.getenv("POSTMORTEM_MODEL", "claude-opus-4-7")

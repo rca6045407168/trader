@@ -515,6 +515,52 @@ register_variant(
 )
 
 
+# v3.29 — Diversified portfolio composition (only candidate that PASSES PIT validation)
+def momentum_top15_mom_weighted(universe: list[str], equity: float,
+                                 account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW v3.29: top-15 by 12-1 momentum, weighted PROPORTIONAL to momentum
+    score, total 80% gross. The diversification trade-off:
+      - Per-name max weight: ~10% (vs LIVE's 27%) — much lower idiosyncratic risk
+      - Sharpe roughly EQUAL to LIVE on PIT: +0.95 (vs PIT baseline +0.98)
+      - Slightly better worst-DD on PIT: -31% (vs -33%)
+      - Lower CAGR: -3pp (PIT: 16% vs 19%)
+
+    The first candidate we've tested that survives PIT validation (most prior
+    shadows lost their edge on honest universe). Worth tracking as a behavioral
+    alternative for accounts where -33% drawdown and 27% single-name weight
+    are uncomfortable.
+    """
+    from .strategy import rank_momentum
+    candidates = rank_momentum(universe, top_n=15)
+    if not candidates or len(candidates) < 5:
+        return {}
+    scores = [(c.ticker, c.score) for c in candidates]
+    min_score = min(s for _, s in scores)
+    shifted = [(t, s - min_score + 0.01) for t, s in scores]
+    total = sum(s for _, s in shifted)
+    if total <= 0:
+        return {t: 0.80 / len(scores) for t, _ in scores}
+    return {t: 0.80 * (s / total) for t, s in shifted}
+
+
+register_variant(
+    variant_id="momentum_top15_mom_weighted_v1",
+    name="momentum_top15_mom_weighted",
+    version="1.0",
+    status="shadow",
+    fn=momentum_top15_mom_weighted,
+    description="SHADOW v3.29: top-15 momentum-weighted, 80% gross. The first "
+                "shadow to PASS PIT validation: PIT mean Sharpe +0.95 (vs LIVE "
+                "PIT +0.98). Trades 3pp CAGR for 2pp better worst-DD and "
+                "much lower per-name idiosyncratic risk (10% max vs LIVE's 27%). "
+                "Behavioral candidate for accounts uncomfortable with -33% DD or "
+                "27% concentration in a single name. Survivor mean Sharpe +1.62 "
+                "(+0.08 over LIVE) but PIT shows the edge collapses to ~even.",
+    params={"top_n": 15, "weighting": "momentum_proportional", "alloc": 0.80,
+            "pit_validated": True, "pit_sharpe": 0.95},
+)
+
+
 # Register variants on import
 register_variant(
     variant_id="momentum_top5_eq_v1",

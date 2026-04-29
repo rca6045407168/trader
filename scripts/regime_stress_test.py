@@ -1181,6 +1181,144 @@ def variant_top3_eq_100(as_of):  # 100% all in (no bottom-catch reservation)
 
 
 # ---------------------------------------------------------------------------
+# v3.29: Portfolio composition variants (more diversified)
+# ---------------------------------------------------------------------------
+# User question (2026-04-29): "do you think it is worthwhile to have a
+# portfolio composition in order to control for risk and return? ie. having
+# a portfolio of 30 stocks etc"
+#
+# Tests three axes of diversification beyond top-3:
+#   - top-15 equal-weight at 80%   (mid-diversified)
+#   - top-30 equal-weight at 80%   (highly diversified — closer to indexing)
+#   - top-15 momentum-WEIGHTED      (still concentrated but smoother)
+# Compare to current top-3 LIVE on Sharpe / CAGR / Worst-DD.
+#
+# Trade-off thesis: more names → lower per-name idiosyncratic risk → smaller
+# drawdowns + lower vol BUT also dilutes the momentum signal → lower CAGR.
+
+def variant_top15_eq_80(as_of):
+    """Top-15 by 12-1 momentum, equal-weight at 80% gross (~5.3% per name)."""
+    p = _momentum_picks_as_of(as_of, 15)
+    return {x: 0.80 / len(p) for x in p} if p else {}
+
+
+def variant_top30_eq_80(as_of):
+    """Top-30 by 12-1 momentum, equal-weight at 80% gross (~2.7% per name).
+    More concentration than SPY's 500 names but heavily diversified vs LIVE."""
+    p = _momentum_picks_as_of(as_of, 30)
+    return {x: 0.80 / len(p) for x in p} if p else {}
+
+
+def variant_top15_momentum_weighted(as_of):
+    """Top-15 by 12-1 momentum, weighted PROPORTIONAL to momentum score.
+    Top mom name gets ~10% weight, #15 gets ~1% — captures concentration
+    while still diversifying tail risk."""
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(DEFAULT_LIQUID_50,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty or len(prices) < L + S:
+        return {}
+    end_idx = -1 - S
+    start_idx = -(L + S) - 1
+    rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
+    top15 = rets.nlargest(15)
+    # Shift returns so all positive (in case of negative momentum), then weight by share
+    # of total positive returns
+    shifted = (top15 - top15.min() + 0.01)  # tiny epsilon to avoid 0
+    weights = shifted / shifted.sum()
+    return {sym: 0.80 * float(w) for sym, w in weights.items()}
+
+
+def variant_top30_momentum_weighted(as_of):
+    """Top-30 momentum-weighted. Even more diversified."""
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(DEFAULT_LIQUID_50,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty or len(prices) < L + S:
+        return {}
+    end_idx = -1 - S
+    start_idx = -(L + S) - 1
+    rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
+    top30 = rets.nlargest(30)
+    shifted = (top30 - top30.min() + 0.01)
+    weights = shifted / shifted.sum()
+    return {sym: 0.80 * float(w) for sym, w in weights.items()}
+
+
+def _composition_pit_picks(as_of, top_n, universe_size=300):
+    """Helper: PIT version of momentum picks with configurable universe size.
+    Larger universe (300) for top-15/top-30 since we need a deep pool."""
+    members = sp500_membership_at(as_of.strftime("%Y-%m-%d"))
+    if not members:
+        return None, None
+    sample = list(members)[::max(1, len(members) // universe_size)][:universe_size]
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(sample,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return None, None
+    if prices.empty or len(prices) < L + S:
+        return None, None
+    end_idx = -1 - S
+    start_idx = -(L + S) - 1
+    rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
+    return rets.nlargest(top_n), prices
+
+
+def variant_top15_eq_80_pit(as_of):
+    """v3.29 PIT: top-15 equal-weight on point-in-time S&P 500."""
+    rets, _ = _composition_pit_picks(as_of, 15)
+    if rets is None or rets.empty:
+        return {}
+    return {sym: 0.80 / len(rets) for sym in rets.index}
+
+
+def variant_top15_mom_weighted_pit(as_of):
+    """v3.29 PIT: top-15 momentum-weighted on point-in-time S&P 500.
+    The key honesty test: does the +1.62 survivor Sharpe survive PIT?"""
+    rets, _ = _composition_pit_picks(as_of, 15)
+    if rets is None or rets.empty:
+        return {}
+    shifted = (rets - rets.min() + 0.01)
+    weights = shifted / shifted.sum()
+    return {sym: 0.80 * float(w) for sym, w in weights.items()}
+
+
+def variant_top30_eq_80_pit(as_of):
+    """v3.29 PIT: top-30 equal-weight."""
+    rets, _ = _composition_pit_picks(as_of, 30)
+    if rets is None or rets.empty:
+        return {}
+    return {sym: 0.80 / len(rets) for sym in rets.index}
+
+
+def variant_top30_mom_weighted_pit(as_of):
+    """v3.29 PIT: top-30 momentum-weighted."""
+    rets, _ = _composition_pit_picks(as_of, 30)
+    if rets is None or rets.empty:
+        return {}
+    shifted = (rets - rets.min() + 0.01)
+    weights = shifted / shifted.sum()
+    return {sym: 0.80 * float(w) for sym, w in weights.items()}
+
+
+# ---------------------------------------------------------------------------
 # Lookback-horizon variants — addresses 2023 AI rally underperformance
 # ---------------------------------------------------------------------------
 # v3.3 finding: LIVE (12mo lookback) underperformed SPY by -3.4pp in 2023 because
