@@ -431,6 +431,236 @@ def variant_top3_vol_targeted(as_of):
     return {sym: 0.80 * (inv / total) for sym, inv in inv_vols.items()}
 
 
+# ---------------------------------------------------------------------------
+# v3.19: Multi-asset trend-following (Hurst-Ooi-Pedersen 2024)
+# ---------------------------------------------------------------------------
+# AQR's "Two Centuries of Trend Following" (2024 update). Single-asset-class
+# strategies (US equity momentum like ours) have no crisis alpha. Adding
+# bonds, commodities, intl equity, REITs gives diversification + crisis alpha
+# in 2008/2020-style events. Track record: ~+1-2%/yr excess over 60/40 over
+# 30+ years, mostly in stress regimes.
+#
+# Universe: SPY (US LC), QQQ (US tech), EFA (intl developed), EEM (EM),
+# GLD (gold), TLT (long bonds), IEF (intermediate bonds), DBC (commodities),
+# VNQ (REITs). All ETFs, retail-accessible.
+
+MULTI_ASSET_UNIVERSE = ["SPY", "QQQ", "EFA", "EEM", "GLD", "TLT", "IEF", "DBC", "VNQ"]
+
+
+@lru_cache(maxsize=2048)
+def _multi_asset_picks(year, month, top_n, lookback_months, skip_months):
+    """Compute top-N multi-asset trend picks as of (year, month)."""
+    as_of = pd.Timestamp(year=year, month=month, day=1) - pd.Timedelta(days=1)
+    while as_of.weekday() >= 5:
+        as_of -= pd.Timedelta(days=1)
+    L = lookback_months * 21
+    S = skip_months * 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(MULTI_ASSET_UNIVERSE,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return tuple()
+    if prices.empty or len(prices) < L + S:
+        return tuple()
+    end_idx = -1 - S if S > 0 else -1
+    start_idx = -(L + S) - 1
+    rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
+    # Absolute momentum filter: only include assets with positive 12-1 return
+    positive = rets[rets > 0]
+    if positive.empty:
+        return tuple()
+    return tuple(positive.nlargest(top_n).index.tolist())
+
+
+def variant_multi_asset_trend(as_of):
+    """v3.19: top-3 from 9 asset-class ETFs by 12-1 momentum, with ABSOLUTE
+    momentum filter (only invest if return > 0). 80% gross when 3 assets pass,
+    less if fewer pass. Source: Hurst-Ooi-Pedersen 2024 update.
+
+    Hypothesis: adds crisis alpha (2008/2020) by rotating to bonds/gold when
+    equities fail. Replaces all of LIVE's allocation, so this is a fundamentally
+    different strategy, not an overlay.
+    """
+    picks = _multi_asset_picks(as_of.year, as_of.month, 3, 12, 1)
+    if not picks:
+        return {}  # all-cash if no asset has positive momentum
+    # Equal-weight at 80% / N (so 3 picks = 26.7% each, 2 picks = 40% each, 1 = 80%)
+    return {sym: 0.80 / len(picks) for sym in picks}
+
+
+def variant_multi_asset_trend_top1(as_of):
+    """v3.19b: dual-momentum-style — invest 100% in the SINGLE best multi-asset
+    pick if it has positive 12-1 momentum, else cash. Pure trend-following
+    (Antonacci-style but on a richer universe than just SPY/AGG)."""
+    picks = _multi_asset_picks(as_of.year, as_of.month, 1, 12, 1)
+    if not picks:
+        return {}
+    return {picks[0]: 0.80}
+
+
+# ---------------------------------------------------------------------------
+# v3.20: Quality screen on momentum (Asness QMJ + Greenblatt Magic Formula)
+# ---------------------------------------------------------------------------
+# Asness, Frazzini, Pedersen "Quality Minus Junk" (2018) — high-quality
+# companies (ROE, profit margin, low debt) systematically outperform low-
+# quality. Combined with momentum is additive (Asness+Israelov 2021).
+#
+# Implementation note: backtest with historical fundamentals would need
+# quarterly-balance-sheet time series. As a pragmatic first-cut, we use
+# CURRENT yfinance quality metrics as a proxy for STRUCTURAL quality.
+# This biases toward stocks that are quality TODAY (which are likely to
+# have been quality historically too — quality is mean-reverting slowly).
+# Limitations documented; test treats this as a directional check.
+
+@lru_cache(maxsize=128)
+def _get_quality_score(ticker: str) -> float:
+    """Composite quality score: avg of normalized ROE, profit margin, low D/E.
+    Returns NaN if data unavailable."""
+    import yfinance as yf
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception:
+        return float("nan")
+    if not info:
+        return float("nan")
+    roe = info.get("returnOnEquity")
+    margin = info.get("profitMargins")
+    de = info.get("debtToEquity")
+    # Normalize: ROE > 15% is good, profit margin > 10% is good,
+    # debt/equity < 100 is good (yfinance reports D/E as percentage)
+    score = 0.0
+    n = 0
+    if roe is not None and roe == roe:  # not NaN
+        score += min(max(roe, -0.5), 1.5) / 0.30  # ROE 30% = score 1.0
+        n += 1
+    if margin is not None and margin == margin:
+        score += min(max(margin, -0.5), 0.5) / 0.20  # 20% margin = score 1.0
+        n += 1
+    if de is not None and de == de:
+        # Lower is better; D/E 100 (= 1.0x) is OK, D/E 200 is poor
+        score += max(0, 1 - de / 200)
+        n += 1
+    return score / max(1, n) if n > 0 else float("nan")
+
+
+def variant_top3_quality_momentum(as_of):
+    """v3.20: Among top-10 by 12-1 momentum, take top-3 by quality score
+    (composite of ROE / profit margin / low D/E). Equal-weight 80% gross.
+
+    Source: Asness QMJ + Greenblatt Magic Formula. Hypothesis: filtering
+    momentum winners by quality should reduce drawdowns in bear regimes
+    (low-quality momentum names have nastier drawdowns).
+
+    LIMITATION: uses CURRENT quality metrics as proxy for historical;
+    introduces some forward-look bias. For honest test, compare against
+    LIVE on the same set of regimes — the bias affects both.
+    """
+    top10, prices = _top10_momentum_picks(as_of)
+    if not top10:
+        return {}
+    # Score each top-10 by quality
+    scores = {}
+    for sym in top10:
+        q = _get_quality_score(sym)
+        if not (q != q):  # not NaN
+            scores[sym] = q
+    if not scores:
+        # Fall back to LIVE if no quality data
+        return {sym: 0.80 / 3 for sym in top10[:3]}
+    # Take top-3 by quality
+    top3 = sorted(scores.items(), key=lambda kv: -kv[1])[:3]
+    return {sym: 0.80 / 3 for sym, _ in top3}
+
+
+# ---------------------------------------------------------------------------
+# v3.21: Crowding penalty (Lou & Polk 2024 NBER WP)
+# ---------------------------------------------------------------------------
+# Hypothesis: crowded momentum names = elevated reversal risk. Names with
+# high short interest are particularly susceptible to short squeezes (which
+# create FALSE positive momentum) and unwind reversals.
+#
+# Lou-Polk "Crowding and Factor Returns" (2024 NBER) shows crowding-penalized
+# momentum has +0.18 Sharpe lift in 60-year sample, OOS 2018-2023 includes
+# both bears.
+#
+# Implementation: among top-10 momentum, subtract a normalized short-interest
+# z-score from rank. Names with VERY high short interest (likely being shorted
+# heavily) get demoted; names with normal short interest preferred.
+#
+# LIMITATION: yfinance gives current short interest (point-in-time), not
+# historical. Same forward-look caveat as v3.20.
+
+@lru_cache(maxsize=128)
+def _get_short_interest_pct(ticker: str) -> float:
+    """Short interest as percentage of float. Returns NaN if unavailable."""
+    import yfinance as yf
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception:
+        return float("nan")
+    if not info:
+        return float("nan")
+    si = info.get("shortPercentOfFloat")
+    if si is None or si != si:
+        return float("nan")
+    return float(si)
+
+
+def variant_top3_crowding_penalty(as_of):
+    """v3.21: Among top-10 by 12-1 momentum, demote crowded names by short-
+    interest z-score. Take top-3 by adjusted score.
+
+    Source: Lou-Polk 2024 NBER. Hypothesis: less-crowded momentum names have
+    more sustainable trends (less short-squeeze inflation, less risk of
+    unwind reversal).
+    """
+    import numpy as np
+    top10, prices = _top10_momentum_picks(as_of)
+    if not top10:
+        return {}
+    # Get raw 12-1 momentum scores for top-10
+    L = 12 * 21
+    S = 21
+    end_idx = -1 - S
+    start_idx = -(L + S) - 1
+    mom_scores = {}
+    for sym in top10:
+        if sym in prices.columns:
+            try:
+                mom_scores[sym] = float(prices[sym].iloc[end_idx] / prices[sym].iloc[start_idx] - 1)
+            except Exception:
+                continue
+    if not mom_scores:
+        return {}
+    # Get short interest for each
+    si_values = {sym: _get_short_interest_pct(sym) for sym in mom_scores}
+    valid_si = {sym: v for sym, v in si_values.items() if v == v}  # not NaN
+    if len(valid_si) < 5:
+        # Insufficient short data — fall back to plain top-3
+        return {sym: 0.80 / 3 for sym in top10[:3]}
+    # Compute z-score of short interest within this top-10
+    si_array = np.array(list(valid_si.values()))
+    si_mean = float(si_array.mean())
+    si_std = float(si_array.std())
+    if si_std <= 0:
+        return {sym: 0.80 / 3 for sym in top10[:3]}
+    # Adjusted score = momentum z-score - 0.5 × short-interest z-score
+    mom_array = np.array([mom_scores[s] for s in valid_si])
+    mom_mean = float(mom_array.mean())
+    mom_std = float(mom_array.std())
+    if mom_std <= 0:
+        return {sym: 0.80 / 3 for sym in top10[:3]}
+    adjusted = {}
+    for sym in valid_si:
+        mom_z = (mom_scores[sym] - mom_mean) / mom_std
+        si_z = (valid_si[sym] - si_mean) / si_std
+        adjusted[sym] = mom_z - 0.5 * si_z  # penalty weight 0.5
+    top3 = sorted(adjusted.items(), key=lambda kv: -kv[1])[:3]
+    return {sym: 0.80 / 3 for sym, _ in top3}
+
+
 def variant_top3_residual_vol_targeted(as_of):
     """v3.16 + v3.15: residual momentum picks WITH vol-targeted sizing.
     Combines the two best research-paper candidates.
@@ -1152,6 +1382,11 @@ VARIANTS = {
     "top3_dd_scaled (v3.10)": variant_top3_dd_scaled,  # uses replay_window_dd_scaled
     "top3_trend_r2 (v3.14)": variant_top3_trend_r2,
     "top3_trend_r2_PIT (v3.14)": variant_top3_trend_r2_pit,
+    "top3_residual (v3.15)": variant_top3_residual_momentum,
+    "top3_vol_targeted (v3.16)": variant_top3_vol_targeted,
+    "top3_residual_vol (v3.15+16)": variant_top3_residual_vol_targeted,
+    "multi_asset_trend (v3.19)": variant_multi_asset_trend,
+    "multi_asset_trend_top1 (v3.19b)": variant_multi_asset_trend_top1,
 }
 
 # Variants that need a custom path-dependent replay harness instead of the

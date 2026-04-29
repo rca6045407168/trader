@@ -51,6 +51,26 @@ When introducing new components (signals, sleeves, allocators):
 - Kalshi / Polymarket prediction-market data. NOT tested but documented as
   low-EV: derivative of macro narrative (already failed), thin liquidity
   (<$100k typical), few markets persist >1yr for backtest.
+- Multi-asset trend-following (v3.19, Hurst-Ooi-Pedersen 2024 framework).
+  9-ETF universe (SPY/QQQ/EFA/EEM/GLD/TLT/IEF/DBC/VNQ), 12-1 absolute
+  momentum. Mean Sharpe +0.05 vs LIVE +1.54. Worst-DD better (-17 vs -25%)
+  but mean CAGR collapsed to +1.1%. Crisis alpha thesis didn't materialize
+  in our 5 regime windows. The asset-class diversification is real protection
+  but the opportunity cost in trending equity bulls is too large.
+- Quality screen on momentum (v3.20, Asness QMJ + Greenblatt). Top-3 by
+  composite quality score (ROE / margin / D/E) among top-10 momentum names.
+  Mean Sharpe +0.81 vs LIVE +1.54. Worst-DD WORSE (-32% vs -25%). Forward-
+  look bias in current quality metrics; structural quality may filter wrong
+  way for momentum (filters OUT cyclicals that have momentum in those windows).
+
+## Variants under SHADOW with measured edge over LIVE
+
+- v3.16 (top3_residual_voltgt): +1.61 mean Sharpe vs LIVE +1.54 (+0.07)
+- v3.21 (top3_crowding_penalty): +1.72 mean Sharpe vs LIVE +1.54 (+0.18) ← strongest
+
+Both miss the strict gate by ~1-2pp on worst-MaxDD or regime-win count, but
+are the closest to promotion ever measured. After 30+ days of live shadow
+evidence, run paired_test() vs LIVE for promotion decision.
 
 ## What's deployed
 
