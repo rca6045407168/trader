@@ -36,12 +36,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Restore journal from previous run
-        uses: actions/download-artifact@v4
-        with:
-          name: trader-journal
-          path: data/
-        continue-on-error: true  # first run won't have an artifact yet
+      - name: Restore journal from latest successful run
+        # actions/download-artifact@v4 cannot fetch from previous runs without
+        # explicit run-id, which is what broke journal persistence — every run
+        # was starting with a fresh db, wiping shadow_decisions / runs / snapshots.
+        # Use `gh run download` to grab the most recent successful run's journal.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data/
+          PREV_RUN=$(gh run list --workflow=trader-daily-run --branch=master --status=success --limit=1 --json databaseId --jq '.[0].databaseId')
+          if [ -n "$PREV_RUN" ] && [ "$PREV_RUN" != "null" ]; then
+            echo "Restoring journal from run $PREV_RUN"
+            gh run download "$PREV_RUN" -n trader-journal -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "no journal artifact at run $PREV_RUN; starting fresh"
+          else
+            echo "no prior successful run found; starting fresh"
+          fi
+          ls -la data/ || true
+        continue-on-error: true  # first run / missing artifact starts fresh
 
       - name: Run daily orchestrator
         env:

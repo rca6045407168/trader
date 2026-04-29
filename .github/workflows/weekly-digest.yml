@@ -30,11 +30,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Restore journal
-        uses: actions/download-artifact@v4
-        with:
-          name: trader-journal
-          path: data/
+      - name: Restore journal from latest successful daily-run
+        # Same fix as daily-run.yml: v4 can't pull from prior runs without
+        # explicit run-id. Grab the most recent successful daily-run journal.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data/
+          PREV_RUN=$(gh run list --workflow=trader-daily-run --branch=master --status=success --limit=1 --json databaseId --jq '.[0].databaseId')
+          if [ -n "$PREV_RUN" ] && [ "$PREV_RUN" != "null" ]; then
+            echo "Restoring journal from daily-run $PREV_RUN"
+            gh run download "$PREV_RUN" -n trader-journal -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "no journal artifact"
+          else
+            echo "no prior successful daily-run found"
+          fi
+          ls -la data/ || true
         continue-on-error: true
 
       - name: Generate weekly digest
