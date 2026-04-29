@@ -26,6 +26,12 @@ When introducing new components (signals, sleeves, allocators):
 - Anomaly overlay on portfolio (compounds whipsaw, killed 2022 -14pp)
 - top-1 / top-2 concentration (idiosyncratic noise > diversification benefit)
 - top-5/top-10 dilution (water down momentum picks)
+- Regime-aware meta-allocator with asset-class swap (200d MA + VIX → cash/SPY).
+  Failed gate: only 1.5/5 regimes won, mean Sharpe 1.04 vs LIVE 1.48. Defensive
+  cuts get caught at V-shape lows (2020-Q1 cost -34pp). Lesson: momentum
+  strategies have built-in regime adaptation via monthly rebalance; adding an
+  explicit regime layer creates whipsaw + double-counting. If trying again,
+  use position-sizing tweaks (cut allocation 80→50%) NOT asset-class swaps.
 
 ## What's deployed
 

@@ -29,14 +29,28 @@ KILLED candidates (do NOT promote):
     selloff is a worst-case pattern).
   - anomaly_only_spy: -1.01 Sharpe — calendar anomalies have no standalone alpha.
 
-System-design takeaway: scheduled-routine signals (anomaly scanner) stay
-ADVISORY-ONLY in trader-anomaly-scan. Don't bake them into portfolio weights.
-The empirical 2015-2025 edge already showed pre-FOMC and pre-holiday at half
-the published value; layering on top of momentum compounds whipsaw, not alpha.
+============================================================================
+v3.5 RESULTS (2026-04-28 run) — regime-aware meta-allocator KILLED
+============================================================================
+Tested: SPY 200d MA + VIX > 25 + 3mo/12mo top-pick overlap → route to
+TREND (12mo at 80%) / ROTATION (3/6/12 blend at 80%) / STRESS (50% SPY).
+Result: ranks #13 of 18 variants. Loses to LIVE on every aggregate metric
+AND only wins 1.5 of 5 regimes (gate required ≥3).
+
+Per-regime: -14pp 2018-Q4, -34pp 2020-Q1 (V-shape recovery; defensive cut
+caught us at the bottom), +2.6pp 2022, +5pp 2023, -33pp recent (tripped
+ROTATION when LIVE's pure 12mo signal was working).
+
+System-design takeaway: detection signals are real but reactive switching
+costs more than it saves. Momentum strategies already have built-in regime
+adaptation via monthly rebalance — adding an explicit regime layer creates
+double-counting + whipsaw. Don't try this again without ENTIRELY different
+actions per regime (e.g. position-sizing tweaks, NOT asset-class swaps).
 
 LIVE remains: momentum_top3_aggressive_v1 (top-3 at 80%). v3.2 shadow
 (top3_full_deploy at 100%) keeps running to gather live evidence on the
-upside-vs-DD tradeoff.
+upside-vs-DD tradeoff. v3.4 added top3_blend_3_6_12 + top3_lookback_6mo as
+shadows for live A/B evidence on lookback-horizon question.
 """
 import sys
 from pathlib import Path
@@ -52,6 +66,7 @@ from trader.data import fetch_history
 from trader.universe import DEFAULT_LIQUID_50
 from trader.sectors import get_sector
 from trader.anomalies import scan_anomalies, KNOWN_FOMC_DATES_2026, US_HOLIDAYS_2026, _third_friday_of_month
+from trader.regime import classify_regime, Regime
 
 
 REGIMES = [
@@ -202,6 +217,98 @@ def variant_top3_blend_6_12(as_of):
         for sym in picks:
             targets[sym] = targets.get(sym, 0) + per_pick
     return targets
+
+
+# ---------------------------------------------------------------------------
+# Regime-aware meta-allocator (v3.5)
+# ---------------------------------------------------------------------------
+# Picks the strategy based on detected regime instead of always using 12mo:
+#   TREND    → top-3 12mo at 80% (= current LIVE)
+#   ROTATION → top-3 multi-horizon blend at 80%
+#   STRESS   → 50% SPY (defensive cut)
+#
+# Test gate: must dominate LIVE in >= 3 of 5 regimes AND not have worse
+# worst-MaxDD. If it fails the gate, do not promote. This is the most
+# overfittable concept in the backlog — strict discipline required.
+
+_VIX_CACHE: dict = {}
+_SPY_CACHE: dict = {}
+
+
+def _get_vix_history(start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.Series:
+    """Fetch + cache ^VIX series for the given window."""
+    key = (start_date.date(), end_date.date())
+    if key in _VIX_CACHE:
+        return _VIX_CACHE[key]
+    try:
+        df = fetch_history(["^VIX"],
+                           start=start_date.strftime("%Y-%m-%d"),
+                           end=end_date.strftime("%Y-%m-%d"))
+        s = df["^VIX"].dropna() if "^VIX" in df.columns else pd.Series(dtype=float)
+    except Exception:
+        s = pd.Series(dtype=float)
+    _VIX_CACHE[key] = s
+    return s
+
+
+def _get_spy_history(start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.Series:
+    """Fetch + cache SPY series for the given window."""
+    key = (start_date.date(), end_date.date())
+    if key in _SPY_CACHE:
+        return _SPY_CACHE[key]
+    try:
+        df = fetch_history(["SPY"],
+                           start=start_date.strftime("%Y-%m-%d"),
+                           end=end_date.strftime("%Y-%m-%d"))
+        s = df["SPY"].dropna() if "SPY" in df.columns else pd.Series(dtype=float)
+    except Exception:
+        s = pd.Series(dtype=float)
+    _SPY_CACHE[key] = s
+    return s
+
+
+def variant_regime_aware(as_of):
+    """Meta-allocator: route to TREND / ROTATION / STRESS strategy by regime."""
+    # Fetch regime inputs — broad window so 200d MA always has enough history
+    spy_hist_start = as_of - pd.Timedelta(days=400)
+    spy = _get_spy_history(spy_hist_start, as_of)
+    vix = _get_vix_history(as_of - pd.Timedelta(days=10), as_of)
+    vix_now = float(vix.iloc[-1]) if len(vix) else None
+
+    picks_3 = _momentum_picks_as_of(as_of, 3, lookback_months=3)
+    picks_12 = _momentum_picks_as_of(as_of, 3, lookback_months=12)
+
+    if len(spy) == 0:
+        # No data — default to LIVE behavior
+        return {x: 0.80 / 3 for x in picks_12} if picks_12 else {}
+
+    sig = classify_regime(
+        spy_prices=spy,
+        asof=as_of,
+        vix=vix_now,
+        picks_3mo=picks_3,
+        picks_12mo=picks_12,
+    )
+
+    if sig.regime == Regime.STRESS:
+        # 50% SPY only; no individual-name exposure during stress
+        return {"SPY": 0.50}
+
+    if sig.regime == Regime.ROTATION:
+        # Multi-horizon blend at 80% gross
+        picks_6 = _momentum_picks_as_of(as_of, 3, lookback_months=6)
+        targets = {}
+        sleeve_w = 0.80 / 3
+        for picks in (picks_3, picks_6, picks_12):
+            if not picks:
+                continue
+            per_pick = sleeve_w / len(picks)
+            for sym in picks:
+                targets[sym] = targets.get(sym, 0) + per_pick
+        return targets
+
+    # TREND: 12mo at 80% (matches LIVE)
+    return {x: 0.80 / 3 for x in picks_12} if picks_12 else {}
 
 
 def variant_dual_momentum_gem(as_of):
@@ -377,7 +484,10 @@ VARIANTS = {
     "top3_lookback_6mo": variant_top3_lookback_6mo,
     "top3_blend_3_6_12 (multi-horizon)": variant_top3_blend_3_6_12,
     "top3_blend_6_12 (med + slow)": variant_top3_blend_6_12,
+    "regime_aware_meta (v3.5)": variant_regime_aware,
 }
+
+# Daily-decision variants — see DAILY_DECISION_VARIANTS list above
 
 # Variants that need daily decision evaluation (their weights change inside a month
 # due to calendar anomalies, regime detection, etc). Default = monthly only.
