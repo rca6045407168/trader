@@ -239,6 +239,77 @@ register_variant(
 )
 
 
+# v3.4 — multi-horizon momentum blend addressing 2023 AI rally underperformance
+def momentum_top3_blend_3_6_12(universe: list[str], equity: float,
+                                 account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW v3.4: 3 sleeves of top-3 momentum at 3mo / 6mo / 12mo lookbacks,
+    each at 26.7% (80% gross). Names selected by multiple horizons get overweighted
+    naturally; disagreement gets diversified.
+
+    5-regime stress test: Mean Sharpe +1.52 (vs LIVE +1.48), Mean CAGR +42.8%,
+    Worst MaxDD -31.1% (vs LIVE -25.2%). Edge in 2023 AI rally where pure 3mo
+    netted +12.4% vs LIVE's +0.2%, but overall NOT a clear win — better mean
+    Sharpe, worse drawdowns + median. Tracking shadow to see if live evidence
+    favors faster signal during rotation regimes.
+    """
+    p3 = rank_momentum(universe, lookback_months=3, top_n=3)
+    p6 = rank_momentum(universe, lookback_months=6, top_n=3)
+    p12 = rank_momentum(universe, lookback_months=12, top_n=3)
+    if not (p3 or p6 or p12):
+        return {}
+    targets: dict[str, float] = {}
+    sleeve_w = 0.80 / 3
+    for picks in (p3, p6, p12):
+        if not picks:
+            continue
+        per_pick = sleeve_w / len(picks)
+        for c in picks:
+            targets[c.ticker] = targets.get(c.ticker, 0) + per_pick
+    return targets
+
+
+def momentum_top3_lookback_6mo(universe: list[str], equity: float,
+                                 account_state: dict[str, Any], **kwargs) -> dict[str, float]:
+    """SHADOW v3.4: top-3 with 6mo lookback (faster than LIVE's 12mo).
+    5-regime: Mean Sharpe +1.42 (vs LIVE +1.48). Edge in 2023 AI rally.
+    Tracking to see if 6mo's faster signal is preferable in current regime.
+    """
+    picks = rank_momentum(universe, lookback_months=6, top_n=3)
+    if not picks:
+        return {}
+    weight = 0.80 / len(picks)
+    return {c.ticker: weight for c in picks}
+
+
+register_variant(
+    variant_id="momentum_top3_blend_3_6_12_v1",
+    name="momentum_top3_blend_3_6_12",
+    version="1.0",
+    status="shadow",
+    fn=momentum_top3_blend_3_6_12,
+    description="SHADOW v3.4: multi-horizon (3/6/12mo) top-3 momentum blend at 80% gross. "
+                "5-regime stress test: Mean Sharpe +1.52 (vs LIVE +1.48), "
+                "but Worst MaxDD -31% vs LIVE -25%. Slight Sharpe edge / worse drawdowns. "
+                "Hypothesis: blend handles regime shifts (2023 AI rally) better than pure 12mo. "
+                "Watching for 30+ days of live A/B evidence before promotion decision.",
+    params={"top_n": 3, "lookbacks": [3, 6, 12], "alloc": 0.80},
+)
+
+
+register_variant(
+    variant_id="momentum_top3_lookback_6mo_v1",
+    name="momentum_top3_lookback_6mo",
+    version="1.0",
+    status="shadow",
+    fn=momentum_top3_lookback_6mo,
+    description="SHADOW v3.4: top-3 momentum with 6mo lookback (vs LIVE's 12mo). "
+                "5-regime: Mean Sharpe +1.42, Mean CAGR +46.2%, Worst MaxDD -34.4%. "
+                "Hypothesis: faster signal catches AI-rally-style rotations earlier. "
+                "Note: deeper drawdowns vs LIVE (-9pp worst-MaxDD penalty).",
+    params={"top_n": 3, "lookback_months": 6, "alloc": 0.80},
+)
+
+
 # Register variants on import
 register_variant(
     variant_id="momentum_top5_eq_v1",

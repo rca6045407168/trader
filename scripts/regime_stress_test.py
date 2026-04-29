@@ -146,6 +146,64 @@ def variant_top3_eq_100(as_of):  # 100% all in (no bottom-catch reservation)
     return {x: 1.00 / len(p) for x in p} if p else {}
 
 
+# ---------------------------------------------------------------------------
+# Lookback-horizon variants — addresses 2023 AI rally underperformance
+# ---------------------------------------------------------------------------
+# v3.3 finding: LIVE (12mo lookback) underperformed SPY by -3.4pp in 2023 because
+# 12mo momentum was too slow to catch the NVDA/META rotation. Faster lookbacks
+# (3mo, 6mo) react quicker but historically had worse Sharpe due to noise.
+# Hypothesis: a horizon BLEND (e.g. equal weight across 3/6/12mo lookbacks) gets
+# better worst-regime behavior at modest cost to mean.
+
+def variant_top3_lookback_3mo(as_of):
+    """Fast momentum: 3-month lookback, top-3, 80% allocation."""
+    p = _momentum_picks_as_of(as_of, 3, lookback_months=3)
+    return {x: 0.80 / 3 for x in p} if p else {}
+
+
+def variant_top3_lookback_6mo(as_of):
+    """Medium momentum: 6-month lookback, top-3, 80% allocation."""
+    p = _momentum_picks_as_of(as_of, 3, lookback_months=6)
+    return {x: 0.80 / 3 for x in p} if p else {}
+
+
+def variant_top3_blend_3_6_12(as_of):
+    """Multi-horizon blend: each of 3/6/12mo gets a top-3 sleeve at 26.7%
+    (80% gross / 3 sleeves). When all three horizons agree, those names get
+    overweighted naturally. When they disagree, we get diversification."""
+    p3 = _momentum_picks_as_of(as_of, 3, lookback_months=3)
+    p6 = _momentum_picks_as_of(as_of, 3, lookback_months=6)
+    p12 = _momentum_picks_as_of(as_of, 3, lookback_months=12)
+    if not (p3 or p6 or p12):
+        return {}
+    targets = {}
+    sleeve_w = 0.80 / 3  # 26.7% per sleeve
+    for picks in (p3, p6, p12):
+        if not picks:
+            continue
+        per_pick = sleeve_w / len(picks)
+        for sym in picks:
+            targets[sym] = targets.get(sym, 0) + per_pick
+    return targets
+
+
+def variant_top3_blend_6_12(as_of):
+    """Two-horizon blend: 6mo + 12mo only. Drops the noisy 3mo signal."""
+    p6 = _momentum_picks_as_of(as_of, 3, lookback_months=6)
+    p12 = _momentum_picks_as_of(as_of, 3, lookback_months=12)
+    if not (p6 or p12):
+        return {}
+    targets = {}
+    sleeve_w = 0.80 / 2  # 40% per sleeve
+    for picks in (p6, p12):
+        if not picks:
+            continue
+        per_pick = sleeve_w / len(picks)
+        for sym in picks:
+            targets[sym] = targets.get(sym, 0) + per_pick
+    return targets
+
+
 def variant_dual_momentum_gem(as_of):
     """Antonacci-style Global Equities Momentum:
     - Compute trailing 12m return on SPY, ACWX (intl), AGG (bonds)
@@ -315,6 +373,10 @@ VARIANTS = {
     "combined_top3_dual (50/50)": variant_combined_momentum_dual,
     "top3_80 + anomaly overlay": variant_top3_80_anomaly_overlay,
     "anomaly_only_spy (sleeve test)": variant_anomaly_only_spy,
+    "top3_lookback_3mo": variant_top3_lookback_3mo,
+    "top3_lookback_6mo": variant_top3_lookback_6mo,
+    "top3_blend_3_6_12 (multi-horizon)": variant_top3_blend_3_6_12,
+    "top3_blend_6_12 (med + slow)": variant_top3_blend_6_12,
 }
 
 # Variants that need daily decision evaluation (their weights change inside a month
