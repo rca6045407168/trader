@@ -32,6 +32,17 @@ When introducing new components (signals, sleeves, allocators):
   strategies have built-in regime adaptation via monthly rebalance; adding an
   explicit regime layer creates whipsaw + double-counting. If trying again,
   use position-sizing tweaks (cut allocation 80→50%) NOT asset-class swaps.
+- Bond market + VIX term structure overlays (v3.7 — 7 variants tested both as
+  defensive cuts AND contrarian adds). HYG/LQD credit spread, T10Y2Y curve,
+  VIX9D/VIX/VIX3M backwardation, SKEW. ALL FAIL: 0.80-0.90 mean Sharpe vs
+  LIVE 1.54. Stress signals are LATE — fire at panic lows; cutting at lows =
+  selling bottoms; adding at lows = -38% worst DD when stress is mid-trend.
+  Lesson: macro signals are real leading indicators for risk management /
+  alerting, but useless as portfolio overlays on top of momentum. Modules
+  kept as libraries (src/trader/macro.py, src/trader/vol_signals.py).
+- Kalshi / Polymarket prediction-market data. NOT tested but documented as
+  low-EV: derivative of macro narrative (already failed), thin liquidity
+  (<$100k typical), few markets persist >1yr for backtest.
 
 ## What's deployed
 

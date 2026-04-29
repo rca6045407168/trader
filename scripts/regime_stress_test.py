@@ -47,6 +47,52 @@ adaptation via monthly rebalance — adding an explicit regime layer creates
 double-counting + whipsaw. Don't try this again without ENTIRELY different
 actions per regime (e.g. position-sizing tweaks, NOT asset-class swaps).
 
+============================================================================
+v3.7 RESULTS (2026-04-29 run) — bond/vol-market overlays ALL KILLED
+============================================================================
+Tested 7 macro overlays adding bond market + VIX term structure signals on
+top of LIVE momentum (per v3.5 lesson: position-sizing tweaks, not asset-
+class swaps). Two directions tested:
+
+DEFENSIVE (cut 80%→50% on signal):
+  - top3_credit_overlay (HYG/LQD widening >2σ in 20d)
+  - top3_curve_overlay (10y-2y inverted >60d AND steepening)
+  - top3_vix_term_overlay (VIX9D > VIX OR VIX > VIX3M)
+  - top3_macro_combined (≥2 of 4 signals)
+
+CONTRARIAN (add 80%→100% on signal — buy fear hypothesis):
+  - top3_macro_contrarian
+  - top3_credit_contrarian
+  - top3_vix_contrarian
+
+ALL 7 lose to LIVE on Mean Sharpe (0.80-0.90 vs LIVE 1.54), Mean CAGR
+(40-56% vs 74%), AND Worst MaxDD (-28 to -38% vs -25%). Defensive variants
+catch panic lows (-19pp 2018-Q4 selloff vs LIVE +15%). Contrarian variants
+amplify mid-trend losses (-38% worst DD).
+
+Worst-2018Q4 example: when stress signals fired in Q4 2018, ALL 4 defensive
+overlays cut allocation, then SPY rallied +13% in Q1 2019 — defensive
+variants stayed defensively positioned and missed the recovery. Same pattern
+in 2022.
+
+System-design takeaway: bond market signals + VIX term structure are real
+LEADING indicators for stress, but they're useless as portfolio overlays
+on top of momentum. Two reasons:
+  1. They're LATE — signals fire at panic LOWS, not before. Cutting at lows
+     = selling at the bottom. Adding at lows = good only IF lows hold.
+  2. Momentum already adapts via monthly rebalance: failing names rotate out,
+     new winners rotate in. Macro signals attempt the same adaptation but
+     with worse timing and double-count risk.
+
+These signals belong in PORTFOLIO RISK MANAGEMENT (alerting, position-cap
+adjustments), NOT in the LIVE allocator function. The macro.py + vol_signals.py
+modules are kept as libraries for future use (e.g., kill-switch hardening).
+
+Prediction markets (Kalshi / Polymarket) NOT tested. Reason: macro signals
+already failed, prediction markets are derivatives of the same macro narrative
+(Fed cuts, recession odds), have thin liquidity (<$100k typical), and few
+markets persist long enough for backtest. Low EV; not pursued.
+
 LIVE remains: momentum_top3_aggressive_v1 (top-3 at 80%). v3.2 shadow
 (top3_full_deploy at 100%) keeps running to gather live evidence on the
 upside-vs-DD tradeoff. v3.4 added top3_blend_3_6_12 + top3_lookback_6mo as
@@ -67,6 +113,14 @@ from trader.universe import DEFAULT_LIQUID_50
 from trader.sectors import get_sector
 from trader.anomalies import scan_anomalies, KNOWN_FOMC_DATES_2026, US_HOLIDAYS_2026, _third_friday_of_month
 from trader.regime import classify_regime, Regime
+from trader.macro import (
+    yield_curve_10y_2y, credit_spread_proxy,
+    credit_spread_widening, yield_curve_stress,
+)
+from trader.vol_signals import (
+    fetch_vol_term_structure, vix_term_backwardation,
+    vix_3m_inversion, skew_extreme,
+)
 
 
 REGIMES = [
@@ -311,6 +365,116 @@ def variant_regime_aware(as_of):
     return {x: 0.80 / 3 for x in picks_12} if picks_12 else {}
 
 
+# ---------------------------------------------------------------------------
+# v3.7 Macro + vol-market overlays (POSITION-SIZING tweaks per v3.5 lesson)
+# ---------------------------------------------------------------------------
+# Each overlay uses LIVE's top-3 momentum picks. When the overlay's signal
+# fires, GROSS allocation is cut from 80% to 50% (37.5% reduction). This is
+# position-sizing, NOT asset-class swap — momentum picks unchanged, exposure
+# scaled. Per v3.5 lesson, asset-class swaps fail at V-shape recoveries.
+
+# Cache the macro/vol series at the regime window level so we don't refetch
+# them per-day during the stress test
+_MACRO_CACHE: dict = {}
+
+
+def _get_macro_for_window(start_d: pd.Timestamp, end_d: pd.Timestamp) -> dict:
+    key = (start_d.date(), end_d.date())
+    if key in _MACRO_CACHE:
+        return _MACRO_CACHE[key]
+    pad_start = start_d - pd.Timedelta(days=400)
+    out = {
+        "curve": yield_curve_10y_2y(pad_start, end_d),
+        "credit": credit_spread_proxy(pad_start, end_d),
+        "term": fetch_vol_term_structure(pad_start, end_d),
+    }
+    _MACRO_CACHE[key] = out
+    return out
+
+
+def _slice_to_asof(s: pd.Series, asof: pd.Timestamp) -> pd.Series:
+    if s is None or s.empty:
+        return s
+    return s[s.index <= asof]
+
+
+# We need a shared "current window" pointer so each variant can fetch the right
+# slice during stress test. Set by the replay loop.
+_CURRENT_WINDOW: dict = {"start": None, "end": None}
+
+
+def _signals_at(asof: pd.Timestamp) -> dict:
+    """Compute (credit, curve, vix_back, vix_inv) signals as of `asof`."""
+    if _CURRENT_WINDOW["start"] is None:
+        return {"credit": False, "curve": False, "vix_back": False, "vix_inv": False}
+    macro = _get_macro_for_window(_CURRENT_WINDOW["start"], _CURRENT_WINDOW["end"])
+    credit_sig = credit_spread_widening(_slice_to_asof(macro["credit"], asof))
+    curve_sig = yield_curve_stress(_slice_to_asof(macro["curve"], asof))
+    vix_back = vix_term_backwardation(macro["term"], asof)
+    vix_inv = vix_3m_inversion(macro["term"], asof)
+    return {"credit": credit_sig, "curve": curve_sig,
+            "vix_back": vix_back, "vix_inv": vix_inv}
+
+
+def _top3_momentum_targets(as_of, alloc=0.80):
+    p = _momentum_picks_as_of(as_of, 3)
+    if not p:
+        return {}
+    return {x: alloc / 3 for x in p}
+
+
+def variant_top3_credit_overlay(as_of):
+    """Top-3 at 80% normally; cut to 50% when HYG/LQD ratio drops >2σ in 20d
+    (HY credit spreads widening = risk-off signal)."""
+    sig = _signals_at(as_of)
+    return _top3_momentum_targets(as_of, alloc=0.50 if sig["credit"] else 0.80)
+
+
+def variant_top3_curve_overlay(as_of):
+    """Top-3 at 80% normally; cut to 50% when 10y-2y curve has been inverted
+    >60 days AND is currently steepening (recession-imminent signal)."""
+    sig = _signals_at(as_of)
+    return _top3_momentum_targets(as_of, alloc=0.50 if sig["curve"] else 0.80)
+
+
+def variant_top3_vix_term_overlay(as_of):
+    """Top-3 at 80% normally; cut to 50% when VIX term structure inverted
+    (VIX9D > VIX OR VIX > VIX3M = acute stress)."""
+    sig = _signals_at(as_of)
+    stressed = sig["vix_back"] or sig["vix_inv"]
+    return _top3_momentum_targets(as_of, alloc=0.50 if stressed else 0.80)
+
+
+def variant_top3_macro_combined(as_of):
+    """Top-3 at 80% normally; cut to 50% when ≥2 of 4 signals fire
+    (credit, curve, vix_back, vix_inv). Multi-signal majority filter."""
+    sig = _signals_at(as_of)
+    n_active = sum([sig["credit"], sig["curve"], sig["vix_back"], sig["vix_inv"]])
+    return _top3_momentum_targets(as_of, alloc=0.50 if n_active >= 2 else 0.80)
+
+
+def variant_top3_macro_contrarian(as_of):
+    """CONTRARIAN: Top-3 at 80% normally; UP to 100% when ≥2 of 4 stress signals
+    fire. Hypothesis: stress signals are LATE — they fire near panic lows. Buying
+    fear (max aggression at peak panic) should beat reflexive defensive cuts."""
+    sig = _signals_at(as_of)
+    n_active = sum([sig["credit"], sig["curve"], sig["vix_back"], sig["vix_inv"]])
+    return _top3_momentum_targets(as_of, alloc=1.00 if n_active >= 2 else 0.80)
+
+
+def variant_top3_credit_contrarian(as_of):
+    """CONTRARIAN: Top-3 at 80% normally; UP to 100% when HY spreads widening signal."""
+    sig = _signals_at(as_of)
+    return _top3_momentum_targets(as_of, alloc=1.00 if sig["credit"] else 0.80)
+
+
+def variant_top3_vix_contrarian(as_of):
+    """CONTRARIAN: Top-3 at 80% normally; UP to 100% when VIX backwardation."""
+    sig = _signals_at(as_of)
+    stressed = sig["vix_back"] or sig["vix_inv"]
+    return _top3_momentum_targets(as_of, alloc=1.00 if stressed else 0.80)
+
+
 def variant_dual_momentum_gem(as_of):
     """Antonacci-style Global Equities Momentum:
     - Compute trailing 12m return on SPY, ACWX (intl), AGG (bonds)
@@ -485,6 +649,13 @@ VARIANTS = {
     "top3_blend_3_6_12 (multi-horizon)": variant_top3_blend_3_6_12,
     "top3_blend_6_12 (med + slow)": variant_top3_blend_6_12,
     "regime_aware_meta (v3.5)": variant_regime_aware,
+    "top3_credit_overlay (v3.7)": variant_top3_credit_overlay,
+    "top3_curve_overlay (v3.7)": variant_top3_curve_overlay,
+    "top3_vix_term_overlay (v3.7)": variant_top3_vix_term_overlay,
+    "top3_macro_combined (v3.7)": variant_top3_macro_combined,
+    "top3_macro_contrarian (v3.7)": variant_top3_macro_contrarian,
+    "top3_credit_contrarian (v3.7)": variant_top3_credit_contrarian,
+    "top3_vix_contrarian (v3.7)": variant_top3_vix_contrarian,
 }
 
 # Daily-decision variants — see DAILY_DECISION_VARIANTS list above
@@ -494,10 +665,21 @@ VARIANTS = {
 DAILY_DECISION_VARIANTS = {
     "top3_80 + anomaly overlay",
     "anomaly_only_spy (sleeve test)",
+    "top3_credit_overlay (v3.7)",
+    "top3_curve_overlay (v3.7)",
+    "top3_vix_term_overlay (v3.7)",
+    "top3_macro_combined (v3.7)",
+    "top3_macro_contrarian (v3.7)",
+    "top3_credit_contrarian (v3.7)",
+    "top3_vix_contrarian (v3.7)",
 }
 
 
 def replay_window(variant_name, fn, start, end):
+    # Set the macro/vol cache window so the v3.7 overlay variants can compute signals
+    _CURRENT_WINDOW["start"] = start
+    _CURRENT_WINDOW["end"] = end
+
     bdays = pd.bdate_range(start, end)
     decisions = []
     daily_decisions = variant_name in DAILY_DECISION_VARIANTS
