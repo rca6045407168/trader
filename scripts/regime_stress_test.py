@@ -232,6 +232,169 @@ def variant_top3_eq_80_pit_50(as_of):
     return {x: 0.80 / 3 for x in p} if p else {}
 
 
+# ---------------------------------------------------------------------------
+# v3.10: drawdown-scaled position sizing
+# ---------------------------------------------------------------------------
+# Hypothesis: cut allocation as drawdown deepens, on a smooth glide path.
+# Unlike v3.5 / v3.7 (asset-class swaps based on stress signals), the trigger
+# here is unrealized P&L from peak — a SELF-REFERENTIAL signal that cannot be
+# late by definition.
+#
+# Glide path:
+#    0 to -5% from peak  → 80% gross (LIVE behavior)
+#    -5% to -10% from peak → 60% gross
+#    -10% to -15% from peak → 40% gross
+#    < -15% from peak → halt (0% gross)
+#
+# The rationale is behavioral, not probabilistic: if I lose 15%, I'd panic
+# and pull capital. Cutting size pre-emptively reduces the chance of hitting
+# the panic threshold.
+
+# Track each variant's running peak equity for drawdown calc within a regime
+_DD_PEAK: dict = {}
+
+
+def _equity_curve_to_dd(equity_series: pd.Series) -> pd.Series:
+    return equity_series / equity_series.cummax() - 1
+
+
+def _allocation_for_drawdown(dd: float) -> float:
+    """Returns fractional gross allocation for current drawdown."""
+    if dd >= -0.05:
+        return 0.80
+    if dd >= -0.10:
+        return 0.60
+    if dd >= -0.15:
+        return 0.40
+    return 0.0  # halt
+
+
+# We need a way to pass current drawdown into the variant. Track simulated
+# equity per-variant during replay; the `as_of` callback computes alloc
+# based on the running drawdown for that variant.
+
+_VARIANT_EQUITY_CURVE: dict = {}
+
+
+def _record_dd_state(variant_name, equity_curve):
+    """Called by replay_window after computing the equity curve. Used by
+    drawdown-scaled variants to read their own dd-from-peak."""
+    _VARIANT_EQUITY_CURVE[variant_name] = equity_curve
+
+
+def _current_dd_for(variant_name, as_of) -> float:
+    """Returns drawdown-from-peak for this variant up to as_of, or 0 if no data."""
+    eq = _VARIANT_EQUITY_CURVE.get(variant_name)
+    if eq is None or len(eq) == 0:
+        return 0.0
+    sliced = eq[eq.index <= as_of]
+    if len(sliced) == 0:
+        return 0.0
+    return float(sliced.iloc[-1] / sliced.cummax().iloc[-1] - 1)
+
+
+# Drawdown-scaled variants need a custom backtest path because their allocation
+# depends on the variant's own running equity curve. Implement with a separate
+# replay function that tracks equity day-by-day.
+
+def variant_top3_dd_scaled(as_of):
+    """Look up our own dd-from-peak and scale allocation accordingly.
+
+    This requires the replay harness to feed back equity history; see
+    replay_window_dd_scaled below for the integrated path.
+    """
+    # Default behavior — used by harness to fetch the 3 picks
+    p = _momentum_picks_as_of(as_of, 3)
+    return {x: 0.80 / 3 for x in p} if p else {}
+
+
+def replay_window_dd_scaled(start, end, cost_bps=0.0):
+    """Run drawdown-scaled top-3 momentum: rebalance monthly to top-3 picks,
+    but scale allocation by current drawdown. Day-by-day path-dependent
+    simulation since allocation depends on running equity."""
+    bdays = pd.bdate_range(start, end)
+
+    # Get all monthly picks once
+    monthly_picks = []
+    for d in bdays:
+        next_d = d + pd.Timedelta(days=1)
+        if next_d.month != d.month:
+            picks = _momentum_picks_as_of(d, 3)
+            if picks:
+                monthly_picks.append((d, picks))
+    if not monthly_picks:
+        return None
+
+    all_t = {"SPY"}
+    for _, picks in monthly_picks:
+        all_t.update(picks)
+    try:
+        prices = fetch_history(sorted(all_t),
+                              start=(start - pd.Timedelta(days=10)).strftime("%Y-%m-%d"),
+                              end=(end + pd.Timedelta(days=2)).strftime("%Y-%m-%d"))
+    except Exception:
+        return None
+    daily_rets = prices.pct_change().fillna(0)
+    daily_idx = prices.index
+
+    # Track equity day-by-day
+    equity = 100_000.0
+    peak = 100_000.0
+    eq_history = []
+    dates_history = []
+    current_picks = None
+    current_alloc = 0.80
+
+    for date in daily_idx:
+        if date < start:
+            continue
+        # On each rebalance day, update picks
+        for d, picks in monthly_picks:
+            if abs((date - d).days) <= 1 and date >= d:
+                current_picks = picks
+        # Update allocation DAILY based on current drawdown — not just on
+        # rebalance days. This is the key fix: dd can drop -10% mid-month and
+        # we react immediately, not 3 weeks later.
+        dd = (equity / peak) - 1
+        current_alloc = _allocation_for_drawdown(dd)
+        # Compute today's return: weighted avg of pick returns at current_alloc
+        if current_picks and current_alloc > 0:
+            per_pick = current_alloc / len(current_picks)
+            day_ret = sum(per_pick * float(daily_rets[p].loc[date])
+                          for p in current_picks if p in daily_rets.columns)
+            # Apply costs on rebalance days
+            if cost_bps > 0:
+                # Approximate: cost = current_alloc * cost_bps/10000 only on rebalance
+                # (full turnover assumption — conservative)
+                for d, _ in monthly_picks:
+                    if abs((date - d).days) <= 1 and date >= d:
+                        day_ret -= current_alloc * (cost_bps / 10000.0)
+                        break
+        else:
+            day_ret = 0.0
+        equity *= (1 + day_ret)
+        peak = max(peak, equity)
+        eq_history.append(equity)
+        dates_history.append(date)
+
+    if len(eq_history) < 5:
+        return None
+    eq_series = pd.Series(eq_history, index=dates_history)
+    pr = eq_series.pct_change().fillna(0)
+    sd = float(pr.std())
+    sharpe = (float(pr.mean()) * 252) / (sd * math.sqrt(252)) if sd > 0 else 0
+    n = len(pr)
+    cagr = (float(eq_series.iloc[-1]) / float(eq_series.iloc[0])) ** (252 / n) - 1
+    bench = daily_rets["SPY"][daily_rets["SPY"].index >= start].fillna(0)
+    bench_eq = (1 + bench).cumprod() * 100_000
+    bench_cagr = (float(bench_eq.iloc[-1]) / float(bench_eq.iloc[0])) ** (252 / n) - 1
+    max_dd = float((eq_series / eq_series.cummax() - 1).min())
+    return {"total_pct": float(eq_series.iloc[-1] / eq_series.iloc[0] - 1),
+            "cagr": cagr, "sharpe": sharpe, "max_dd": max_dd,
+            "spy_total": float(bench_eq.iloc[-1] / bench_eq.iloc[0] - 1),
+            "spy_cagr": bench_cagr, "n_days": n}
+
+
 def variant_top5_eq_40(as_of):  # current LIVE: top-5, 40% allocation
     p = _momentum_picks_as_of(as_of, 5)
     return {x: 0.40 / len(p) for x in p} if p else {}
@@ -730,7 +893,12 @@ VARIANTS = {
     "top3_vix_contrarian (v3.7)": variant_top3_vix_contrarian,
     "top3_eq_80_PIT (v3.8 honesty)": variant_top3_eq_80_pit,
     "top3_eq_80_PIT_50 (v3.8 small)": variant_top3_eq_80_pit_50,
+    "top3_dd_scaled (v3.10)": variant_top3_dd_scaled,  # uses replay_window_dd_scaled
 }
+
+# Variants that need a custom path-dependent replay harness instead of the
+# standard replay_window (their allocation at time t depends on equity at t-1).
+DD_DEPENDENT_VARIANTS = {"top3_dd_scaled (v3.10)"}
 
 # Daily-decision variants — see DAILY_DECISION_VARIANTS list above
 
@@ -855,7 +1023,10 @@ def main():
         print(f"\n>>> {regime_name}: {start.date()} to {end.date()}")
         for v_name, fn in VARIANTS.items():
             try:
-                r = replay_window(v_name, fn, start, end, cost_bps=cost_bps)
+                if v_name in DD_DEPENDENT_VARIANTS:
+                    r = replay_window_dd_scaled(start, end, cost_bps=cost_bps)
+                else:
+                    r = replay_window(v_name, fn, start, end, cost_bps=cost_bps)
                 if r:
                     results[v_name][regime_name] = r
                     print(f"  {v_name:35s}  total {r['total_pct']*100:>+7.2f}%  CAGR {r['cagr']*100:>+7.1f}%  "
