@@ -47,10 +47,22 @@ MAX_BOTTOMS_TO_DEBATE = 5
 
 
 def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], dict]:
-    """Return (target_weights_for_momentum, list_of_approved_bottoms_with_meta, sleeve_alloc)."""
+    """Return (target_weights_for_momentum, list_of_approved_bottoms_with_meta, sleeve_alloc).
+
+    v3.6: momentum targets are produced by the registered LIVE variant function so
+    the A/B variant registry IS the source of truth for production. Falls back to
+    rank_momentum(top_n=TOP_N) only if no LIVE variant is registered.
+
+    Before v3.6 the variant registry was decorative — main.py used TOP_N from
+    config independently, which silently drifted from the registered LIVE
+    variant's parameters (caught 2026-04-29: prod was running top-5 while
+    LIVE metadata claimed top-3 since v3.1).
+    """
     print(f"[{datetime.now():%H:%M:%S}] ranking momentum on {len(universe)} tickers...")
-    momentum = rank_momentum(universe, top_n=TOP_N)
-    print(f"  -> {len(momentum)} momentum picks: {[c.ticker for c in momentum]}")
+    # Call rank_momentum once to fill candidate metadata for journaling
+    momentum_full = rank_momentum(universe, top_n=20)
+    momentum = momentum_full[:TOP_N]  # default fallback shape
+    print(f"  -> {len(momentum)} momentum picks (default top-{TOP_N}): {[c.ticker for c in momentum]}")
 
     print(f"[{datetime.now():%H:%M:%S}] scanning for oversold bounces...")
     bottoms = find_bottoms(universe)
@@ -71,12 +83,56 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
         momentum_alloc, bottom_alloc = FALLBACK_MOMENTUM_ALLOC, FALLBACK_BOTTOM_ALLOC
 
     momentum_targets: dict[str, float] = {}
-    if momentum:
-        per = momentum_alloc / len(momentum)
-        for c in momentum:
-            momentum_targets[c.ticker] = momentum_targets.get(c.ticker, 0) + per
-            log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None,
-                         final=f"AUTO_BUY @ {per*100:.1f}%")
+
+    # v3.6: prefer the registered LIVE variant as source of truth.
+    try:
+        from . import variants  # noqa: F401  (registers variants on import)
+        from .ab import get_live
+        live = get_live()
+    except Exception as e:
+        print(f"  variant registry unavailable ({e}); falling back to TOP_N config")
+        live = None
+
+    if live is not None:
+        try:
+            live_targets = live.fn(universe=universe, equity=0.0, account_state={})
+            if live_targets:
+                # Live variant produces (ticker → weight) directly. Use that as
+                # ground truth. Journal each pick with metadata from rank_momentum.
+                cand_by_ticker = {c.ticker: c for c in momentum_full}
+                momentum_targets = dict(live_targets)
+                # Override momentum_alloc to whatever the variant decided —
+                # it already encodes its allocation policy.
+                momentum_alloc = sum(live_targets.values())
+                # Renormalize bottom_alloc to remaining gross capacity
+                bottom_alloc = max(0.0, 0.95 - momentum_alloc)
+                for ticker, weight in live_targets.items():
+                    c = cand_by_ticker.get(ticker)
+                    if c is not None:
+                        log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None,
+                                     final=f"LIVE_VARIANT_BUY @ {weight*100:.1f}% (variant={live.variant_id})")
+                    else:
+                        # Variant picked a name not in the top-20 — log without metadata
+                        log_decision(ticker, "BUY", "live_variant", 0.0,
+                                     f"selected by {live.variant_id}", None,
+                                     final=f"LIVE_VARIANT_BUY @ {weight*100:.1f}% (variant={live.variant_id})")
+                print(f"  -> LIVE variant '{live.variant_id}' chose {len(live_targets)} names: "
+                      f"{list(live_targets.keys())} totaling {momentum_alloc*100:.1f}%")
+            else:
+                print(f"  LIVE variant '{live.variant_id}' returned empty targets — using fallback")
+                live = None
+        except Exception as e:
+            print(f"  LIVE variant '{live.variant_id}' failed ({e}); falling back to TOP_N config")
+            live = None
+
+    if live is None or not momentum_targets:
+        # Fallback: legacy TOP_N path
+        if momentum:
+            per = momentum_alloc / len(momentum)
+            for c in momentum:
+                momentum_targets[c.ticker] = momentum_targets.get(c.ticker, 0) + per
+                log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None,
+                             final=f"AUTO_BUY @ {per*100:.1f}%")
 
     approved_bottoms: list[dict] = []
     for c in bottoms[:MAX_BOTTOMS_TO_DEBATE]:

@@ -22,7 +22,7 @@ ALPACA_PAPER = os.getenv("ALPACA_PAPER", "true").lower() == "true"
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 SLACK_WEBHOOK = os.getenv("SLACK_WEBHOOK", "")
 
-TOP_N = int(os.getenv("TOP_N", "5"))
+TOP_N = int(os.getenv("TOP_N", "3"))  # v3.6 fix — was 5; LIVE variant is top-3 at 80%
 LOOKBACK_MONTHS = int(os.getenv("LOOKBACK_MONTHS", "12"))
 USE_REGIME_FILTER = os.getenv("USE_REGIME_FILTER", "false").lower() == "true"
 USE_DEBATE = os.getenv("USE_DEBATE", "true").lower() == "true"
