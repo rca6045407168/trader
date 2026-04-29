@@ -407,10 +407,14 @@ register_variant(
     status="shadow",
     fn=momentum_top3_residual,
     description="SHADOW v3.15: top-3 by Fama-French residual momentum (Blitz-Hanauer "
-                "2024, replicated by Chen-Velikov 2024). 5-regime mean Sharpe +1.53 "
-                "(ties LIVE). Wins where LIVE struggles: 2022 bear, 2023 rotation. "
-                "Loses in trending bulls. Tracking shadow for live A/B evidence.",
-    params={"top_n": 3, "lookback_months": 12, "skip_months": 1, "factor_window_months": 36, "alloc": 0.80},
+                "2024). SURVIVOR backtest: mean Sharpe +1.53 (ties LIVE). "
+                "v3.25 PIT VALIDATION FAILED: PIT mean Sharpe +0.03 vs PIT "
+                "baseline +0.98 (-0.95 — catastrophic edge collapse). The "
+                "claimed survivor edge was 100% bias artifact. Kept as shadow "
+                "for live evidence but DO NOT promote based on backtest.",
+    params={"top_n": 3, "lookback_months": 12, "skip_months": 1,
+            "factor_window_months": 36, "alloc": 0.80,
+            "pit_validated": False, "pit_finding": "edge_collapses_to_zero_on_honest_universe"},
 )
 
 
@@ -420,12 +424,14 @@ register_variant(
     version="1.0",
     status="shadow",
     fn=momentum_top3_residual_vol_targeted,
-    description="SHADOW v3.16: residual momentum + inverse-vol weighted (Baltas-"
-                "Karyampas 2024 + Blitz-Hanauer 2024). 5-regime mean Sharpe +1.61. "
-                "3/5 regime wins vs LIVE. Misses worst-MaxDD by 2pp. Strong "
-                "candidate — gather 30+ days of live evidence.",
+    description="SHADOW v3.16: residual + inverse-vol weighted. SURVIVOR backtest: "
+                "mean Sharpe +1.61 (was 'best ever measured'). v3.25 PIT VALIDATION "
+                "CATASTROPHICALLY FAILED: PIT mean Sharpe -0.24 vs PIT baseline "
+                "+0.98 (-1.22 collapse — actually negative on honest universe). "
+                "Edge was 100% survivor bias. Kept as shadow but DO NOT promote.",
     params={"top_n": 3, "lookback_months": 12, "factor_window_months": 36,
-            "vol_window_days": 60, "alloc": 0.80},
+            "vol_window_days": 60, "alloc": 0.80,
+            "pit_validated": False, "pit_finding": "negative_sharpe_on_honest_universe"},
 )
 
 

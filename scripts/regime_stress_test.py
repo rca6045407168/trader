@@ -809,6 +809,102 @@ def variant_top3_crowding_penalty(as_of):
     return {sym: 0.80 / 3 for sym, _ in top3}
 
 
+# ---------------------------------------------------------------------------
+# v3.25: PIT version of residual + vol-targeted (final honesty test)
+# ---------------------------------------------------------------------------
+# v3.16 (residual + vol-targeted) showed +0.07 mean Sharpe over LIVE on the
+# survivor universe. v3.21 crowding showed +0.18 but FAILED PIT validation
+# (-0.38 vs PIT baseline). Now testing whether residual+vol survives the
+# same PIT honesty test.
+#
+# If yes → genuine edge worth tracking
+# If no → all shadow variants fail PIT validation, future iterations should
+#         focus on universe/execution/cost, not signal stacking
+
+@lru_cache(maxsize=2048)
+def _cached_residual_picks_pit(year, month, top_n, lookback_months,
+                                 skip_months, regression_months,
+                                 universe_size):
+    """PIT version of _cached_residual_picks. Uses point-in-time S&P 500
+    membership instead of DEFAULT_LIQUID_50."""
+    as_of = pd.Timestamp(year=year, month=month, day=1) - pd.Timedelta(days=1)
+    while as_of.weekday() >= 5:
+        as_of -= pd.Timedelta(days=1)
+    members = sp500_membership_at(as_of.strftime("%Y-%m-%d"))
+    if not members:
+        return tuple()
+    sample = list(members)[::max(1, len(members) // universe_size)][:universe_size]
+    L = lookback_months * 21
+    S = skip_months * 21
+    R = regression_months * 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + R + 21) * 1.6))
+    try:
+        prices = fetch_history(sample,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return tuple()
+    if prices.empty:
+        return tuple()
+    try:
+        ff5 = get_ff5_aligned()
+    except Exception:
+        return tuple()
+    common = prices.index.intersection(ff5.index)
+    if len(common) < L + S + R // 2:
+        # FF5 stale — fall back to raw 12-1
+        end_idx = -1 - S if S > 0 else -1
+        start_idx = -(L + S) - 1
+        rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
+        return tuple(rets.nlargest(top_n).index.tolist())
+    scores = residual_momentum_score(prices, ff5, as_of,
+                                      lookback_months=lookback_months,
+                                      skip_months=skip_months,
+                                      regression_window_months=regression_months)
+    return tuple(scores.head(top_n).index.tolist())
+
+
+def variant_top3_residual_pit(as_of):
+    """v3.25: residual momentum on PIT universe."""
+    picks = _cached_residual_picks_pit(as_of.year, as_of.month, 3, 12, 1, 36, 150)
+    if not picks:
+        return {}
+    return {sym: 0.80 / 3 for sym in picks}
+
+
+def variant_top3_residual_voltgt_pit(as_of):
+    """v3.25b: residual momentum + vol-targeting on PIT universe."""
+    picks = _cached_residual_picks_pit(as_of.year, as_of.month, 3, 12, 1, 36, 150)
+    if not picks:
+        return {}
+    # Need prices for vol calc — fetch fresh
+    end = as_of
+    start = (end - pd.Timedelta(days=120)).strftime("%Y-%m-%d")
+    try:
+        prices = fetch_history(list(picks),
+                               start=start,
+                               end=end.strftime("%Y-%m-%d"))
+    except Exception:
+        return {sym: 0.80 / 3 for sym in picks}
+    if prices.empty:
+        return {sym: 0.80 / 3 for sym in picks}
+    inv_vols = {}
+    for sym in picks:
+        if sym not in prices.columns:
+            inv_vols[sym] = 1.0
+            continue
+        rets = prices[sym].pct_change().dropna().iloc[-60:]
+        if len(rets) < 30:
+            inv_vols[sym] = 1.0
+            continue
+        vol = float(rets.std() * (252 ** 0.5))
+        inv_vols[sym] = 1.0 / max(vol, 0.01)
+    total = sum(inv_vols.values())
+    if total <= 0:
+        return {sym: 0.80 / 3 for sym in picks}
+    return {sym: 0.80 * (inv / total) for sym, inv in inv_vols.items()}
+
+
 def variant_top3_residual_vol_targeted(as_of):
     """v3.16 + v3.15: residual momentum picks WITH vol-targeted sizing.
     Combines the two best research-paper candidates.
@@ -1535,6 +1631,12 @@ VARIANTS = {
     "top3_residual_vol (v3.15+16)": variant_top3_residual_vol_targeted,
     "multi_asset_trend (v3.19)": variant_multi_asset_trend,
     "multi_asset_trend_top1 (v3.19b)": variant_multi_asset_trend_top1,
+    "top3_quality_momentum (v3.20)": variant_top3_quality_momentum,
+    "top3_crowding_penalty (v3.21)": variant_top3_crowding_penalty,
+    "top3_combined_winners (v3.22)": variant_top3_combined_winners,
+    "top3_crowding_PIT (v3.23)": variant_top3_crowding_penalty_pit,
+    "top3_residual_PIT (v3.25)": variant_top3_residual_pit,
+    "top3_residual_voltgt_PIT (v3.25b)": variant_top3_residual_voltgt_pit,
 }
 
 # Variants that need a custom path-dependent replay harness instead of the
