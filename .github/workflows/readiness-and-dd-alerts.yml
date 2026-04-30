@@ -1,0 +1,85 @@
+name: trader-readiness-and-dd-alerts
+
+# Runs after each daily-run (22:30 UTC = 1:30pm PT, 30 min after daily-run finishes)
+# - readiness_monitor: re-checks 9-gate, emails when all green
+# - drawdown_alert: tracks peak equity, emails at -5/-10/-15% drawdown tiers
+#
+# Both are idempotent: only emit one-shot alerts on state CHANGES, not every run.
+
+on:
+  schedule:
+    - cron: "30 22 * * 1-5"  # 22:30 UTC Mon-Fri
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: trader-readiness-and-dd-alerts
+  cancel-in-progress: false
+
+jobs:
+  alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore journal + state from latest daily-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data/
+          PREV_RUN=$(gh run list --workflow=trader-daily-run --branch=master --status=success --limit=1 --json databaseId --jq '.[0].databaseId')
+          if [ -n "$PREV_RUN" ] && [ "$PREV_RUN" != "null" ]; then
+            gh run download "$PREV_RUN" -n trader-journal -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "no journal"
+          fi
+        continue-on-error: true
+
+      - name: Run readiness monitor
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+          ALPACA_PAPER: "true"
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: "587"
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_TO: richard.chen.1989@gmail.com
+          EMAIL_FROM: ${{ secrets.SMTP_USER }}
+        run: python scripts/readiness_monitor.py
+        continue-on-error: true  # don't block dd_alert if this errors
+
+      - name: Run drawdown alert
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+          ALPACA_PAPER: "true"
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: "587"
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_TO: richard.chen.1989@gmail.com
+          EMAIL_FROM: ${{ secrets.SMTP_USER }}
+        run: python scripts/drawdown_alert.py
+
+      - name: Save state for next run
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trader-monitor-state
+          path: data/*_state.json
+          retention-days: 90
+          overwrite: true
