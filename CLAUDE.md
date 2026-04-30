@@ -80,29 +80,34 @@ The "+1.61 best ever measured" claim for v3.16 was particularly misleading —
 on PIT it's actually NEGATIVE Sharpe. The signal makes the strategy worse
 on the broader universe.
 
-## Strategic implications (post v3.25)
+## Strategic implications (post v3.25 / v3.36)
 
 1. **No shadow variant has measurable edge on the honest universe.** All
    research-paper signals tested (residual momentum, vol-targeting,
-   crowding penalty, multi-asset trend, quality, trend-R²) FAIL PIT
-   validation.
+   crowding penalty, multi-asset trend, quality, trend-R², HMM regime)
+   FAIL EITHER PIT validation OR CPCV.
 
 2. **LIVE strategy unchanged**: top3_eq_80 12-1 momentum is the best of
    what we've tested. Honest expectation: +0.98 Sharpe, +19% CAGR, -33%
    worst-DD on PIT-corrected backtest.
 
-3. **Future iterations should NOT focus on signal stacking.** Expected
-   value is near zero based on 7+ failed attempts. Better targets:
+3. **MANDATORY 3-GATE PROMOTION REQUIREMENT** (any variant must pass ALL):
+   - Gate 1 (Survivor stress test): ≥3/5 regime wins, no worse worst-MaxDD
+   - Gate 2 (PIT validation): beat PIT baseline +0.98 by ≥0.10 mean Sharpe
+   - **Gate 3 (CPCV, NEW v3.36)**: 30 OOS sub-windows via Combinatorial
+     Purged Cross-Validation, median edge > +0.10, P(edge>0) > 60%
+   No exceptions. The v3.36 CPCV check on HMM-aggressive (which had passed
+   gates 1 and 2 with +0.24 Sharpe) revealed median CPCV edge of -0.01
+   and P(edge>0)=33%. The +0.24 was sampling noise. Without gate 3, we
+   would have shipped a fake winner.
+
+4. **Future iterations should NOT focus on signal stacking.** Expected
+   value is near zero based on 8+ failed attempts. Better targets:
    - PIT-aware execution (limit orders, TWAP)
    - Cost reduction (rebalance frequency tuning)
    - Position-cap testing at small accounts ($10k Roth IRA)
    - Tax-aware sequencing
    - Behavioral risk infrastructure (drawdown alerts, max-loss kill)
-
-4. **Mandatory PIT-required gate**: any future variant must pass:
-   - Survivor backtest: ≥3/5 regime wins, no worse worst-MaxDD vs LIVE
-   - **PIT validation**: must beat PIT baseline +0.98 by ≥0.10 mean Sharpe
-   No exceptions. Claimed survivor-edges without PIT validation are noise.
 
 ## What's deployed
 

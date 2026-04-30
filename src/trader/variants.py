@@ -630,16 +630,18 @@ register_variant(
     version="1.0",
     status="shadow",
     fn=momentum_top3_hmm_aggressive,
-    description="SHADOW v3.32: HMM-AGGRESSIVE. 3-state Gaussian HMM regime "
-                "detection (Hamilton 1989) drives sizing: 100%/80%/0% in "
-                "BULL/TRANSITION/BEAR. PIT-validated: +1.22 Sharpe vs PIT "
-                "baseline +0.98 (+0.24). +27.7% CAGR vs +19.2%. Worst-DD "
-                "-27.7% vs -33.4% (BETTER). FIRST shadow to PIT-pass on all "
-                "3 dimensions. After 30+ days of live evidence, this is the "
-                "prime promotion candidate.",
+    description="SHADOW v3.32 (CAVEAT FROM v3.36 CPCV): HMM-AGGRESSIVE. "
+                "5-regime test showed +0.24 Sharpe edge over PIT baseline. "
+                "BUT CPCV with 30 OOS sub-windows revealed: median edge -0.01, "
+                "P(edge>0)=33%, 95% CI [-0.20, +0.37]. The +0.24 was a SINGLE "
+                "LUCKY DRAW from a noisy distribution — not real persistent "
+                "alpha. Kept as shadow for live A/B evidence; do NOT promote. "
+                "HMM module itself is useful as a library but the regime-"
+                "conditional sizing strategy doesn't survive proper CPCV.",
     params={"top_n": 3, "alloc_bull": 1.00, "alloc_transition": 0.80,
             "alloc_bear": 0.00, "hmm_states": 3, "hmm_train_start": "2010-01-01",
-            "pit_validated": True, "pit_sharpe": 1.22, "pit_cagr": 0.277},
+            "five_regime_sharpe": 1.22, "cpcv_median_edge": -0.01,
+            "cpcv_p_positive": 0.33, "cpcv_verdict": "no_edge"},
 )
 
 
