@@ -1460,6 +1460,340 @@ def variant_top3_hmm_aggressive(as_of):
     return {x: 0.80 / 3 for x in p}
 
 
+# ---------------------------------------------------------------------------
+# v3.37: GARCH conditional vol risk-targeting (Moreira-Muir 2017)
+# ---------------------------------------------------------------------------
+# Forecast next-period vol via GARCH(1,1), scale gross exposure to hit a
+# target annualized portfolio vol (15%). When vol is predicted high tomorrow,
+# reduce exposure PROACTIVELY (forward-looking, unlike drawdown-scaling).
+
+def variant_top3_garch_voltarget(as_of):
+    """v3.37: top-3 momentum, sized by GARCH(1,1) forecast on portfolio
+    proxy returns. Target 15% annualized vol. When vol forecast is high,
+    cut exposure; when low, can lever up to 2x baseline (capped)."""
+    from trader.garch_vol import garch_vol_at
+    p = _momentum_picks_as_of(as_of, 3)
+    if not p:
+        return {}
+    # Fetch SPY as proxy for portfolio return distribution
+    start = as_of - pd.Timedelta(days=800)
+    try:
+        prices = fetch_history(["SPY"], start=start.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+        if prices.empty or "SPY" not in prices.columns:
+            return {x: 0.80 / 3 for x in p}
+        returns = prices["SPY"].pct_change().dropna()
+    except Exception:
+        return {x: 0.80 / 3 for x in p}
+    # Compute GARCH-based scaling
+    multiplier = garch_vol_at(returns, target_vol_annual=0.15)
+    base_alloc = 0.80
+    scaled_alloc = min(base_alloc * multiplier, 1.50)  # cap at 150% (no excess leverage)
+    return {x: scaled_alloc / 3 for x in p}
+
+
+def variant_top3_garch_voltarget_pit(as_of):
+    """v3.37 PIT: GARCH vol-targeting on PIT universe."""
+    from trader.garch_vol import garch_vol_at
+    picks = _momentum_picks_pit(as_of, top_n=3)
+    if not picks:
+        return {}
+    start = as_of - pd.Timedelta(days=800)
+    try:
+        prices = fetch_history(["SPY"], start=start.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+        returns = prices["SPY"].pct_change().dropna()
+    except Exception:
+        return {x: 0.80 / 3 for x in picks}
+    multiplier = garch_vol_at(returns, target_vol_annual=0.15)
+    scaled_alloc = min(0.80 * multiplier, 1.50)
+    return {x: scaled_alloc / 3 for x in picks}
+
+
+# ---------------------------------------------------------------------------
+# v3.38: Cross-sectional skewness anomaly (lottery preference)
+# ---------------------------------------------------------------------------
+# Documented: stocks with high right-tail skewness (lottery-like names that
+# rarely have huge upside but mostly disappoint) UNDERPERFORM. Investors
+# pay too much for "lottery tickets." Boyer-Mitton-Vorkink (2010), Bali-
+# Cakici-Whitelaw (2011) MAX effect. Mean excess return ~5-8%/yr documented.
+#
+# Strategy: among top-10 by 12-1 momentum, AVOID names with high right-tail
+# skewness. Take the 3 LEAST lottery-like winners.
+
+def variant_top3_low_skewness(as_of):
+    """v3.38: top-10 momentum, then take 3 with LOWEST realized skewness
+    over last 60 days (avoids lottery-preference stocks)."""
+    from scipy.stats import skew
+    top10, prices = _top10_momentum_picks(as_of)
+    if not top10 or prices.empty:
+        return {}
+    skew_scores = {}
+    for sym in top10:
+        if sym not in prices.columns:
+            continue
+        rets = prices[sym].pct_change().dropna().iloc[-60:]
+        if len(rets) < 30:
+            continue
+        sk = float(skew(rets.values))
+        if not np.isnan(sk):
+            skew_scores[sym] = sk
+    if len(skew_scores) < 3:
+        return {sym: 0.80 / 3 for sym in top10[:3]}
+    # Lowest-skewness 3 (avoid lottery names)
+    sorted_low = sorted(skew_scores.items(), key=lambda kv: kv[1])[:3]
+    return {sym: 0.80 / 3 for sym, _ in sorted_low}
+
+
+# ---------------------------------------------------------------------------
+# v3.39: Time-Series Momentum (Moskowitz-Ooi-Pedersen 2012)
+# ---------------------------------------------------------------------------
+# Distinct from cross-sectional momentum (which compares stocks to each
+# other). TSMOM compares EACH ASSET to its own historical return:
+#   - If 12mo return > 0: long with full sizing
+#   - If 12mo return < 0: short (or cash)
+# Documented Sharpe ~+1.0 across 58 instruments since 1985. Works on
+# multi-asset (commodities + bonds + currencies + equity index futures).
+#
+# Implementation: top-3 cross-sectional + TSMOM filter (only invest in
+# names with positive 12mo absolute return). Else cash.
+
+def variant_top3_tsmom_filtered(as_of):
+    """v3.39: top-3 cross-sectional momentum FILTERED by absolute momentum.
+    Only invest in names with positive 12-1 return (Moskowitz-Ooi-Pedersen)."""
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(DEFAULT_LIQUID_50,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty or len(prices) < L + S:
+        return {}
+    end_idx = -1 - S
+    start_idx = -(L + S) - 1
+    rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
+    # Cross-sectional top-3
+    top3 = rets.nlargest(3)
+    # TSMOM filter: only keep names with positive absolute 12-1 return
+    qualified = top3[top3 > 0]
+    if qualified.empty:
+        return {}  # full cash if no name has positive momentum
+    # Equal weight among qualified names
+    n = len(qualified)
+    return {sym: 0.80 / n for sym in qualified.index}
+
+
+# ---------------------------------------------------------------------------
+# v3.40: ML cross-sectional stock ranker (Random Forest)
+# ---------------------------------------------------------------------------
+
+@lru_cache(maxsize=512)
+def _ml_picks_for_month(year, month, top_n, universe_tuple):
+    """ML-rank top-N at the last business day of (year, month)."""
+    from trader.ml_ranker import train_and_predict
+    as_of = pd.Timestamp(year=year, month=month, day=1) - pd.Timedelta(days=1)
+    while as_of.weekday() >= 5:
+        as_of -= pd.Timedelta(days=1)
+    universe = list(universe_tuple)
+    start_pad = as_of - pd.Timedelta(days=int(7 * 365.25))  # 7 years for training
+    try:
+        prices = fetch_history(universe, start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return tuple()
+    if prices.empty:
+        return tuple()
+    picks = train_and_predict(prices, as_of, train_window_years=5, top_n=top_n)
+    return tuple(picks)
+
+
+def variant_top3_ml_ranker(as_of):
+    """v3.40: Random Forest cross-sectional ranker. Train on 5-year expanding
+    window, features (multi-horizon momentum, vol, skew, drawdown, 52-week
+    distance), label (forward 21d return). Pick top-3 by predicted return."""
+    picks = _ml_picks_for_month(as_of.year, as_of.month, 3, tuple(DEFAULT_LIQUID_50))
+    if not picks:
+        return {}
+    return {sym: 0.80 / 3 for sym in picks}
+
+
+def variant_top3_ml_ranker_pit(as_of):
+    """v3.40 PIT: ML ranker on point-in-time S&P 500 universe."""
+    members = sp500_membership_at(as_of.strftime("%Y-%m-%d"))
+    if not members:
+        return {}
+    sample = list(members)[::max(1, len(members) // 100)][:100]
+    picks = _ml_picks_for_month(as_of.year, as_of.month, 3, tuple(sample))
+    if not picks:
+        return {}
+    return {sym: 0.80 / 3 for sym in picks}
+
+
+# ---------------------------------------------------------------------------
+# v3.41: Multi-factor portfolio (Asness-Frazzini-Pedersen style)
+# ---------------------------------------------------------------------------
+# Combine 4 factors into a single composite signal:
+#   1. Momentum: 12-1 return
+#   2. Low-vol: -1 * 60d realized vol (lower = better)
+#   3. Quality (proxy): Sharpe ratio of trailing 12mo returns
+#   4. Trend strength: R² of log-price vs linear trend
+# Z-score each, average, take top-3 by composite.
+#
+# Theoretical case: factors with low pairwise correlation should produce
+# Sharpe > sum of individual factor Sharpes (Brunnermeier 2009).
+
+def variant_top3_multifactor(as_of):
+    """v3.41: top-3 by composite multi-factor score (4 factors averaged)."""
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(DEFAULT_LIQUID_50,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty or len(prices) < L + S:
+        return {}
+
+    # Compute per-ticker factors
+    end_idx = -1 - S
+    start_idx = -(L + S) - 1
+    factors = {}
+    for ticker in prices.columns:
+        s = prices[ticker].dropna()
+        if len(s) < L + S:
+            continue
+        try:
+            mom = float(s.iloc[end_idx] / s.iloc[start_idx] - 1)
+            daily_rets = s.pct_change().dropna().iloc[-60:]
+            if len(daily_rets) < 30:
+                continue
+            vol = float(daily_rets.std() * np.sqrt(252))
+            ann_ret_12m = float(daily_rets.iloc[-252:].mean() * 252) if len(daily_rets) >= 100 else mom
+            quality = ann_ret_12m / max(vol, 1e-9)
+            # R² (trend strength)
+            log_p = np.log(s.iloc[-252:].values)
+            x = np.arange(len(log_p), dtype=float)
+            x_mean = x.mean(); y_mean = log_p.mean()
+            ss_xx = ((x - x_mean) ** 2).sum()
+            ss_xy = ((x - x_mean) * (log_p - y_mean)).sum()
+            ss_yy = ((log_p - y_mean) ** 2).sum()
+            if ss_xx > 0 and ss_yy > 0:
+                slope = ss_xy / ss_xx
+                pred = y_mean + slope * (x - x_mean)
+                ss_res = ((log_p - pred) ** 2).sum()
+                trend_r2 = 1.0 - ss_res / ss_yy
+            else:
+                trend_r2 = 0.0
+            factors[ticker] = {
+                "mom": mom,
+                "low_vol": -vol,  # negate so higher=better
+                "quality": quality,
+                "trend_r2": float(trend_r2),
+            }
+        except Exception:
+            continue
+    if len(factors) < 5:
+        return {}
+
+    df = pd.DataFrame(factors).T
+    # Z-score each factor
+    z_df = (df - df.mean()) / df.std().replace(0, 1)
+    composite = z_df.mean(axis=1)
+    top3 = composite.nlargest(3)
+    if top3.empty:
+        return {}
+    return {sym: 0.80 / 3 for sym in top3.index}
+
+
+def variant_top3_multifactor_pit(as_of):
+    """v3.41 PIT: multi-factor on point-in-time S&P 500."""
+    import numpy as np
+    members = sp500_membership_at(as_of.strftime("%Y-%m-%d"))
+    if not members:
+        return {}
+    sample = list(members)[::max(1, len(members) // 150)][:150]
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(sample,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty or len(prices) < L + S:
+        return {}
+    end_idx = -1 - S
+    start_idx = -(L + S) - 1
+    factors = {}
+    for ticker in prices.columns:
+        s = prices[ticker].dropna()
+        if len(s) < L + S:
+            continue
+        try:
+            mom = float(s.iloc[end_idx] / s.iloc[start_idx] - 1)
+            daily_rets = s.pct_change().dropna().iloc[-60:]
+            if len(daily_rets) < 30:
+                continue
+            vol = float(daily_rets.std() * np.sqrt(252))
+            quality = mom / max(vol, 1e-9)
+            log_p = np.log(s.iloc[-252:].values)
+            x = np.arange(len(log_p), dtype=float)
+            x_mean = x.mean(); y_mean = log_p.mean()
+            ss_xx = ((x - x_mean) ** 2).sum()
+            ss_xy = ((x - x_mean) * (log_p - y_mean)).sum()
+            ss_yy = ((log_p - y_mean) ** 2).sum()
+            if ss_xx > 0 and ss_yy > 0:
+                slope = ss_xy / ss_xx
+                pred = y_mean + slope * (x - x_mean)
+                trend_r2 = 1.0 - ((log_p - pred) ** 2).sum() / ss_yy
+            else:
+                trend_r2 = 0.0
+            factors[ticker] = {"mom": mom, "low_vol": -vol, "quality": quality, "trend_r2": float(trend_r2)}
+        except Exception:
+            continue
+    if len(factors) < 5:
+        return {}
+    df = pd.DataFrame(factors).T
+    z_df = (df - df.mean()) / df.std().replace(0, 1)
+    composite = z_df.mean(axis=1)
+    top3 = composite.nlargest(3)
+    return {sym: 0.80 / 3 for sym in top3.index} if not top3.empty else {}
+
+
+def variant_top3_tsmom_filtered_pit(as_of):
+    """v3.39 PIT: TSMOM-filtered top-3 on point-in-time S&P 500 universe."""
+    members = sp500_membership_at(as_of.strftime("%Y-%m-%d"))
+    if not members:
+        return {}
+    sample = list(members)[::max(1, len(members) // 150)][:150]
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(sample,
+                               start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty or len(prices) < L + S:
+        return {}
+    end_idx = -1 - S
+    start_idx = -(L + S) - 1
+    rets = (prices.iloc[end_idx] / prices.iloc[start_idx] - 1).dropna()
+    top3 = rets.nlargest(3)
+    qualified = top3[top3 > 0]
+    if qualified.empty:
+        return {}
+    n = len(qualified)
+    return {sym: 0.80 / n for sym in qualified.index}
+
+
 def variant_top3_hmm_aggressive_pit(as_of):
     """v3.32 PIT: HMM-aggressive on point-in-time S&P 500 universe.
     HMM regime training is on SPY (universe-agnostic, no PIT issue).
