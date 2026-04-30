@@ -63,6 +63,43 @@ When introducing new components (signals, sleeves, allocators):
   look bias in current quality metrics; structural quality may filter wrong
   way for momentum (filters OUT cyclicals that have momentum in those windows).
 
+## v3.44: Barbell research finding — APPROVED FOR DEPLOYMENT (deferred wiring)
+
+OTM call barbell sleeve (`src/trader/options_barbell.py`): 6mo 25%-OTM calls
+on top-3 momentum names, 5% capital allocation, quarterly rebalance.
+
+  31-cycle backtest (2018-2026 quarterly), with realistic adjustments
+  (1.5x IV markup for vol risk premium + 1% bid-ask spread):
+    Mean cycle PnL:    +$8,632 (+86% per cycle on $10k capital)
+    Median cycle PnL:  -$10,108 (LOSS in median — asymmetric distribution)
+    Win rate:          32.3% (most cycles lose, few cycles WIN BIG)
+    Annualized:        +175% on barbell capital
+    Best cycle:        +$172k (NVDA 2023-Q4 → +149%)
+    Worst cycle:       -$15k (capped at premium + adjustments)
+
+  Bootstrap CI (1000 samples, 31-cycle distribution):
+    Median annualized: +178%
+    P(annualized > 0):   88.2%
+    P(annualized > 30%): 84.1%
+    95% CI:              [-100%, +553%]
+
+  Decision: APPROVED for 5% allocation. At 5%, worst-case bound is
+  -5% portfolio/yr; expected contribution +8-9pp/yr to total portfolio.
+
+  Wiring DEFERRED to v3.45+ for operational discipline:
+    1. v3.42 LIVE flip (top-3 → top-15) ships tonight 21:10 UTC.
+       Need 5-7 trading days to verify clean execution before stacking
+       another major change.
+    2. Alpaca options API integration is significant work (chains,
+       IV checks, contract selection, exercise/expiry handling).
+    3. Behavioral pre-commit rule: never change two things at once.
+
+  Next-quarter deployment trigger (target: June 2026 quarterly rebalance):
+    - Verify v3.42 top-15 has been running cleanly for 5+ days
+    - Build Alpaca options chain fetcher + contract selector
+    - Wire barbell as separate sleeve, 5% allocation
+    - First barbell positions on next quarterly rebalance after wiring
+
 ## v3.25 META-FINDING: ALL shadow variant edges are survivor-bias artifacts
 
 After PIT-validating every shadow that previously claimed edge over LIVE:
