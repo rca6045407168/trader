@@ -4,34 +4,60 @@ The single most expensive bug in a trading system is one that lets a bad trade
 through. This module is the last line of defense — every check here exists
 because real retail traders blew up without it.
 
-Layers (each one a separate kill switch):
-  1. Per-position size cap        — no single name > 30% of equity (margin
-                                     above 26.7% used by top-3-at-80%)
-  2. Gross exposure cap           — always keep ≥5% cash buffer
-  3. Daily loss limit             — halt new entries if down >3% intraday
-  4. Drawdown circuit breaker     — halt all new entries if -8% from peak
-                                     (180-day window — see DD_PEAK_LOOKBACK_DAYS)
-  5. Volatility scaling           — cut size in half when VIX > 25
-  6. Sector concentration cap     — max 30% to any GICS sector
-  7. Earnings-window blackout     — don't enter 2 trading days before earnings
-  8. Wash-sale guard              — don't rebuy something we sold at a loss <30d ago
-  9. PDT rule warning             — if account < $25k, day-trades are limited
-"""
-from dataclasses import dataclass, field
+v3.46 ladder (per swarm-debate synthesis — agents 1/2/3):
 
+  Layer 1 — Per-position cap            16% (down from 30%)
+  Layer 2 — Gross exposure cap          95%
+  Layer 3 — Daily loss circuit breaker  -6% triggers 48h freeze (was -3% halt)
+  Layer 4 — Drawdown from 180d peak     -8% halts new entries
+  Layer 5 — Drawdown from DEPLOYMENT    -25% triggers 30-day no-new-position
+                                         freeze (NEW v3.46 — institutional risk
+                                         best practice)
+  Layer 6 — Liquidation gate            -33% requires written post-mortem before
+                                         resume (NEW v3.46 — at backtest worst-DD,
+                                         strategy may be broken vs just losing)
+  Layer 7 — Volatility scaling          cut size when VIX > 25
+  Layer 8 — Sector concentration cap    max 35% to any GICS sector
+  Layer 9 — Position-cap safety margin  refuse if any target > MAX - margin
+
+The deployment-DD layers (5 & 6) reference deployment_anchor.py which records
+the equity at first daily-run. Agent-2 (institutional risk) flagged that
+"max-loss-since-deployment" is the single biggest gap in retail risk policies.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from .config import DATA_DIR
 from .journal import recent_snapshots
 
-MAX_POSITION_PCT = 0.30  # v3.1: top-3 at 80% sleeve needs 27% per name. Margin 30%.
-MAX_POSITION_SAFETY_MARGIN = 0.03  # v3.27: refuse to deploy if any target > MAX-margin
+# Position sizing
+MAX_POSITION_PCT = 0.16  # v3.46: tightened from 0.30. Top-15 mom-weighted max ~14%; 16% gives 2pp safety margin
+MAX_POSITION_SAFETY_MARGIN = 0.02  # v3.46: tightened from 0.03
+
+# Gross / daily / peak limits
 MAX_GROSS_EXPOSURE = 0.95
-MAX_DAILY_LOSS_PCT = 0.03
-MAX_DRAWDOWN_HALT_PCT = 0.08
-# v3.27 FIX: was 30 days. The reviewer found that during a slow 60+ day
-# drawdown, the 30-day "peak" walks down with the drawdown and the kill
-# switch silently fails to fire. 180 days catches multi-quarter drawdowns.
+MAX_DAILY_LOSS_PCT = 0.06  # v3.46: institutional-style -6% (was -3%). Below this triggers 48h freeze.
+MAX_DRAWDOWN_HALT_PCT = 0.08  # from 180-day peak (existing)
 DD_PEAK_LOOKBACK_DAYS = 180
+
+# v3.46 NEW: deployment-DD gates (referenced from deployment_anchor module)
+MAX_DEPLOY_DD_FREEZE_PCT = 0.25       # -25% from deployment → 30-day no-new-position freeze
+MAX_DEPLOY_DD_LIQUIDATION_PCT = 0.33  # -33% from deployment → written post-mortem required
+DEPLOY_DD_FREEZE_DAYS = 30
+
+# Daily-loss freeze (v3.46): once tripped, no new entries for 48 hours
+DAILY_LOSS_FREEZE_HOURS = 48
+FREEZE_STATE_PATH = DATA_DIR / "risk_freeze_state.json"
+
+# PDT
 MIN_ACCOUNT_FOR_DAYTRADE = 25_000
-MAX_SECTOR_PCT = 0.30
+
+# Sector
+MAX_SECTOR_PCT = 0.35  # v3.46: 35% per agent-2 institutional best practice (was 30%)
 WASH_SALE_LOOKBACK_DAYS = 30
 
 
@@ -44,7 +70,14 @@ class RiskDecision:
 
 
 def vol_scale(vix: float | None) -> float:
-    """Reduce gross exposure as vol expands. Returns multiplier in (0, 1]."""
+    """Reduce gross exposure as vol expands. Returns multiplier in (0, 1].
+
+    Note: Agent-2 (institutional) recommended VIX-based de-risking, but v3.5
+    proved VIX cuts at panic lows. Keeping the GENTLE vol-scaling here (which
+    only mildly reduces, doesn't go to zero) but NOT adding the aggressive
+    "VIX>40 cut to 50%" rule that Agent 2 suggested — that's already in v3.5
+    and known to fail.
+    """
     if vix is None:
         return 1.0
     if vix < 15:
@@ -56,6 +89,75 @@ def vol_scale(vix: float | None) -> float:
     if vix < 30:
         return 0.50
     return 0.30
+
+
+def _load_freeze_state() -> dict:
+    if not FREEZE_STATE_PATH.exists():
+        return {}
+    try:
+        return json.loads(FREEZE_STATE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _save_freeze_state(state: dict) -> None:
+    FREEZE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FREEZE_STATE_PATH.write_text(json.dumps(state, indent=2))
+
+
+def _check_freeze_active() -> tuple[bool, str]:
+    """Check if a previous trigger has placed the system in a freeze window.
+    Returns (is_frozen, reason)."""
+    state = _load_freeze_state()
+    now = datetime.utcnow()
+    if "daily_loss_freeze_until" in state:
+        try:
+            until = datetime.fromisoformat(state["daily_loss_freeze_until"])
+            if now < until:
+                return True, f"DAILY-LOSS FREEZE active until {until.isoformat()}"
+            else:
+                # Expired — clean up
+                del state["daily_loss_freeze_until"]
+                _save_freeze_state(state)
+        except ValueError:
+            pass
+    if "deploy_dd_freeze_until" in state:
+        try:
+            until = datetime.fromisoformat(state["deploy_dd_freeze_until"])
+            if now < until:
+                return True, f"DEPLOYMENT-DD FREEZE active until {until.isoformat()}"
+            else:
+                del state["deploy_dd_freeze_until"]
+                _save_freeze_state(state)
+        except ValueError:
+            pass
+    if state.get("liquidation_gate_tripped", False):
+        return True, ("LIQUIDATION GATE TRIPPED — strategy halted pending "
+                      "written post-mortem. To resume: write post-mortem at "
+                      "docs/POST_MORTEM_<date>.md, then explicitly clear the "
+                      "gate via reset_anchor() with a 50+ char reason.")
+    return False, ""
+
+
+def _trigger_daily_loss_freeze() -> None:
+    state = _load_freeze_state()
+    until = datetime.utcnow() + timedelta(hours=DAILY_LOSS_FREEZE_HOURS)
+    state["daily_loss_freeze_until"] = until.isoformat()
+    _save_freeze_state(state)
+
+
+def _trigger_deploy_dd_freeze() -> None:
+    state = _load_freeze_state()
+    until = datetime.utcnow() + timedelta(days=DEPLOY_DD_FREEZE_DAYS)
+    state["deploy_dd_freeze_until"] = until.isoformat()
+    _save_freeze_state(state)
+
+
+def _trigger_liquidation_gate() -> None:
+    state = _load_freeze_state()
+    state["liquidation_gate_tripped"] = True
+    state["liquidation_tripped_at"] = datetime.utcnow().isoformat()
+    _save_freeze_state(state)
 
 
 def check_account_risk(
@@ -72,38 +174,78 @@ def check_account_risk(
             "Limited to 3 day-trades per 5 business days."
         )
 
-    # v3.27: pull a longer window for peak detection (was 30 days — catches slow
-    # 60+ day drawdowns that previously masked the kill switch). For daily-loss
-    # check we only need 2 days, but the same query is cheap.
+    # 0) Check if a previous trigger has placed the system in a freeze window
+    is_frozen, freeze_reason = _check_freeze_active()
+    if is_frozen:
+        return RiskDecision(
+            proceed=False,
+            reason=f"FROZEN: {freeze_reason}",
+            warnings=warnings,
+        )
+
+    # Pull snapshot history for daily/peak checks
     snapshots = recent_snapshots(days=DD_PEAK_LOOKBACK_DAYS)
 
-    # 1) Daily loss limit (only need 2 most recent days)
+    # 1) Daily loss limit (v3.46: trigger 48h freeze, not just today's halt)
     if len(snapshots) >= 2:
         today, yest = snapshots[0], snapshots[1]
         if yest["equity"] and yest["equity"] > 0:
             day_pnl = (today["equity"] - yest["equity"]) / yest["equity"]
             if day_pnl < -MAX_DAILY_LOSS_PCT:
+                _trigger_daily_loss_freeze()
                 return RiskDecision(
                     proceed=False,
-                    reason=f"HALT: daily loss {day_pnl:.2%} exceeded -{MAX_DAILY_LOSS_PCT:.0%}",
+                    reason=(f"HALT: daily loss {day_pnl:.2%} exceeded "
+                            f"-{MAX_DAILY_LOSS_PCT:.0%}. "
+                            f"48-hour freeze triggered."),
                     warnings=warnings,
                 )
 
-    # 2) Drawdown circuit breaker — uses 180-day peak (v3.27 fix)
+    # 2) Drawdown circuit breaker — uses 180-day peak
     if snapshots:
         peak = max(s["equity"] for s in snapshots if s["equity"])
         if peak and equity / peak - 1 < -MAX_DRAWDOWN_HALT_PCT:
             return RiskDecision(
                 proceed=False,
-                reason=f"HALT: drawdown {(equity/peak-1):.2%} from {DD_PEAK_LOOKBACK_DAYS}d peak ${peak:.0f}",
+                reason=(f"HALT: drawdown {(equity/peak-1):.2%} from "
+                        f"{DD_PEAK_LOOKBACK_DAYS}d peak ${peak:.0f}"),
                 warnings=warnings,
             )
 
-    # 2.5) Per-position safety check (v3.27): if any target exceeds the cap with
-    # less than the safety margin, REFUSE to deploy. Forces the operator to
-    # explicitly raise MAX_POSITION_PCT before promoting a more-concentrated
-    # variant. Catches the v3.27 reviewer concern: top-2-at-80%=40% would be
-    # silently clipped to 30%, dropping gross to 60%. Fail loudly instead.
+    # 3) Deployment-anchor drawdown gates (v3.46 NEW)
+    try:
+        from .deployment_anchor import drawdown_from_deployment
+        deploy_dd, anchor = drawdown_from_deployment(equity)
+        if deploy_dd < -MAX_DEPLOY_DD_LIQUIDATION_PCT:
+            _trigger_liquidation_gate()
+            return RiskDecision(
+                proceed=False,
+                reason=(f"LIQUIDATION GATE: drawdown {deploy_dd:.2%} from "
+                        f"deployment anchor ${anchor.equity_at_deploy:.0f} "
+                        f"(set {anchor.deploy_timestamp}). At backtest worst-DD: "
+                        f"strategy may be broken vs just losing. "
+                        f"Required: written post-mortem + manual gate reset."),
+                warnings=warnings,
+            )
+        elif deploy_dd < -MAX_DEPLOY_DD_FREEZE_PCT:
+            _trigger_deploy_dd_freeze()
+            return RiskDecision(
+                proceed=False,
+                reason=(f"DEPLOYMENT-DD FREEZE: drawdown {deploy_dd:.2%} from "
+                        f"deployment anchor ${anchor.equity_at_deploy:.0f}. "
+                        f"30-day no-new-position freeze triggered. "
+                        f"Hold existing positions; do not add."),
+                warnings=warnings,
+            )
+        elif deploy_dd < -0.15:
+            warnings.append(
+                f"deployment DD {deploy_dd:.1%} approaching -25% freeze threshold. "
+                f"Re-read docs/BEHAVIORAL_PRECOMMIT.md."
+            )
+    except Exception as e:
+        warnings.append(f"deployment_anchor unavailable: {e}")
+
+    # 4) Per-position safety check
     if targets:
         safety_threshold = MAX_POSITION_PCT - MAX_POSITION_SAFETY_MARGIN
         excessive = {t: w for t, w in targets.items() if w > MAX_POSITION_PCT}
@@ -122,16 +264,16 @@ def check_account_risk(
                 f"{MAX_POSITION_PCT:.0%}): {near_cap}. Verify variant intent."
             )
 
-    # 3) Per-position cap
+    # 5) Per-position cap (apply clip after safety check passes)
     adjusted = {t: min(w, MAX_POSITION_PCT) for t, w in targets.items()}
 
-    # 4) Volatility scaling
+    # 6) Volatility scaling
     scale = vol_scale(vix)
     if scale < 1.0:
         adjusted = {t: w * scale for t, w in adjusted.items()}
         warnings.append(f"VIX={vix:.1f} → size scaled to {scale:.0%}")
 
-    # 5) Gross exposure cap
+    # 7) Gross exposure cap
     total = sum(adjusted.values())
     if total > MAX_GROSS_EXPOSURE:
         rescale = MAX_GROSS_EXPOSURE / total
@@ -143,3 +285,21 @@ def check_account_risk(
         adjusted_targets=adjusted,
         warnings=warnings,
     )
+
+
+def clear_liquidation_gate(post_mortem_path: str, reason: str) -> None:
+    """Manually clear the liquidation gate. Requires written post-mortem.
+    See deployment_anchor.reset_anchor() — typical flow is:
+      1. Write docs/POST_MORTEM_YYYY-MM-DD.md analyzing the -33% event
+      2. Call deployment_anchor.reset_anchor(new_equity, reason, path)
+      3. Call this function to clear the gate
+    """
+    if not post_mortem_path or len(reason) < 50:
+        raise ValueError("clear_liquidation_gate requires post_mortem_path and reason ≥50 chars")
+    state = _load_freeze_state()
+    state.pop("liquidation_gate_tripped", None)
+    state.pop("liquidation_tripped_at", None)
+    state["liquidation_cleared_at"] = datetime.utcnow().isoformat()
+    state["liquidation_cleared_reason"] = reason
+    state["liquidation_cleared_post_mortem"] = post_mortem_path
+    _save_freeze_state(state)

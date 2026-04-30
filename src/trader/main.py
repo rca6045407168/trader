@@ -184,12 +184,49 @@ def main(force: bool = False) -> dict:
                 run_id = f"{run_id}-FORCE"
                 start_run(run_id, notes="forced re-run")
 
+    # v3.46: override-delay pre-flight. If LIVE config changed in last 24h,
+    # refuse to rebalance — forces 24h cool-down between "I want to change LIVE"
+    # and "the change actually takes effect."
+    print(f"\n[{datetime.now():%H:%M:%S}] override-delay check...")
+    try:
+        from .override_delay import check_override_delay
+        allowed, reason = check_override_delay()
+        print(f"  {reason}")
+        if not allowed:
+            return {"halted": True, "kill_switch_reasons": [reason], "halt_type": "override_delay"}
+    except Exception as e:
+        print(f"  override-delay check failed (non-fatal): {e}")
+
+    # v3.46: peek counter — track manual workflow_dispatch events
+    try:
+        from .peek_counter import record_event_if_manual, peek_alert_message
+        was_manual, peek_count_30d = record_event_if_manual()
+        if was_manual:
+            print(f"  [PEEK] manual trigger detected. Count in last 30d: {peek_count_30d}")
+        alert = peek_alert_message(peek_count_30d)
+        if alert:
+            print(f"  {alert}")
+    except Exception as e:
+        print(f"  peek_counter failed (non-fatal): {e}")
+
     # v0.9: kill-switch pre-flight (manual halt, missing keys, equity drawdown triggers)
     print(f"\n[{datetime.now():%H:%M:%S}] kill-switch pre-flight...")
     try:
         live_equity = float(get_client().get_account().equity) if not DRY_RUN else 100_000.0
     except Exception:
         live_equity = None
+
+    # v3.46: ensure deployment anchor is set on first run (otherwise risk_manager's
+    # deployment-DD gates can't fire)
+    if live_equity is not None:
+        try:
+            from .deployment_anchor import get_or_set_anchor
+            anchor = get_or_set_anchor(live_equity)
+            print(f"  deployment anchor: ${anchor.equity_at_deploy:,.0f} "
+                  f"(set {anchor.deploy_timestamp})")
+        except Exception as e:
+            print(f"  deployment_anchor unavailable (non-fatal): {e}")
+
     halt, reasons = check_kill_triggers(equity=live_equity)
     if halt:
         for r in reasons:
