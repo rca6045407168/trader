@@ -26,30 +26,35 @@ def test_live_variant_is_registered():
     assert "_v" in live.variant_id
 
 
-def test_live_variant_returns_top3_at_80():
-    """LIVE strategy is top-3 momentum at 80% allocation per v3.1+ docs.
+def test_live_variant_returns_top15_mom_weighted_at_80():
+    """LIVE strategy v3.42: top-15 momentum-weighted at 80% allocation.
 
-    This test pins the strategy. If we deliberately change LIVE, this test
-    must update — and that's a feature, not a bug. It forces explicit
-    acknowledgment whenever LIVE changes.
+    Promoted 2026-04-29 from shadow. Replaces v3.1 top-3 LIVE in favor of
+    materially lower idiosyncratic risk (10% max single-name vs 27%) at
+    equivalent Sharpe on PIT-honest backtest.
+
+    This test pins the strategy. If LIVE changes, this test must update —
+    forcing explicit acknowledgment of the change.
     """
     live = get_live()
     targets = live.fn(universe=DEFAULT_LIQUID_50, equity=100_000.0,
                       account_state={})
     assert targets, f"LIVE variant {live.variant_id} returned empty targets"
-    assert len(targets) == 3, f"LIVE should pick 3 names, got {len(targets)}"
+    assert len(targets) == 15, f"LIVE should pick 15 names, got {len(targets)}"
     total_alloc = sum(targets.values())
     assert 0.78 <= total_alloc <= 0.82, (
         f"LIVE total allocation {total_alloc:.3f} outside [0.78, 0.82] band "
         f"(should be ~0.80 = 80%)"
     )
-    # Each name should be roughly equal-weight
-    expected_per = total_alloc / 3
-    for ticker, weight in targets.items():
-        assert abs(weight - expected_per) < 0.01, (
-            f"{ticker} weight {weight:.3f} too far from expected "
-            f"equal-weight {expected_per:.3f}"
-        )
+    # Momentum-weighted: top name should have higher weight than bottom name
+    weights = sorted(targets.values(), reverse=True)
+    assert weights[0] > weights[-1], "weights should be momentum-proportional, not equal"
+    # No single name should exceed 15% (sanity check on diversification)
+    max_weight = max(targets.values())
+    assert max_weight < 0.15, (
+        f"max single-name weight {max_weight:.3f} too concentrated; "
+        f"top-15 mom-weighted should keep all names < 15%"
+    )
 
 
 def test_shadows_dont_collide_with_live():

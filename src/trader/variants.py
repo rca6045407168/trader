@@ -547,15 +547,16 @@ register_variant(
     variant_id="momentum_top15_mom_weighted_v1",
     name="momentum_top15_mom_weighted",
     version="1.0",
-    status="shadow",
+    status="live",  # v3.42: PROMOTED FROM SHADOW
     fn=momentum_top15_mom_weighted,
-    description="SHADOW v3.29: top-15 momentum-weighted, 80% gross. The first "
-                "shadow to PASS PIT validation: PIT mean Sharpe +0.95 (vs LIVE "
-                "PIT +0.98). Trades 3pp CAGR for 2pp better worst-DD and "
-                "much lower per-name idiosyncratic risk (10% max vs LIVE's 27%). "
-                "Behavioral candidate for accounts uncomfortable with -33% DD or "
-                "27% concentration in a single name. Survivor mean Sharpe +1.62 "
-                "(+0.08 over LIVE) but PIT shows the edge collapses to ~even.",
+    description="LIVE v3.42 (promoted from shadow 2026-04-29). top-15 by 12m "
+                "momentum, weighted PROPORTIONAL to momentum score, 80% gross. "
+                "First shadow to PASS PIT validation: PIT mean Sharpe +0.95 "
+                "(vs prior-LIVE +0.98 — within sampling noise). Top single-name "
+                "weight ~10% (vs prior LIVE's 27%) — 3x lower idiosyncratic risk. "
+                "Survivor mean Sharpe +1.62. Promotion rationale: equivalent "
+                "Sharpe with materially better risk profile per v3.x audit "
+                "+ user directive.",
     params={"top_n": 15, "weighting": "momentum_proportional", "alloc": 0.80,
             "pit_validated": True, "pit_sharpe": 0.95},
 )
@@ -662,12 +663,14 @@ register_variant(
     variant_id="momentum_top3_aggressive_v1",
     name="momentum_top3_aggressive",
     version="1.0",
-    status="live",
+    status="retired",  # v3.42: demoted in favor of top15_mom_weighted
     fn=momentum_top3_aggressive,
-    description="LIVE v3.1: 12m momentum top-3 equal-weight at 80% sleeve. "
-                "Promoted after regime stress test (2018Q4 / 2020Q1 / 2022 / 2023 / "
-                "recent): mean Sharpe 1.65 (vs top-5's 1.53), mean CAGR 73.7%, worst "
-                "MaxDD -26.3%. ~26.7% per-name; requires MAX_POSITION_PCT >= 0.27.",
+    description="RETIRED v3.42: was LIVE v3.1-v3.41. 12m momentum top-3 at 80%. "
+                "27% single-name concentration. Replaced by top15_mom_weighted "
+                "after PIT validation showed equivalent Sharpe (+0.98 vs +0.95) "
+                "with materially lower idiosyncratic risk (10% max single-name "
+                "vs 27%). Demoted at user request 2026-04-29 after CPCV testing "
+                "of 40+ alpha candidates produced no replicable edge.",
     params={"top_n": 3, "lookback_months": 12, "weighting": "equal", "alloc": 0.80},
 )
 

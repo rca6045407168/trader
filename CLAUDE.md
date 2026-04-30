@@ -111,8 +111,19 @@ on the broader universe.
 
 ## What's deployed
 
-LIVE: `momentum_top3_aggressive_v1` — top-3 12mo cross-sectional momentum, 26.7%/name (80% gross).
-Risk gates in `risk_manager.py` (per-name 30%, gross 95%, daily-loss halt -3%, DD halt -8%, VIX scaling).
+LIVE (v3.42 — promoted 2026-04-29): `momentum_top15_mom_weighted_v1` — top-15
+by 12mo cross-sectional momentum, weighted PROPORTIONAL to momentum score,
+80% gross. Top single-name ~10-14%, bottom ~1-2%. PIT-validated mean Sharpe
++0.95 (basically identical to prior LIVE +0.98) but materially lower
+idiosyncratic risk.
+
+Previous LIVE (v3.1 → v3.41): `momentum_top3_aggressive_v1` (top-3 at 80%,
+27%/name). Demoted to status 'retired' after user concern about excessive
+single-name concentration. Backtest gave it best Sharpe on survivor universe
+but PIT showed top-3 vs top-15 mom-weighted are statistically equivalent.
+
+Risk gates in `risk_manager.py` (per-name 30%, gross 95%, daily-loss halt -3%,
+DD halt -8% on 180-day window, VIX scaling).
 
 Email goes to **richard.chen.1989@gmail.com** (personal). Not the FlexHaul work
 address. Stub guard in `notify.py` blocks `<80 char` bodies. Don't trigger emails
