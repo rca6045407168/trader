@@ -1319,6 +1319,166 @@ def variant_top30_mom_weighted_pit(as_of):
 
 
 # ---------------------------------------------------------------------------
+# v3.32: HMM-conditional momentum (Hamilton 1989, Bulla & Bulla 2006)
+# ---------------------------------------------------------------------------
+# Fit a 3-state Gaussian HMM on SPY returns. Classify each rebalance date's
+# regime via forward filtering. Apply strategy rule:
+#   BULL or TRANSITION: top-3 momentum at 80%
+#   BEAR: cut to 30% (keep 50% cash, 30% defensive top-3 momentum)
+# Strict no-lookahead: HMM trained on data PRIOR to each regime window.
+
+_HMM_CACHE: dict = {}
+
+
+def _get_hmm_for_window(window_start: pd.Timestamp):
+    """Fit HMM on SPY returns from 2010-01-01 to (window_start - 1 day).
+    Cached per window_start. Strict expanding-window discipline: training data
+    NEVER overlaps with backtest window."""
+    cache_key = window_start.date()
+    if cache_key in _HMM_CACHE:
+        return _HMM_CACHE[cache_key]
+    from trader.hmm_regime import fit_hmm
+    train_start = pd.Timestamp("2010-01-01")
+    train_end = window_start - pd.Timedelta(days=1)
+    if train_end < train_start:
+        return None
+    try:
+        prices = fetch_history(["SPY"], start=train_start.strftime("%Y-%m-%d"),
+                               end=train_end.strftime("%Y-%m-%d"))
+        if prices.empty or "SPY" not in prices.columns:
+            return None
+        returns = prices["SPY"].pct_change().dropna()
+        if len(returns) < 252:
+            return None
+        hmm = fit_hmm(returns, n_states=3, n_iter=200)
+        _HMM_CACHE[cache_key] = hmm
+        return hmm
+    except Exception:
+        return None
+
+
+def _hmm_regime_at(as_of: pd.Timestamp, window_start: pd.Timestamp):
+    """Classify regime at as_of using HMM trained on pre-window data.
+    Returns regime string ("bull"/"transition"/"bear") or None."""
+    hmm = _get_hmm_for_window(window_start)
+    if hmm is None:
+        return None
+    from trader.hmm_regime import classify_current_regime
+    try:
+        # Use 60 days of recent returns for forward filtering
+        start = as_of - pd.Timedelta(days=120)
+        prices = fetch_history(["SPY"], start=start.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+        if prices.empty or "SPY" not in prices.columns:
+            return None
+        returns = prices["SPY"].pct_change().dropna().iloc[-60:]
+        if len(returns) < 30:
+            return None
+        sig = classify_current_regime(hmm, returns)
+        return sig.regime.value
+    except Exception:
+        return None
+
+
+def variant_top3_hmm_conditional(as_of):
+    """v3.32: HMM-conditional top-3 momentum.
+    BULL: 80% gross top-3 momentum.
+    TRANSITION: 80% gross top-3 momentum (treat like bull — vol is low).
+    BEAR: 30% gross top-3 momentum (defensive cut, 50% cash).
+    """
+    p = _momentum_picks_as_of(as_of, 3)
+    if not p:
+        return {}
+    window_start = _CURRENT_WINDOW.get("start")
+    if window_start is None:
+        # No window context — use full allocation
+        return {x: 0.80 / 3 for x in p}
+    regime = _hmm_regime_at(as_of, window_start)
+    if regime == "bear":
+        return {x: 0.30 / 3 for x in p}
+    return {x: 0.80 / 3 for x in p}
+
+
+def variant_top15_hrp(as_of):
+    """v3.33: top-15 momentum picks weighted via Hierarchical Risk Parity
+    (Lopez de Prado 2016). Cluster names by correlation, allocate inversely
+    to cluster vol via recursive bisection. NO matrix inversion (avoids
+    Markowitz instability with limited history)."""
+    from trader.hrp import hrp_portfolio_for_picks
+    p = _momentum_picks_as_of(as_of, 15)
+    if not p:
+        return {}
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(p, start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty:
+        return {}
+    return hrp_portfolio_for_picks(prices, p, lookback_days=120, gross_leverage=0.80)
+
+
+def variant_top30_hrp(as_of):
+    """v3.33b: top-30 with HRP. Larger cluster space lets HRP find more structure."""
+    from trader.hrp import hrp_portfolio_for_picks
+    p = _momentum_picks_as_of(as_of, 30)
+    if not p:
+        return {}
+    L = 12 * 21
+    S = 21
+    start_pad = as_of - pd.Timedelta(days=int((L + S + 21) * 1.6))
+    try:
+        prices = fetch_history(p, start=start_pad.strftime("%Y-%m-%d"),
+                               end=as_of.strftime("%Y-%m-%d"))
+    except Exception:
+        return {}
+    if prices.empty:
+        return {}
+    return hrp_portfolio_for_picks(prices, p, lookback_days=120, gross_leverage=0.80)
+
+
+def variant_top3_hmm_aggressive(as_of):
+    """v3.32b: Aggressive HMM-conditional. Take MORE risk in BULL, LESS in BEAR.
+    BULL: 100% gross.
+    TRANSITION: 80% gross.
+    BEAR: 0% gross (full cash).
+    Tests whether HMM regime detection can drive a barbell sizing strategy."""
+    p = _momentum_picks_as_of(as_of, 3)
+    if not p:
+        return {}
+    window_start = _CURRENT_WINDOW.get("start")
+    if window_start is None:
+        return {x: 0.80 / 3 for x in p}
+    regime = _hmm_regime_at(as_of, window_start)
+    if regime == "bear":
+        return {}
+    elif regime == "bull":
+        return {x: 1.00 / 3 for x in p}
+    return {x: 0.80 / 3 for x in p}
+
+
+def variant_top3_hmm_aggressive_pit(as_of):
+    """v3.32 PIT: HMM-aggressive on point-in-time S&P 500 universe.
+    HMM regime training is on SPY (universe-agnostic, no PIT issue).
+    The PIT correction applies to the momentum picks (S&P 500 historical)."""
+    picks = _momentum_picks_pit(as_of, top_n=3)
+    if not picks:
+        return {}
+    window_start = _CURRENT_WINDOW.get("start")
+    if window_start is None:
+        return {x: 0.80 / 3 for x in picks}
+    regime = _hmm_regime_at(as_of, window_start)
+    if regime == "bear":
+        return {}
+    elif regime == "bull":
+        return {x: 1.00 / 3 for x in picks}
+    return {x: 0.80 / 3 for x in picks}
+
+
+# ---------------------------------------------------------------------------
 # Lookback-horizon variants — addresses 2023 AI rally underperformance
 # ---------------------------------------------------------------------------
 # v3.3 finding: LIVE (12mo lookback) underperformed SPY by -3.4pp in 2023 because
