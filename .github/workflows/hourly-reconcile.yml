@@ -43,16 +43,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Restore journal from latest successful daily-run
+      - name: Restore journal from latest trader-journal artifact (any workflow)
+        # v3.46 fix: also pulls from backfill-journal.yml uploads, not just
+        # trader-daily-run history.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p data/
-          PREV_RUN=$(gh run list --workflow=trader-daily-run --branch=master --status=success --limit=1 --json databaseId --jq '.[0].databaseId')
-          if [ -n "$PREV_RUN" ] && [ "$PREV_RUN" != "null" ]; then
-            gh run download "$PREV_RUN" -n trader-journal -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "no journal artifact"
+          ARTIFACT_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=trader-journal&per_page=10" \
+                       --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[0].id // empty')
+          if [ -n "$ARTIFACT_ID" ] && [ "$ARTIFACT_ID" != "null" ]; then
+            ARTIFACT_RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" --jq '.workflow_run.id // empty')
+            gh run download "$ARTIFACT_RUN" -n trader-journal -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "no journal artifact"
           else
-            echo "no prior daily-run found"
+            echo "no trader-journal artifact found"
           fi
         continue-on-error: true
 

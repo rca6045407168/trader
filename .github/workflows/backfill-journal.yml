@@ -1,0 +1,71 @@
+name: trader-backfill-journal
+
+# One-shot manually-triggered workflow to backfill the journal with current
+# Alpaca positions when reconcile drift blocks the daily-run.
+#
+# Specifically: when GH Actions journal artifact gets reset (e.g., during a
+# major version upgrade like v3.46) but Alpaca still has real positions from
+# prior runs, the reconcile sees all positions as "unexpected" and halts.
+#
+# This workflow:
+#   1. Restores latest daily-run journal (may be empty)
+#   2. Queries Alpaca for current positions
+#   3. Inserts each as an open `position_lots` entry tagged sleeve="momentum"
+#   4. Verifies reconcile is clean
+#   5. Uploads the populated journal as the trader-journal artifact
+#
+# Tonight's daily-run will then download THIS uploaded journal (latest
+# successful run with the trader-journal name) and proceed with rebalance.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore journal from latest successful daily-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data/
+          PREV_RUN=$(gh run list --workflow=trader-daily-run --branch=master --status=success --limit=1 --json databaseId --jq '.[0].databaseId')
+          if [ -n "$PREV_RUN" ] && [ "$PREV_RUN" != "null" ]; then
+            echo "Restoring from daily-run $PREV_RUN"
+            gh run download "$PREV_RUN" -n trader-journal -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "no journal artifact"
+          fi
+          ls -la data/ || true
+        continue-on-error: true
+
+      - name: Run backfill
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+          ALPACA_PAPER: "true"
+        run: python scripts/backfill_journal_from_alpaca.py
+
+      - name: Upload populated journal as trader-journal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trader-journal
+          path: data/journal.db
+          retention-days: 90
+          overwrite: true

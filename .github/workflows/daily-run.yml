@@ -36,21 +36,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Restore journal from latest successful run
-        # actions/download-artifact@v4 cannot fetch from previous runs without
-        # explicit run-id, which is what broke journal persistence — every run
-        # was starting with a fresh db, wiping shadow_decisions / runs / snapshots.
-        # Use `gh run download` to grab the most recent successful run's journal.
+      - name: Restore journal from latest trader-journal artifact (any workflow)
+        # v3.46 fix: previously this only looked at trader-daily-run history. But
+        # backfill-journal.yml also uploads trader-journal artifacts (used to
+        # heal reconcile drift). Need to find the LATEST artifact named
+        # trader-journal across ALL workflows. Use the artifacts API directly.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p data/
-          PREV_RUN=$(gh run list --workflow=trader-daily-run --branch=master --status=success --limit=1 --json databaseId --jq '.[0].databaseId')
-          if [ -n "$PREV_RUN" ] && [ "$PREV_RUN" != "null" ]; then
-            echo "Restoring journal from run $PREV_RUN"
-            gh run download "$PREV_RUN" -n trader-journal -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "no journal artifact at run $PREV_RUN; starting fresh"
+          # List all non-expired artifacts named trader-journal, sorted newest first
+          ARTIFACT_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=trader-journal&per_page=10" \
+                       --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[0].id // empty')
+          if [ -n "$ARTIFACT_ID" ] && [ "$ARTIFACT_ID" != "null" ]; then
+            ARTIFACT_RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" --jq '.workflow_run.id // empty')
+            ARTIFACT_WORKFLOW=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" --jq '.workflow_run.head_branch + " (run " + (.workflow_run.id|tostring) + ")"')
+            echo "Restoring journal from artifact $ARTIFACT_ID (run $ARTIFACT_WORKFLOW)"
+            gh run download "$ARTIFACT_RUN" -n trader-journal -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "download failed; starting fresh"
           else
-            echo "no prior successful run found; starting fresh"
+            echo "no trader-journal artifact found; starting fresh"
           fi
           ls -la data/ || true
         continue-on-error: true  # first run / missing artifact starts fresh
