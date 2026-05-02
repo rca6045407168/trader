@@ -1,0 +1,57 @@
+# Dashboard Dockerfile — Streamlit live UI for the trader.
+#
+# Builds on the production base (python:3.11-slim). Adds streamlit + the
+# regime-overlay deps (so the live "Regime overlay" tab can recompute).
+#
+# Build:  docker build -f Dockerfile.dashboard -t trader-dashboard .
+# Run:    docker run --rm -p 8501:8501 -v $(pwd)/data:/app/data trader-dashboard
+# Open:   http://localhost:8501
+#
+# Recommended: use docker-compose.yml which runs this as a long-lived
+# service with auto-restart.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user; pre-create writable data dir
+RUN useradd -m -u 1000 trader \
+ && mkdir -p /app/data \
+ && chown -R trader:trader /app
+USER trader
+
+COPY --chown=trader:trader requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+ENV PATH=/home/trader/.local/bin:$PATH
+
+# Dashboard-only deps: streamlit (UI), hmmlearn + arch (so the Regime
+# overlay tab can recompute live).
+RUN pip install --user --no-cache-dir \
+    "streamlit>=1.30" \
+    "hmmlearn>=0.3" \
+    "arch>=6.0"
+
+COPY --chown=trader:trader src/ ./src/
+COPY --chown=trader:trader scripts/ ./scripts/
+COPY --chown=trader:trader pyproject.toml .
+
+VOLUME ["/app/data"]
+
+ENV PYTHONPATH=/app/src
+EXPOSE 8501
+
+# Streamlit-specific options:
+#   --server.port=8501           default port
+#   --server.address=0.0.0.0     bind to all interfaces (so the host can connect)
+#   --server.headless=true       don't try to open a browser inside the container
+#   --browser.gatherUsageStats=false   no telemetry
+ENTRYPOINT ["streamlit", "run", "scripts/dashboard.py", \
+            "--server.port=8501", \
+            "--server.address=0.0.0.0", \
+            "--server.headless=true", \
+            "--browser.gatherUsageStats=false"]

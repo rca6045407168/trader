@@ -1,0 +1,114 @@
+# Local "running constantly" stack for the trader.
+#
+# Default services (always up):
+#   - dashboard: Streamlit UI on http://localhost:8501. Reads data/journal.db
+#                in real-time (auto-refresh every 30s in the UI). Auto-restarts
+#                if it crashes. THIS is the right thing to leave running.
+#
+# Opt-in services (commented out — uncomment to enable):
+#   - cron-daily: runs scripts/run_daily.py at 21:10 UTC Mon-Fri inside a
+#                 long-lived container. ONLY enable if you want the trading
+#                 cron to live on your laptop instead of GitHub Actions.
+#                 Most people: leave commented out. The strategy doesn't
+#                 trade more often just because you run it locally; you'd
+#                 just be duplicating GitHub Actions cron + creating a
+#                 split-brain reconciliation problem.
+#   - cron-intraday: same idea for the intraday-risk-watch.
+#
+# Quickstart:
+#   docker compose up -d           # starts dashboard in background
+#   open http://localhost:8501
+#   docker compose logs -f dashboard
+#   docker compose down            # stop everything
+#
+# To rebuild after code changes:
+#   docker compose build dashboard
+#   docker compose up -d --force-recreate dashboard
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    image: trader-dashboard:latest
+    container_name: trader-dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      # Bind-mount data/ so the dashboard sees the SAME journal that the
+      # local Docker runs + GitHub-artifact-pulled journal write to.
+      - ./data:/app/data
+      # Mount the .env file read-only — needed for the GitHub-sync button
+      # to authenticate, and for the regime-overlay tab if you want it to
+      # use real broker creds (it doesn't trade).
+      - ./.env:/app/.env:ro
+    environment:
+      # Default: regime overlay computes for observability but isn't applied.
+      # The dashboard tab shows the live multiplier either way.
+      - REGIME_OVERLAY_ENABLED=false
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8501/_stcore/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ============================================================
+  # OPT-IN: local cron emulator. Uncomment to run the trader on your laptop
+  # instead of (or in parallel with) GitHub Actions. See header comment for
+  # why this is usually NOT what you want.
+  # ============================================================
+  # cron-daily:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile  # production image, not test
+  #   image: trader:latest
+  #   container_name: trader-cron-daily
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./data:/app/data
+  #     - ./.env:/app/.env:ro
+  #   environment:
+  #     # Run at 21:10 UTC Mon-Fri using a sleep-loop. Crude but reliable
+  #     # without adding a cron daemon to the image.
+  #     - PYTHONUNBUFFERED=1
+  #   entrypoint: ["sh", "-c"]
+  #   command:
+  #     - |
+  #       while true; do
+  #         NOW=$$(date -u '+%H:%M %u')
+  #         echo "[cron] $$NOW"
+  #         # Mon-Fri = day-of-week 1-5; 21:10 UTC
+  #         if echo "$$NOW" | grep -qE '^21:1[0-5] [1-5]$$'; then
+  #           python scripts/run_daily.py --force
+  #           sleep 600  # don't double-fire
+  #         fi
+  #         sleep 30
+  #       done
+
+  # cron-intraday:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   image: trader:latest
+  #   container_name: trader-cron-intraday
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./data:/app/data
+  #     - ./.env:/app/.env:ro
+  #   environment:
+  #     - PYTHONUNBUFFERED=1
+  #   entrypoint: ["sh", "-c"]
+  #   command:
+  #     - |
+  #       while true; do
+  #         NOW=$$(date -u '+%H:%M %u')
+  #         # Every :00 and :30 between 14:00 and 20:30 UTC, Mon-Fri
+  #         if echo "$$NOW" | grep -qE '^(1[4-9]|20):(00|30) [1-5]$$'; then
+  #           python scripts/run_intraday_risk_watch.py
+  #           sleep 90
+  #         fi
+  #         sleep 30
+  #       done

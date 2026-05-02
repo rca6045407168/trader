@@ -312,11 +312,53 @@ See **[`docs/GCP_DEPLOYMENT.md`](docs/GCP_DEPLOYMENT.md)** — full migration pl
 
 ---
 
-## Docker
+## Local live dashboard (v3.50)
 
-Two Dockerfiles:
+Streamlit UI showing real-time decisions, positions, regime overlay state, freeze state, shadow variants, and intraday risk log. Auto-refreshes every 30 seconds. Reads `data/journal.db` (the same SQLite that GitHub Actions writes via the trader-journal artifact).
+
+```bash
+cd ~/trader
+docker compose up -d dashboard       # builds + starts in background
+open http://localhost:8501           # auto-restarts on crash
+docker compose logs -f dashboard     # tail logs
+docker compose down                  # stop
+```
+
+**Tabs:**
+- 🏠 Overview — pre-flight gate state (deployment anchor, override-delay SHA, peek counter, freeze state) + last 5 runs
+- 🎯 Decisions — last 50 decisions + last 50 orders
+- 📦 Positions — open lots by sleeve + closed lots history
+- 🌡️ Regime overlay — **live recomputation** of HMM + macro + GARCH every refresh
+- 👥 Shadow variants — last 7 days of shadow decisions, side-by-side
+- ⚡ Intraday risk — log from `intraday-risk-watch.yml`
+- 📈 Performance — equity curve + drawdown chart
+- 📜 Postmortems — nightly self-review summaries
+- 🔧 Manual — workflow-dispatch buttons (gated by "type 'I-MEANT-TO'" + counted by `peek_counter`)
+
+**Sidebar:**
+- "⬇️ Pull latest journal artifact" — runs `gh run download` to sync the latest `trader-journal` artifact from GitHub Actions into local `data/journal.db`
+- Auto-refresh slider (5–300 sec)
+- Data freshness indicator
+
+The dashboard is **read-only by default**. Manual workflow triggers exist in the "🔧 Manual" tab but require typing `I-MEANT-TO` to enable, and every dispatch counts toward the 3-per-30-day `peek_counter` limit.
+
+## "Running constantly" — what to put on your laptop
+
+| Component | Run constantly on laptop? | Why |
+|---|---|---|
+| **Dashboard** (`docker compose up -d dashboard`) | ✅ yes | Read-only viewer; auto-refreshes; perfect for monitoring |
+| **GitHub Actions cron** (5 workflows) | already on, no action needed | The trading trigger; lives in GitHub's infra |
+| **Local cron emulator** (commented in `docker-compose.yml`) | ❌ no, by default | Strategy doesn't trade more often by running locally; would create split-brain reconciliation problem with GitHub Actions |
+| **Production trader image** (`Dockerfile`) | ❌ no | One-shot. Use `docker run` for QA / smoke tests / debugging |
+
+Trading itself is monthly-rebalance + daily-checkpoint by design (per `docs/CRITIQUE.md` — overtrading is the #1 retail-blow-up mode). The cron schedule is correct; the dashboard is what you actually want running constantly.
+
+## Docker images
+
+Three Dockerfiles:
 - **`Dockerfile`** — production image. Slim base, no tests. Will become the prod image once we cut over to GCP Cloud Run (`docs/GCP_DEPLOYMENT.md`).
 - **`Dockerfile.test`** — adds `pytest`, `hmmlearn`, `arch`, and the test suite. Default ENTRYPOINT runs all 141 tests. Override `--entrypoint python` to run any script. **This is what we use for QA + local production smoke testing today.**
+- **`Dockerfile.dashboard`** — adds `streamlit`. Default ENTRYPOINT serves the dashboard on port 8501. Used by `docker compose up -d dashboard`.
 
 **Verified working as of v3.49.2:**
 - `docker build -f Dockerfile.test -t trader-test .` → builds clean
