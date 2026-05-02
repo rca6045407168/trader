@@ -1,117 +1,430 @@
 # trader
 
-Personal automated trading system for Richard. Lives in `~/FlexHaul/trader/`.
+Personal automated equity trading system. Lives in `~/trader/` (not `~/FlexHaul/trader/` — moved out 2025‑Q4). Goal: **maximize after‑tax CAGR in a Roth IRA** with auditable, defense‑in‑depth controls and ruthless honesty about what we know vs. what we hope.
 
-## What it does
+> **Standing directives from Richard:**
+> 1. Iterate autonomously. Don't ask permission for reversible work.
+> 2. Use a swarm‑of‑agents approach for research, but **verify every agent's output** — they fabricate.
+> 3. **Goal = maximize profit.** Always remember that.
 
-1. **Ranks the S&P 500 by 12-month momentum** (skipping the most recent month) → buys top 5, equal-weighted, monthly rebalance. ~80% of capital. Defaults set from a walk-forward parameter sweep — see `CAVEATS.md` for empirical findings.
-2. **Scans for oversold bottoms** every day: RSI<30 + price >2σ below 20-day MA + volume spike + long-term uptrend intact. Bottom-catch candidates go to a multi-agent debate (Bull / Bear / Risk Manager via Claude API). Approved ones get up to 20% of capital.
-3. **Logs every decision** (decisions, orders, P&L snapshots) to SQLite.
-4. **Self-reviews each night**: a Post-Mortem agent reads yesterday's decisions + today's price reaction, proposes ONE specific tweak per day. Logged, not auto-applied.
+---
 
-## Brokerage
+## Current state (snapshot — update on every push)
 
-[Alpaca](https://alpaca.markets) paper trading. Free. Real market data. Paper account is unlimited and lets the system run indefinitely without real money. Switch to live trading by changing one env var (`ALPACA_PAPER=false`) once paper Sharpe > 1.0 over 3 months.
+| Field | Value |
+|---|---|
+| Version | **v3.48.x** |
+| LIVE variant | `momentum_top15_mom_weighted_v1` (top‑15 names, momentum‑weighted, 80% gross, 10% max single‑name) |
+| Brokerage (paper) | Alpaca paper — running ~daily since v3.x |
+| Brokerage (live, planned) | **Public.com Roth IRA** (NOT Alpaca — they don't sell IRAs to retail since Sept 2024) |
+| Paper account equity | ~$106k (+6.49%, +5.72pp vs SPY at last reconcile) |
+| Honest expectation | **PIT‑Sharpe ≈ +0.96, CAGR ≈ +19%, worst‑DD ≈ −33%** |
+| Tests | 126 unit + 10 chaos + 9 go‑live gates |
+| Days until live | ~85 paper days remain on the 90‑day clock |
+| Live armed? | **No.** `BROKER=alpaca_paper` everywhere. Flip is one GitHub variable change, gated by override‑delay. |
 
-**Why not Fidelity?** Fidelity has no public retail trading API. The only "Fidelity API" on PyPI is an unofficial Playwright scraper that violates ToS and can lock your account. Keep Fidelity for long-term holds; run the algo on Alpaca.
+---
 
-## Setup (Richard, do this once)
+## What it does (current LIVE behavior)
+
+1. **Monthly rebalance** to the top‑15 momentum names from a PIT‑honest S&P 500 universe (`universe_pit.py`), weighted by 12‑1 momentum z‑score (not equal weight). 80% gross. Single‑name cap 10%, sector cap 35%.
+2. **Daily anomaly scan** (`run_anomaly_scan.py`): looks for oversold reversals, PEAD candidates, activist 13D filings, merger‑arb spreads. Surfaces them; LIVE allocator does **not** auto‑execute these — they go into shadow variants.
+3. **Hourly reconciliation** (`run_reconcile.py`): journal expected vs Alpaca actual. HALT on mismatch.
+4. **Nightly post‑mortem** (`run_postmortem.py`): Claude reads yesterday's decisions + today's reaction; proposes one tweak. Logged, not auto‑applied.
+5. **Weekly digest** (`weekly_digest.py`): SPY‑relative perf, drawdown vs deployment anchor, peek counter, override‑delay state.
+6. **Continuous shadow tracking**: 10+ shadow variants run alongside LIVE; `strategy_decay_check.py` flags if any shadow significantly outperforms LIVE for ≥30 days (then promote via the 3‑gate pipeline).
+
+---
+
+## Honest performance expectations
+
+These come from PIT‑corrected backtests, NOT from in‑sample optimizer numbers.
+
+| Metric | PIT‑honest | In‑sample (DON'T TRUST) |
+|---|---|---|
+| Sharpe | **+0.96** | +1.16 |
+| CAGR | **+19%** | +30% |
+| Worst observed DD | **−33%** | −27% |
+| Expected DD ≥1×/5yr | **−25 to −35%** | — |
+
+**The first 12 months of live trading have a real chance of underperforming SPY.** 90% of retail algo traders do. The thesis is multi‑year, not multi‑quarter.
+
+---
+
+## 3‑gate promotion methodology (no shortcuts)
+
+Any candidate variant must pass all three gates before promoting from `shadow` → `live`:
+
+1. **Gate 1 — Survivor 5‑regime backtest.** Bull, bear, sideways, vol‑spike, slow‑grind. Must beat SPY‑equiv risk‑adjusted in ≥4 of 5.
+2. **Gate 2 — PIT validation.** Re‑run on `universe_pit.py` (ticker membership as of date, not today) + `data.py` cache without future leakage. Sharpe must drop <30% from in‑sample.
+3. **Gate 3 — CPCV (Combinatorial Purged Cross‑Validation, Lopez de Prado).** `cpcv_backtest.py`. PBO (Probability of Backtest Overfitting) <0.5; deflated Sharpe (Bailey & Lopez de Prado) >0.
+
+If any gate fails: candidate is logged in the kill‑list (`docs/CRITIQUE.md`) with a reason, and **not re‑proposed**.
+
+---
+
+## 4‑layer defense architecture (v3.46)
+
+Every layer must independently fail for real money to be at risk.
+
+### Layer 1 — Code enforcement (this repo)
+- `risk_manager.py` — 9 ladders: position cap (16% safety / 10% target), gross cap, daily‑loss freeze (6% → 48h), deploy‑DD freeze (25% → 30‑day no‑new), liquidation gate (33% → requires written post‑mortem to clear), sector cap (35%), vol scaling, exposure check, kill‑switch passthrough.
+- `kill_switch.py` — 6 triggers: manual flag, missing keys, week/month/peak DD, reconcile mismatch.
+- `deployment_anchor.py` — locks equity at first daily‑run; all DD math anchored here. `reset_anchor()` requires `reason ≥ 50 chars` + `post_mortem_path`.
+- `override_delay.py` — SHA‑256 over LIVE variant + risk constants; any change triggers 24‑hour cooling‑off before the next daily‑run executes. Bypass requires sentinel file (which we don't create).
+- `peek_counter.py` — counts `workflow_dispatch` events (manual triggers); alerts at >3 / 30‑day rolling window.
+- `agent_verifier.py` (v3.47) — TRUST/VERIFY/ABSTAIN gate for LLM outputs feeding decisions. Catches fabricated arxiv citations, anonymous authors, Sharpe>10 claims.
+- `validation.py` — empty/short/bad price data raises; warns on splits, stale data, concentration.
+- `reconcile.py` — journal vs broker positions; HALT on drift.
+
+### Layer 2 — Custodian (broker)
+- Alpaca paper today; Public.com Roth IRA planned. Brokers enforce regulatory limits (PDT exemption in IRAs, settlement, NBBO).
+
+### Layer 3 — Human checkpoint
+- `docs/BEHAVIORAL_PRECOMMIT.md` — must be signed before live arming. Pre‑commits to: (a) no manual override after −15% DD; (b) no doubling down; (c) liquidation gate triggers REQUIRE 7‑day cool‑off + post‑mortem before any new deployment.
+- Spousal pre‑brief required before LIVE flip.
+
+### Layer 4 — Document trail
+- `docs/CRITIQUE.md` — kill‑list of every retired candidate + reason.
+- `docs/PRE_REGISTRATION_OOS.md` — pre‑registers exact strategy parameters before any new shadow runs (so we can't post‑hoc tune).
+- `docs/RESEARCH.md`, `PAPER.md`, `ARCHITECTURE.md` — design rationale, audit trail.
+
+---
+
+## Roth IRA path (corrected v3.48)
+
+**WRONG (earlier doc):** Open Roth IRA at Alpaca direct. Per Alpaca support: *"As of September 2024, IRA accounts are only available for Broker API clients"* — they only sell IRAs to fintech partners (Robinhood, SoFi).
+
+**RIGHT:** Open Roth IRA at **Public.com**. Direct retail, fractional shares, official Python SDK (`publicdotcom-py`), $0 API access.
+
+Setup checklist: `docs/ROTH_IRA_SETUP.md`. Migration plan: `docs/MIGRATION_ALPACA_TO_PUBLIC.md`. Read‑only API verification: `scripts/test_public_connection.py`.
+
+**Migration architectural choice:** broker abstraction layer (NOT direct swap). New `src/trader/broker.py` interface; `broker_alpaca.py` + `broker_public.py` adapters. GitHub variable `BROKER=alpaca_paper|public_live` flips between them. Lets us keep Alpaca paper running in parallel after live flip for ongoing validation.
+
+**Estimated effort:** 1‑2 focused days. **Do NOT start before** Roth IRA is open + funded, 60+ paper days complete, `go_live_gate.py` showing 7+/9.
+
+---
+
+## LLM agent verification (v3.47)
+
+Discovered the hard way: agents fabricate convincing citations. After a behavioral‑research swarm cited unverified Gollwitzer/Karlan/Loewenstein effect sizes, then a follow‑up swarm cited an "Anonymous"‑authored arxiv paper, we built a mandatory verification gate.
+
+**Three actions** (RSCB‑MC framing — `docs/SWARM_VERIFICATION_PROTOCOL.md`):
+- **TRUST** — output stands.
+- **VERIFY** — sample 1‑2 claimed citations, WebFetch them.
+- **ABSTAIN** — discard the entire output.
+
+**Auto‑abstain triggers** (`agent_verifier.py`):
+- Anonymous authors on arxiv
+- Sharpe > 10
+- Sub‑agent claims "verified via arxiv API" (sub‑agents typically lack web access)
+- Citations with no quoted text (uncheckable)
+
+**Mandatory swarm prompt elements:**
+1. Verifiable output structure (arxiv ID + verbatim quote + claimed authors)
+2. Refusal‑is‑acceptable clause ("If you cannot find a real paper, say 'no qualifying paper found' — DO NOT FABRICATE")
+3. Verification warning ("I WILL verify N random citations. Fake = entire output discarded.")
+4. Anti‑pattern list (e.g., "reject Sharpe > 5.0 claims")
+
+**Empirical proof it works:** the 4‑agent swarm on 2026‑05‑02 caught Agent 2 fabricating an "Anonymous"‑authored Sharpe 2.43 paper. Without the gate, that would have shipped into a live trading decision.
+
+---
+
+## Killed candidates — DO NOT RE‑PROPOSE
+
+Documented in full in `docs/CRITIQUE.md`. High‑level kill list:
+
+| Candidate | Why killed |
+|---|---|
+| `momentum_top3_aggressive_v1` | 27% concentration risk, single‑name blowup → ~30% account drawdown. **Retired v3.42.** |
+| `momentum_top5_equal_v1` | Outperformed by top‑15 mom‑weighted on Sortino + max‑DD jointly. |
+| Naive PEAD | Look‑ahead in earnings timestamp; PIT version had no edge. |
+| LLM‑driven full trading agent (TradingGPT, FinAgent style) | 95%+ of LLM‑trading papers have look‑ahead via training cutoff. Verified via FINSABER (arxiv 2505.07078). |
+| GPT stock‑recommender portfolio | Same look‑ahead problem; cost > alpha at retail scale. |
+| Multi‑agent LLM debate over picks | API cost ($50‑500/day) eats alpha. |
+| Daily LLM rebalance | Latency disadvantage vs systematic players. |
+| Bottom‑catch with bracket orders | Brackets gave back 36% of edge (v0.7 4‑mode exit comparison). |
+| 6m / top‑10 momentum | Walk‑forward dominated by 12m / top‑5 → top‑15. |
+| Activist 13D follow‑on (naive) | Pump already priced; PIT edge negative. Kept as scanner only. |
+| Cointegration pairs (naive) | OOS broke down post‑2017; no edge after costs. |
+| Merger‑arb (naive) | Spread compression eaten by deal‑break tail risk. |
+| Inverse‑vol allocator | Beat by HRP on identical universe. |
+| Direct Alpaca Roth IRA | **Alpaca doesn't sell IRAs to retail.** Public.com is the right path. |
+
+If you propose any of these, check the kill date and reason first.
+
+---
+
+## Module catalog
+
+### `src/trader/` (core)
+
+| Module | Purpose |
+|---|---|
+| `config.py` | env loading, broker selection (`BROKER=alpaca_paper|public_live`) |
+| `universe.py` / `universe_pit.py` | S&P 500 / liquid‑50 ticker lists; PIT version uses membership as of date |
+| `data.py` | yfinance fetch + parquet cache |
+| `signals.py` | momentum, RSI, Bollinger z‑score, ATR, bottom‑catch composite |
+| `vol_signals.py` | realized vol, IV proxies |
+| `strategy.py` | ranks momentum + finds bottoms → trade candidates |
+| `variants.py` | **LIVE variant = `momentum_top15_mom_weighted_v1`**; ~10 shadow variants |
+| `backtest.py` | pandas‑based backtest with SPY benchmark |
+| `cpcv_backtest.py` (script) | CPCV gate (Lopez de Prado) |
+| `pbo.py` | Probability of Backtest Overfitting |
+| `deflated_sharpe.py` | Bailey‑Lopez de Prado deflated Sharpe |
+| `perf_metrics.py` | Sharpe / Sortino / Calmar / Information Ratio |
+| `regime.py` / `hmm_regime.py` | regime detection (rule‑based + 3‑state HMM) |
+| `garch_vol.py` | GARCH(1,1) vol forecast for sizing |
+| `risk_manager.py` | 9 risk ladders + freeze state machine |
+| `risk_parity.py` / `hrp.py` | Hierarchical Risk Parity allocator |
+| `residual_momentum.py` | momentum after market/sector beta strip |
+| `sectors.py` | GICS sector caps |
+| `macro.py` | macro regime overlay (slope of yield curve, HY OAS) |
+| `merger_arb.py` | merger‑arb spread scanner |
+| `cointegration.py` | pairs scanner |
+| `activist_signals.py` | 13D filings parser |
+| `anomalies.py` | PEAD, drift, gap‑fill scanners |
+| `ml_ranker.py` | gradient‑boosted ranker over feature stack |
+| `ab.py` | A/B test framework for variants |
+| `meta_optimizer.py` | meta‑allocator across variants |
+| `options_barbell.py` (v3.43) | OTM call sleeve research; **NOT wired into LIVE** |
+| `critic.py` | Bull/Bear/Risk‑Manager swarm debate (Claude API) |
+| `postmortem.py` | nightly self‑review agent (Claude) |
+| `narrative.py` | daily report narrative (Claude with web_search) |
+| `agent_verifier.py` (v3.47) | TRUST/VERIFY/ABSTAIN gate for any LLM output feeding decisions |
+| `journal.py` | SQLite — decisions, orders, snapshots, postmortems, position_lots |
+| `execute.py` | Alpaca order placement (will become broker‑abstracted in migration) |
+| `reconcile.py` | journal vs broker positions; HALT on drift |
+| `kill_switch.py` | 6 triggers |
+| `deployment_anchor.py` (v3.46) | locks equity at first run; DD math anchored here |
+| `override_delay.py` (v3.46) | SHA + 24h cooling‑off on LIVE config change |
+| `peek_counter.py` (v3.46) | manual workflow_dispatch counter |
+| `validation.py` | data sanity checks |
+| `replay.py` | deterministic replay of any past day for debugging |
+| `report.py` | daily report renderer |
+| `notify.py` / `alerts.py` | Slack / email outputs |
+| `order_planner.py` | translates target weights → orders, respects fractional support |
+| `main.py` | daily orchestrator (override_delay → peek_counter → deployment_anchor → kill_switch → variants → execute → reconcile → narrative) |
+
+### `scripts/` (entry points + research)
+
+**Daily / operational:**
+- `run_daily.py` — main entry; placed by GitHub Action
+- `run_reconcile.py` — hourly reconciliation
+- `run_postmortem.py` — nightly self‑review
+- `run_anomaly_scan.py` — scanner sweep
+- `weekly_digest.py` — SPY‑relative + DD + peek + override‑delay status
+- `halt.py` / `halt.sh` — manual kill switch
+- `notify_cli.py` — manual alert
+- `resume.sh` — clear halt
+- `drawdown_alert.py` — out‑of‑band DD watcher
+
+**Backtests / research:**
+- `run_backtest.py` — single‑variant backtest
+- `run_optimizer.py` — walk‑forward parameter sweep
+- `cpcv_backtest.py` — CPCV gate
+- `run_pbo_audit.py` — PBO over candidate set
+- `run_dsr_audit.py` — deflated Sharpe over candidate set
+- `bootstrap_sharpe_ci.py` — bootstrap Sharpe CIs
+- `regime_stress_test.py` — 5‑regime stress
+- `chaos_test.py` — 10 chaos scenarios (data outage, broker outage, partial fills, etc.)
+- `compare_variants.py` — head‑to‑head variant comparison
+- `strategy_decay_check.py` — flags shadows outperforming LIVE
+- `slippage_sensitivity.py` / `realized_slippage_tracker.py` — slippage realism
+- `run_tax_aware_sim.py` — taxable vs Roth simulation
+- `cash_yield_audit.py` — cash sweep yield check
+- `iterate_v3.py` ... `iterate_v14_more_anomalies.py` — historical iteration logs (immutable record)
+- `walk_forward_prefomc.py` — pre‑FOMC drift backtest
+- `pead_proxy_test.py` / `pead_smallcap_backtest.py` — PEAD studies
+- `activist_13d_backtest.py`, `cointegration_backtest.py`, `run_merger_arb_scan.py` — anomaly backtests
+- `options_barbell_backtest.py` (v3.43) — barbell sleeve research
+- `account_size_test.py` — minimum viable account size
+- `bsc_scaling_analysis.py` — Black‑Scholes call sizing
+- `exp_inverse_vol.py` — inverse‑vol allocator (killed)
+- `regression_check.py` — daily regression vs golden runs
+- `spy_relative_dashboard.py` — outperformance vs SPY
+- `three_numbers.py` — single‑output: excess CAGR, vol, max‑DD vs SPY
+- `readiness_monitor.py` — go‑live readiness dashboard
+- `go_live_gate.py` — **9 automated gates; must show 9/9 before live arming**
+- `backfill_3month.py` / `backfill_lots.py` / `backfill_journal_from_alpaca.py` (v3.46.1) — journal restoration from broker truth
+- `test_public_connection.py` (v3.48.1) — read‑only Public.com API verification
+- `test_email.py` — alert plumbing test
+- `run_task_health.py` — workflow self‑check
+
+### `.github/workflows/`
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `daily-run.yml` | cron 21:10 UTC | full daily orchestrator |
+| `hourly-reconcile.yml` | cron hourly | journal vs broker reconciliation |
+| `backfill-journal.yml` | manual | restores journal artifact + backfills lots from broker |
+| `readiness-and-dd-alerts.yml` | cron + push | readiness dashboard + DD alerts |
+| `weekly-digest.yml` | cron weekly | weekly summary email |
+| `ci.yml` | push | unit tests + chaos + go‑live gate sanity |
+
+**Cross‑workflow journal artifact lookup:** all daily/hourly workflows now query `repos/$GITHUB_REPOSITORY/actions/artifacts?name=trader-journal` for the LATEST artifact across ALL workflows (so backfill output is picked up). Old code only looked at the same workflow's history → broke after backfill.
+
+### `docs/`
+
+| Doc | Purpose |
+|---|---|
+| `ARCHITECTURE.md` | end‑to‑end system design |
+| `PAPER.md` | research paper / evaluation framework / v2/v3 roadmap |
+| `RESEARCH.md` | references + paper notes |
+| `CRITIQUE.md` | **kill list — every retired candidate + reason** |
+| `BEHAVIORAL_PRECOMMIT.md` | signed pre‑commit (the binding behavioral contract) |
+| `BEHAVIORAL_PRECOMMIT_DRAFT.md` | unsigned draft to edit before sign |
+| `PRE_MORTEM_TEMPLATE.md` | template for liquidation‑gate post‑mortem |
+| `PRE_REGISTRATION_OOS.md` | pre‑register parameters before shadow runs |
+| `GO_LIVE_CHECKLIST.md` | 9 automated gates + manual sign‑off list |
+| `RICHARD_ACTION_ITEMS.md` | open items requiring human action |
+| `ROTH_IRA_SETUP.md` | **Public.com path (corrected v3.48)** |
+| `MIGRATION_ALPACA_TO_PUBLIC.md` | broker abstraction migration plan |
+| `LLM_APPLICATIONS.md` | honest assessment of where LLMs help vs don't |
+| `SWARM_VERIFICATION_PROTOCOL.md` | mandatory verification protocol for any agent output feeding decisions |
+| `CLOUD.md` | GitHub Actions deploy notes |
+
+---
+
+## Setup
 
 ```bash
-cd ~/FlexHaul/trader
+git clone <this repo> ~/trader
+cd ~/trader
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Then edit .env with your Alpaca paper keys + Anthropic key
+# Edit .env:
+#   ALPACA_API_KEY / ALPACA_API_SECRET / ALPACA_PAPER=true
+#   ANTHROPIC_API_KEY
+#   PUBLIC_API_SECRET / PUBLIC_ACCOUNT_NUMBER  (only after Public.com Roth IRA approved)
+#   BROKER=alpaca_paper                        (do NOT flip to public_live without 9/9 gates)
 ```
 
-**Get Alpaca paper keys** (5 min):
-1. Sign up at https://alpaca.markets (free, no SSN for paper, just email)
-2. Switch to Paper Trading in the dashboard
-3. Generate API key + secret → paste into `.env`
+**Get Alpaca paper keys:** sign up at https://alpaca.markets (free, no SSN for paper) → Paper Trading → API key + secret.
+
+**Get Public.com keys:** open Roth IRA at https://public.com → wait 1‑3 days for approval → fund → Account Settings → Security → API → "Create personal access token". **Add directly to `.env`. NEVER paste secrets into chat.**
+
+---
 
 ## Run
 
 ```bash
-# Backtest momentum on liquid 50, 2015-now
+# Verify Public.com API is reachable (read‑only, no orders)
+python scripts/test_public_connection.py
+
+# Backtest LIVE variant
 python scripts/run_backtest.py
 
-# Walk-forward parameter sweep
+# CPCV gate (must pass before any promote)
+python scripts/cpcv_backtest.py
+
+# Walk‑forward parameter sweep
 python scripts/run_optimizer.py
 
-# Dry-run today's trade decisions (no orders placed)
+# Dry‑run today's decisions (no orders)
 DRY_RUN=true python scripts/run_daily.py
 
 # Place actual paper orders
 python scripts/run_daily.py
 
-# Override idempotency (force re-run if you already ran today)
+# Force re‑run if you already ran today (override idempotency)
 python scripts/run_daily.py --force
 
-# Nightly self-review (run after market close, before next open)
+# Nightly self‑review
 python scripts/run_postmortem.py
 
-# Reconcile journal vs Alpaca positions
+# Reconcile journal vs broker
 python scripts/run_reconcile.py
 
-# Manual kill switch (arms a flag at /tmp/trader_halt)
+# Manual kill switch
 python scripts/halt.py on "flash crash"
 python scripts/halt.py off
 python scripts/halt.py status
+
+# Readiness check (9 automated gates)
+python scripts/go_live_gate.py
+
+# SPY‑relative performance
+python scripts/three_numbers.py
+python scripts/spy_relative_dashboard.py
+
+# Decay check — does any shadow beat LIVE?
+python scripts/strategy_decay_check.py
+
+# Backfill journal from broker (after artifact loss)
+python scripts/backfill_journal_from_alpaca.py
 ```
 
-## v0.9 operational hardening
+---
 
-Multiple safety layers run on every daily execution:
+## Live‑arm checklist (do NOT flip until ALL true)
 
-1. **Kill switch** (`kill_switch.py`) — 6 triggers (manual flag, missing keys, equity drawdown over week/month/peak)
-2. **Risk manager** (`risk_manager.py`) — 9 layers (position cap, gross exposure, daily loss, drawdown, vol scaling, sector cap, etc.)
-3. **Data validation** (`validation.py`) — raises on empty/short/bad price data; warns on splits, stale data, concentration
-4. **Reconciliation** (`reconcile.py`) — compares journal expected vs Alpaca actual positions
-5. **Idempotency** — won't re-trade same day unless `--force`
-6. **38 unit tests** covering risk_manager, journal, order_planner, validation, kill_switch, signals
+1. ✅ `docs/BEHAVIORAL_PRECOMMIT.md` is signed (saved from `_DRAFT.md`)
+2. ✅ Spousal pre‑brief completed
+3. ✅ Public.com Roth IRA: open, funded ($25k or contribution‑limit max), settled
+4. ✅ `python scripts/test_public_connection.py` shows green
+5. ✅ Broker abstraction layer (`broker.py` + adapters) merged + tested
+6. ✅ `python scripts/go_live_gate.py` shows **9/9** automated gates
+7. ✅ ≥60 paper trading days accumulated in `data/trader.db`
+8. ✅ `python scripts/three_numbers.py` shows excess CAGR over SPY > 0
+9. ✅ `python scripts/strategy_decay_check.py` shows no shadow significantly outperforms LIVE
+10. ✅ Independent strategy review completed (different model OR human reviewer)
+11. ✅ GitHub variable `BROKER=public_live` flipped (one‑click)
+12. ✅ Override‑delay catches the variable change → next daily‑run skips
+13. ✅ Day +1: first live daily‑run executes at **25% sizing cap** (v3.45)
 
-## Strategy iterations (see `CAVEATS.md` for empirical findings)
+If any item is ❌: do not arm.
 
-| Version | Key change | Validated by |
-|---|---|---|
-| v0.1 | initial momentum + bottom-catch + Bull/Bear/Risk swarm | unit tests |
-| v0.2 | walk-forward winner: 12m / top-5 (was 6m / top-10) | walk-forward optimizer |
-| v0.5 | bottom-catch threshold 0.55 → 0.65; allocation 80/20 → 60/40 | 7-hypothesis stress run |
-| v0.7 | bottom-catch exit redesign: brackets dropped (gave back 36% of edge) | 4-mode exit comparison |
-| v0.8 | survivorship-bias quantification, Monte Carlo bootstrap, crash performance | 7 stress sub-tests |
-| v0.9 | kill switch, validation, reconciliation, idempotency, tests | 38 unit tests |
+---
 
-## Architecture & research paper
+## Version history (what each release shipped)
 
-The full design rationale, evaluation framework, and v2.0/v3.0 roadmap is in [docs/PAPER.md](docs/PAPER.md). Read this for: how the system judges its own performance (Sharpe / Sortino / Calmar / Deflated Sharpe / PBO), how multi-strategy ensembles work (AQR / Two Sigma / Renaissance approaches), how online learning fits in (bandit allocators, regime detectors), and the v3.0 architecture target.
+| Ver | Highlight |
+|---|---|
+| v0.1‑v0.9 | Initial momentum + bottom‑catch; walk‑forward; survivorship correction; v0.9 hardening (kill switch, validation, reconcile, idempotency, 38 tests) |
+| v1.x | Multi‑variant framework; A/B; meta‑allocator |
+| v2.x | Anomaly scanners (PEAD, activist, merger‑arb, cointegration); HRP allocator; HMM regime |
+| v3.0‑v3.20 | ML ranker; deflated Sharpe; PBO; CPCV gate; PIT universe; tax‑aware sim |
+| v3.27 | Independent reviewer caught kill‑switch bug |
+| v3.29 | top‑15 mom‑weighted promoted to shadow |
+| v3.42 | **LIVE flipped from top‑3 → top‑15 mom‑weighted** (concentration risk) |
+| v3.43‑v3.44 | OTM call barbell sleeve research + stress test (NOT wired) |
+| v3.45 | 25% initial deployment cap |
+| v3.46 | **4‑layer enforcement:** deployment_anchor + override_delay + peek_counter + tightened risk ladders |
+| v3.46.1 | journal artifact persistence fix; backfill workflow; cross‑workflow artifact lookup |
+| v3.47 | **agent_verifier:** TRUST/VERIFY/ABSTAIN gate for any LLM output feeding decisions; SWARM_VERIFICATION_PROTOCOL |
+| v3.48 | **ROTH_IRA_SETUP corrected:** Public.com (NOT Alpaca direct); MIGRATION_ALPACA_TO_PUBLIC plan |
+| v3.48.1 | Read‑only Public.com API verification script (`test_public_connection.py`); confirmed against account 5OH27398 |
+| v3.48.2 | **README comprehensive rewrite** (this) |
 
-## Realistic expectations
+---
 
-Walk-forward + survivorship-bias correction both converge on:
-- **CAGR: 15-17%** (not the 30% in-sample backtest — that's bias-inflated)
-- **Sharpe: 0.80-0.85** out-of-sample (vs 1.16 in-sample)
-- **Max drawdown: -25 to -35% expected at least once per 5 years**
-- **Worst observed crash drawdown: -27% (2018-Q4 Powell selloff)**
+## Open work / timeline
 
-## Architecture
+| When | What |
+|---|---|
+| Now → Day 60 | Continue Alpaca paper; accumulate journal data; `weekly_digest.py` weekly review |
+| Day 30 | User: open Public.com Roth IRA (1‑3 day approval) |
+| Day 31‑35 | User: fund Roth IRA; settle |
+| Day 35 | User: regenerate Public.com API keys scoped to IRA; add to `.env` + GitHub secrets |
+| Day 60‑75 | Build broker abstraction (`broker.py` + adapters) per `MIGRATION_ALPACA_TO_PUBLIC.md` |
+| Day 75 | Run dual: Alpaca paper + Public paper (if Public exposes paper) for 1 week |
+| Day 80 | `go_live_gate.py` review — chase any red gates |
+| Day 85 | Sign `BEHAVIORAL_PRECOMMIT.md`; spousal brief |
+| Day 90 | Flip `BROKER=public_live` → override‑delay catches → Day +1 first live run at 25% sizing |
+| Day 90+30 | Review live perf vs paper expectation; scale to 50% if within band |
+| Day 90+90 | Scale to 100% if within band |
 
-```
-src/trader/
-├── config.py        # env loading
-├── universe.py      # S&P 500 / liquid-50 ticker lists
-├── data.py          # yfinance fetch + parquet cache
-├── signals.py       # momentum, RSI, Bollinger z-score, ATR, bottom-catch composite
-├── strategy.py      # ranks momentum + finds bottoms → trade candidates
-├── backtest.py      # pandas-based backtest with SPY benchmark
-├── critic.py        # Bull/Bear/Risk-Manager swarm debate (Claude API)
-├── postmortem.py    # Nightly self-review agent (Claude API)
-├── journal.py       # SQLite — decisions, orders, daily snapshots, postmortems
-├── execute.py       # Alpaca order placement (notional orders)
-├── notify.py        # Slack webhook + console
-└── main.py          # daily orchestrator
-```
+---
 
-## Reality check
+## Reality check (read this before arming)
 
-90% of retail algo traders underperform buy-and-hold SPY in year 1. 80% of backtested strategies fail live. Realistic returns for survivors: 8-15% annual. **Run paper for at least 3 months before risking real money.** Even then, start with $1-5k you can lose entirely.
+- 90% of retail algo traders underperform buy‑and‑hold SPY in year 1.
+- 80% of backtested strategies fail live.
+- Realistic survivor returns: **8‑15% annual after costs** (our PIT honest is +19%; the gap is uncertainty).
+- A −33% drawdown WILL happen at some point. It's already in the deployment_anchor + liquidation_gate machinery — your job is to not panic‑override it.
+- The single biggest mistake is **flipping live before the gates pass**. The second biggest is **manual override after a drawdown**. Both are pre‑committed against in `BEHAVIORAL_PRECOMMIT.md`.
+- This is RETIREMENT money in a Roth IRA. You can't withdraw gains until 59½ without a 10% penalty. Don't deploy capital you'll need before then.
+
+The patient version of this is the version that doesn't blow up.
