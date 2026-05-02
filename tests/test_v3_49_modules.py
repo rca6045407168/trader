@@ -127,7 +127,7 @@ def test_allocator_handles_no_live_variants():
                 ab._REGISTRY[k].status = "paper"
         decision = allocate()
         assert decision.sleeve_weights == {}
-        assert "no LIVE" in decision.rationale.lower()
+        assert "no live" in decision.rationale.lower()
     finally:
         ab._REGISTRY.clear()
         ab._REGISTRY.update(saved)

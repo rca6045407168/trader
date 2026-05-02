@@ -1,0 +1,50 @@
+# Test/QA Dockerfile — builds on the production base, adds tests + pytest.
+# Use this for local QA before pushing to GitHub Actions or GCP.
+#
+# Build:  docker build -f Dockerfile.test -t trader-test .
+# Run all tests:  docker run --rm trader-test
+# Run smoke pipeline:  docker run --rm --env-file .env -v $(pwd)/data:/app/data \
+#                       --entrypoint python trader-test scripts/run_daily.py
+# Run intraday risk watch:  docker run --rm --env-file .env -v $(pwd)/data:/app/data \
+#                            --entrypoint python trader-test scripts/run_intraday_risk_watch.py
+# Run public-connection check:  docker run --rm --env-file .env \
+#                                --entrypoint python trader-test scripts/test_public_connection.py
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Compile deps for numpy/pandas/scipy + git (some pip installs need it)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user; pre-create writable data dir + pytest cache
+RUN useradd -m -u 1000 trader \
+ && mkdir -p /app/data /app/.pytest_cache \
+ && chown -R trader:trader /app
+USER trader
+
+COPY --chown=trader:trader requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+ENV PATH=/home/trader/.local/bin:$PATH
+
+# Test-only deps: hmmlearn (regime_overlay), arch (garch_vol), pytest (tests),
+# requests (already pulled but explicit). hmmlearn + arch were not in
+# requirements.txt because the existing variants only loaded them lazily and
+# v3.49 wires them into LIVE — they need to be present for tests to pass.
+RUN pip install --user --no-cache-dir "pytest>=8.0" "hmmlearn>=0.3" "arch>=6.0"
+
+COPY --chown=trader:trader src/ ./src/
+COPY --chown=trader:trader scripts/ ./scripts/
+COPY --chown=trader:trader tests/ ./tests/
+COPY --chown=trader:trader pyproject.toml .
+
+# Volumes mounted at runtime: /app/data (journal), .env (secrets) via --env-file
+VOLUME ["/app/data"]
+
+# Default: run the test suite. Override CMD or --entrypoint to run scripts.
+ENV PYTHONPATH=/app/src
+ENTRYPOINT ["python", "-m", "pytest"]
+CMD ["tests/", "-v", "--tb=short"]

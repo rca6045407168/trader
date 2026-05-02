@@ -12,6 +12,10 @@ alpaca-py>=0.30
 # AI swarm
 anthropic>=0.40
 
+# Regime overlay (v3.49) — wired into LIVE risk_manager
+hmmlearn>=0.3      # Gaussian HMM for regime detection
+arch>=6.0          # GARCH(1,1) for vol forecasting
+
 # Charting
 matplotlib>=3.8
 
