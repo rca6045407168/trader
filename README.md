@@ -13,15 +13,16 @@ Personal automated equity trading system. Lives in `~/trader/` (not `~/FlexHaul/
 
 | Field | Value |
 |---|---|
-| Version | **v3.48.x** |
+| Version | **v3.49.2** |
 | LIVE variant | `momentum_top15_mom_weighted_v1` (top‑15 names, momentum‑weighted, 80% gross, 10% max single‑name) |
 | Brokerage (paper) | Alpaca paper — running ~daily since v3.x |
 | Brokerage (live, planned) | **Public.com Roth IRA** (NOT Alpaca — they don't sell IRAs to retail since Sept 2024) |
 | Paper account equity | ~$106k (+6.49%, +5.72pp vs SPY at last reconcile) |
 | Honest expectation | **PIT‑Sharpe ≈ +0.96, CAGR ≈ +19%, worst‑DD ≈ −33%** |
-| Tests | 126 unit + 10 chaos + 9 go‑live gates |
+| Tests | **141 unit (126 + 15 new v3.49)** + 10 chaos + 9 go‑live gates. **All 141 green in Docker container.** |
 | Days until live | ~85 paper days remain on the 90‑day clock |
 | Live armed? | **No.** `BROKER=alpaca_paper` everywhere. Flip is one GitHub variable change, gated by override‑delay. |
+| Live trigger (planned) | **GCP Cloud Run job + Cloud Scheduler** — see `docs/GCP_DEPLOYMENT.md`. Migrates same week as `BROKER=public_live`. ~$3‑6/mo. |
 
 ---
 
@@ -297,27 +298,65 @@ See **[`docs/ARCHITECTURE_DIAGRAM.md`](docs/ARCHITECTURE_DIAGRAM.md)** for rende
 
 GitHub renders Mermaid natively — view that file on github.com.
 
+## Strategy direction (Architect + Trader)
+
+See **[`docs/ARCHITECT_TRADER_DEBATE.md`](docs/ARCHITECT_TRADER_DEBATE.md)** for the two‑persona adversarial review of the system + the synthesized 18‑item action plan to make it world‑class. The debate informs every Tier B / C decision.
+
+## GitHub research
+
+See **[`docs/SWARM_GITHUB_RESEARCH_2026_05_02.md`](docs/SWARM_GITHUB_RESEARCH_2026_05_02.md)** — 4‑agent swarm investigating GitHub repos that could elevate the trader to world‑class. 41 verified‑real repos surfaced; 14 categories where the swarm honestly returned "no qualifying repo found." Top 11 adoptions ranked by ROI/effort.
+
+## GCP deployment plan
+
+See **[`docs/GCP_DEPLOYMENT.md`](docs/GCP_DEPLOYMENT.md)** — full migration plan from GitHub Actions cron to Cloud Run + Scheduler + Secret Manager + Artifact Registry. Cuts over the same week as `BROKER=public_live`. ~$3‑6/month, fixes the "didn't run at all" alarm gap, gives us Cloud Logging + Monitoring for free.
+
 ---
 
 ## Docker
 
-A `Dockerfile` exists but is **not used in production.** Production runs entirely on GitHub Actions cron (no containers, no servers). The Dockerfile is a reference for future migration to Lightsail / Fly / Cloud Run if we ever outgrow GitHub Actions limits.
+Two Dockerfiles:
+- **`Dockerfile`** — production image. Slim base, no tests. Will become the prod image once we cut over to GCP Cloud Run (`docs/GCP_DEPLOYMENT.md`).
+- **`Dockerfile.test`** — adds `pytest`, `hmmlearn`, `arch`, and the test suite. Default ENTRYPOINT runs all 141 tests. Override `--entrypoint python` to run any script. **This is what we use for QA + local production smoke testing today.**
 
-**To run it locally for debugging:**
+**Verified working as of v3.49.2:**
+- `docker build -f Dockerfile.test -t trader-test .` → builds clean
+- `docker run --rm trader-test` → 141/141 tests pass in 30 seconds
+- `docker run --rm -e DRY_RUN=true -e USE_DEBATE=false ... --entrypoint python trader-test scripts/run_daily.py --force` → full pipeline executes including the new regime overlay (computed for observability, not applied because `REGIME_OVERLAY_ENABLED=false` default)
+
+**To run the full QA + smoke test:**
 
 ```bash
 cd ~/trader
+# 1. Build test image
+docker build -f Dockerfile.test -t trader-test .
+
+# 2. Run the 141-test suite
+docker run --rm trader-test
+# Expected: 141 passed in ~30s
+
+# 3. Run a production smoke test (DRY_RUN, no real orders)
+docker run --rm \
+  -e DRY_RUN=true \
+  -e USE_DEBATE=false \
+  -e ALPACA_API_KEY=dummy_smoke \
+  -e ALPACA_API_SECRET=dummy_smoke \
+  -e ALPACA_PAPER=true \
+  -e ANTHROPIC_API_KEY=dummy_smoke \
+  --entrypoint python \
+  trader-test scripts/run_daily.py --force
+```
+
+**To run real orders (production image, not test):**
+
+```bash
 docker build -t trader .
-# Mount data dir + pass .env so SQLite journal + secrets persist:
 docker run --rm \
   --env-file .env \
   -v $(pwd)/data:/app/data \
   trader
 ```
 
-Default `CMD` is `python scripts/run_daily.py --force`, so this will execute one full daily run inside the container — pre-flight gates → variant ranking → Alpaca paper orders → journal write → reconcile → narrative. Use `--force` because the container has no idempotency state across runs.
-
-**To run a different script** (override the default CMD):
+Default `CMD` of the production image is `python scripts/run_daily.py --force`. Override with any script:
 
 ```bash
 docker run --rm --env-file .env -v $(pwd)/data:/app/data \
@@ -327,7 +366,7 @@ docker run --rm --env-file .env -v $(pwd)/data:/app/data \
   trader scripts/test_public_connection.py
 ```
 
-**Recommendation:** for local dev/debugging just use the venv path below — it's faster and the parquet cache is shared. Reach for Docker only when you want to verify the prod-equivalent Python 3.11-slim image still builds clean before pushing.
+**Recommendation:** for local dev/debugging just use the venv path below — it's faster and the parquet cache is shared. Reach for Docker for QA + final pre-push verification.
 
 ---
 
@@ -441,7 +480,11 @@ If any item is ❌: do not arm.
 | v3.47 | **agent_verifier:** TRUST/VERIFY/ABSTAIN gate for any LLM output feeding decisions; SWARM_VERIFICATION_PROTOCOL |
 | v3.48 | **ROTH_IRA_SETUP corrected:** Public.com (NOT Alpaca direct); MIGRATION_ALPACA_TO_PUBLIC plan |
 | v3.48.1 | Read‑only Public.com API verification script (`test_public_connection.py`); confirmed against account 5OH27398 |
-| v3.48.2 | **README comprehensive rewrite** (this) |
+| v3.48.2 | README comprehensive rewrite |
+| v3.48.3 | Mermaid architecture diagrams (`docs/ARCHITECTURE_DIAGRAM.md`) + Docker explainer in README |
+| v3.49.0 | **Tier A world‑class build:** wired the 3 dormant signal modules (HMM regime, macro stress, GARCH vol) into a unified `regime_overlay.py` applied to gross exposure (env‑flag default off); built `meta_allocator.py` for sleeve‑level capital allocation across multiple LIVE sleeves (`single_live` default mode preserves today's behavior); built `intraday_risk.py` + workflow that catches flash crashes in 30 min instead of 24 h via the existing freeze‑state machine. 15 new tests. |
+| v3.49.1 | **GitHub research swarm + architect/trader debate.** 4 agents researched verified‑real GitHub repos (41 found, 14 honestly‑empty refusals, 11 disqualified after license verification). Top 11 adoptions ranked. Two‑persona adversarial review converged on 18‑item action plan. |
+| v3.49.2 | **QA pass green: 141/141 tests pass in Docker container.** Production smoke test of `scripts/run_daily.py --force` in `Dockerfile.test` confirmed full pipeline executes including the new regime overlay (computed for observability, not applied — exactly as designed with `REGIME_OVERLAY_ENABLED=false` default). `requirements.txt` promoted `hmmlearn` + `arch` from lazy‑loaded variant deps to first‑class. **GCP deployment plan** (`docs/GCP_DEPLOYMENT.md`) documents Cloud Run + Scheduler + Secret Manager + Artifact Registry migration path (~$3‑6/mo). |
 
 ---
 

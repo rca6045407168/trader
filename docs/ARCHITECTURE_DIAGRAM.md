@@ -290,7 +290,91 @@ flowchart TB
 
 ---
 
-## 5. Broker abstraction (planned, day 60-75)
+## 5. Regime overlay composer (v3.49.0 — wired into LIVE)
+
+```mermaid
+flowchart LR
+    subgraph SIGNALS["📡 3 dormant modules now wired"]
+        HMM["hmm_regime.py<br/>3-state Gaussian HMM<br/>on SPY returns"]
+        MACRO["macro.py<br/>10y-2y yield curve<br/>+ HYG/LQD ratio"]
+        GARCH["garch_vol.py<br/>GARCH(1,1)<br/>vol forecast"]
+    end
+
+    subgraph COMPOSE["🧮 regime_overlay.py composer"]
+        HMM_M["hmm_mult ∈ {1.15 / 0.85 / 0.30}<br/>bull / transition / bear"]
+        MACRO_M["macro_mult ∈ {1.0 / 0.85 / 0.70 / 0.55}<br/>ok / curve / credit / both"]
+        GARCH_M["garch_mult ∈ [0.50, 1.10]<br/>vol-target clamped"]
+        FINAL["final_mult = product<br/>clamped [0, 1.20]"]
+    end
+
+    HMM --> HMM_M --> FINAL
+    MACRO --> MACRO_M --> FINAL
+    GARCH --> GARCH_M --> FINAL
+
+    FLAG{"REGIME_OVERLAY_ENABLED<br/>env var"}
+    FINAL --> FLAG
+
+    APPLY["risk_manager applies<br/>multiplier to gross exposure<br/>(after VIX scaling, before cap)"]
+    PASSTHROUGH["risk_manager logs<br/>rationale only<br/>multiplier ignored"]
+
+    FLAG -->|"true"| APPLY
+    FLAG -->|"false (default)"| PASSTHROUGH
+
+    classDef sig fill:#bfdbfe,stroke:#1e3a8a,color:#000
+    classDef compose fill:#fde68a,stroke:#92400e,color:#000
+    classDef apply fill:#bbf7d0,stroke:#14532d,color:#000
+    classDef pass fill:#ddd6fe,stroke:#5b21b6,color:#000
+    classDef flag fill:#fecaca,stroke:#7f1d1d,color:#000
+
+    class HMM,MACRO,GARCH sig
+    class HMM_M,MACRO_M,GARCH_M,FINAL compose
+    class APPLY apply
+    class PASSTHROUGH pass
+    class FLAG flag
+```
+
+## 6. Multi-frequency monitoring loop (v3.49.0 — intraday risk added)
+
+```mermaid
+flowchart TB
+    subgraph TODAY["Today (paper)"]
+        DAILY["daily-run<br/>21:10 UTC Mon-Fri<br/>full pipeline"]
+        HOURLY["hourly-reconcile<br/>14-20 UTC Mon-Fri<br/>journal vs broker"]
+        INTRADAY["intraday-risk-watch<br/>0,30 14-20 UTC Mon-Fri<br/>defensive freeze trigger"]
+        WEEKLY["weekly-digest<br/>Sun 5pm PT<br/>SPY-relative + decay"]
+        ALERTS["readiness-and-dd-alerts<br/>22:30 UTC Mon-Fri<br/>9-gate + DD tiers"]
+    end
+
+    BROKER[("Alpaca paper<br/>(or Public.com IRA<br/>after migration)")]
+    JRN[("SQLite journal<br/>+ GitHub artifact")]
+    FREEZE[("risk_freeze_state.json<br/>shared by all jobs")]
+
+    DAILY -->|"reads/writes"| JRN
+    DAILY -->|"reads/writes"| FREEZE
+    DAILY -->|"executes"| BROKER
+
+    HOURLY -->|"reads"| JRN
+    HOURLY -->|"reads"| BROKER
+    HOURLY -.->|"drift -> alert"| ALERTS
+
+    INTRADAY -->|"reads"| BROKER
+    INTRADAY -->|"writes"| FREEZE
+    INTRADAY -.->|"freeze fired -> next daily-run skips"| DAILY
+
+    WEEKLY -->|"reads"| JRN
+    ALERTS -->|"reads"| BROKER
+    ALERTS -->|"reads"| JRN
+
+    classDef cron fill:#bfdbfe,stroke:#1e3a8a,color:#000
+    classDef defense fill:#fecaca,stroke:#7f1d1d,color:#000
+    classDef store fill:#bbf7d0,stroke:#14532d,color:#000
+
+    class DAILY,HOURLY,WEEKLY,ALERTS cron
+    class INTRADAY defense
+    class JRN,FREEZE,BROKER store
+```
+
+## 7. Broker abstraction (planned, day 60-75)
 
 ```mermaid
 flowchart LR
