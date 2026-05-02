@@ -193,6 +193,7 @@ tabs = st.tabs([
     "⚡ Intraday risk",
     "📈 Performance",
     "📜 Postmortems",
+    "📄 Reports",
     "🔧 Manual",
 ])
 
@@ -453,8 +454,59 @@ with tabs[7]:
     else:
         st.caption("no postmortems in journal")
 
-# ---------------- Manual actions ----------------
+# ---------------- Reports ----------------
 with tabs[8]:
+    st.subheader("Per-run decision reports")
+    st.caption("Permanent Markdown reports written by `decision_report.write_report` "
+               "at the end of each daily-run. Survives even if email isn't configured. "
+               "Diffable across runs to see what changed.")
+
+    try:
+        sys.path.insert(0, str(ROOT / "src"))
+        from trader.decision_report import list_reports, REPORTS_DIR
+        reports = list_reports(limit=200)
+    except Exception as e:
+        st.error(f"could not list reports: {e}")
+        reports = []
+
+    if not reports:
+        st.info(f"No reports yet at `{ROOT / 'data' / 'reports'}/`. "
+                f"They'll appear after the next daily-run completes "
+                f"(GitHub Actions cron OR a local `docker run ... scripts/run_daily.py`).")
+    else:
+        labels = [f"{r.name}  ({datetime.fromtimestamp(r.stat().st_mtime).strftime('%Y-%m-%d %H:%M')})"
+                  for r in reports]
+        choice = st.selectbox(f"Select report ({len(reports)} available, newest first)",
+                              labels, index=0)
+        chosen = reports[labels.index(choice)]
+        st.caption(f"Path: `{chosen}` · {chosen.stat().st_size:,} bytes")
+
+        col_a, col_b = st.columns([1, 4])
+        with col_a:
+            st.download_button("⬇️ Download", chosen.read_bytes(),
+                                file_name=chosen.name,
+                                mime="text/markdown")
+            if len(reports) > 1:
+                if st.checkbox("Diff vs previous report"):
+                    prev = reports[1]
+                    import difflib
+                    diff = difflib.unified_diff(
+                        prev.read_text().splitlines(keepends=True),
+                        chosen.read_text().splitlines(keepends=True),
+                        fromfile=prev.name, tofile=chosen.name, n=3,
+                    )
+                    diff_text = "".join(diff)
+                    if diff_text:
+                        st.code(diff_text, language="diff")
+                    else:
+                        st.success("no differences vs previous report")
+        with col_b:
+            st.markdown("---")
+            st.markdown(chosen.read_text())
+
+
+# ---------------- Manual actions ----------------
+with tabs[9]:
     st.subheader("Manual triggers")
     st.warning("⚠️ Every manual trigger increments the **peek_counter**. "
                "More than 3 in a 30-day window will alert. The whole point of "

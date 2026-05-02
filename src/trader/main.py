@@ -451,6 +451,59 @@ def main(force: bool = False) -> dict:
     except Exception as e:
         print(f"  shadow run failed (non-fatal): {e}")
 
+    # v3.50.1: write per-run permanent Markdown decision report.
+    # Independent of email — survives if SMTP isn't configured. Diffable
+    # across runs. Rendered in the dashboard's Reports tab.
+    try:
+        from .decision_report import write_report, RunContext
+        # Try to capture overlay signal (re-compute since main.py doesn't
+        # currently thread it through; cheap with cached underlying signals).
+        overlay_dict = None
+        try:
+            from .regime_overlay import compute_overlay
+            sig = compute_overlay()
+            overlay_dict = {
+                "enabled": sig.enabled, "final_mult": sig.final_mult,
+                "hmm_mult": sig.hmm_mult, "hmm_regime": sig.hmm_regime,
+                "hmm_posterior": sig.hmm_posterior,
+                "macro_mult": sig.macro_mult,
+                "macro_curve_inverted": sig.macro_curve_inverted,
+                "macro_credit_widening": sig.macro_credit_widening,
+                "garch_mult": sig.garch_mult,
+                "garch_vol_forecast_annual": sig.garch_vol_forecast_annual,
+            }
+        except Exception:
+            pass
+        rep_ctx = RunContext(
+            run_id=run_id,
+            started_at=run_id.split("-FORCE")[0].replace(datetime.utcnow().date().isoformat(), datetime.utcnow().isoformat()) or run_id,
+            momentum_picks=[{"ticker": c.ticker, "score": c.score, "action": c.action,
+                              "style": c.style, "rationale": c.rationale}
+                             for c in (momentum_picks_for_report if 'momentum_picks_for_report' in dir() else [])],
+            bottom_candidates=[{"ticker": c.ticker, "score": c.score, "rationale": c.rationale}
+                                for c in (bottom_candidates_for_report if 'bottom_candidates_for_report' in dir() else [])],
+            approved_bottoms=approved_bottoms,
+            sleeve_alloc=sleeve_alloc,
+            final_targets=final_targets,
+            risk_warnings=risk.warnings,
+            rebalance_results=rebalance_results,
+            bracket_results=bracket_results,
+            vix=vix,
+            equity_before=equity,
+            equity_after=equity_after if 'equity_after' in dir() else None,
+            cash_after=cash_after if 'cash_after' in dir() else None,
+            positions_now=positions_now if 'positions_now' in dir() else None,
+            spy_today_return=spy_today if 'spy_today' in dir() else None,
+            yesterday_equity=yest_eq if 'yest_eq' in dir() else None,
+            anomalies_today=anomalies if 'anomalies' in dir() else None,
+            overlay_signal=overlay_dict,
+            shadow_results=shadow_results if 'shadow_results' in dir() else None,
+        )
+        report_path = write_report(rep_ctx)
+        print(f"  decision report written: {report_path}")
+    except Exception as e:
+        print(f"  decision_report write failed (non-fatal): {type(e).__name__}: {e}")
+
     if not DRY_RUN:
         finish_run(run_id, status="completed",
                    notes=f"{len(final_targets)} targets, {len(rebalance_results)} mom, {len(bracket_results)} bot")
