@@ -267,13 +267,29 @@ def check_account_risk(
     # 5) Per-position cap (apply clip after safety check passes)
     adjusted = {t: min(w, MAX_POSITION_PCT) for t, w in targets.items()}
 
-    # 6) Volatility scaling
+    # 6) Volatility scaling (legacy VIX-based; kept alongside GARCH)
     scale = vol_scale(vix)
     if scale < 1.0:
         adjusted = {t: w * scale for t, w in adjusted.items()}
         warnings.append(f"VIX={vix:.1f} → size scaled to {scale:.0%}")
 
-    # 7) Gross exposure cap
+    # 6b) v3.49: Regime overlay (HMM + macro + GARCH).
+    # Always computes (for observability); only APPLIES the cut if the env flag
+    # REGIME_OVERLAY_ENABLED=true. Defensive multiplier in [0, 1.2].
+    try:
+        from .regime_overlay import compute_overlay
+        overlay = compute_overlay()
+        # Always log so we can compare paper-applied vs live for the decay watch
+        warnings.append(f"regime_overlay: {overlay.rationale}")
+        if overlay.enabled and overlay.final_mult < 1.0:
+            adjusted = {t: w * overlay.final_mult for t, w in adjusted.items()}
+        elif overlay.enabled and overlay.final_mult > 1.0:
+            # Gentle boost — but never exceed MAX_POSITION_PCT per name
+            adjusted = {t: min(w * overlay.final_mult, MAX_POSITION_PCT) for t, w in adjusted.items()}
+    except Exception as e:
+        warnings.append(f"regime_overlay unavailable (non-fatal): {e}")
+
+    # 7) Gross exposure cap (final clamp; runs after all multipliers)
     total = sum(adjusted.values())
     if total > MAX_GROSS_EXPOSURE:
         rescale = MAX_GROSS_EXPOSURE / total

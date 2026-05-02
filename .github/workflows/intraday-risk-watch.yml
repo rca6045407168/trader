@@ -1,0 +1,122 @@
+name: trader-intraday-risk-watch
+
+# v3.49: catches flash-crash scenarios in 30 min instead of 24 hours.
+# Pulls broker equity every 30 min during US market hours, computes
+# intraday DD vs day-open AND vs deployment anchor, fires freeze states
+# pre-emptively if thresholds exceeded.
+#
+# Defensive ONLY — never places orders. Reuses risk_manager's freeze
+# state machine (data/risk_freeze_state.json), so the next daily-run
+# will see the freeze and skip rebalancing.
+#
+# Schedule: every 30 min, 14:00 → 20:30 UTC Mon-Fri (market hours +30 buffer).
+# That's :00 and :30 of each hour.
+
+on:
+  schedule:
+    # Every 30 min during market hours: 14:00, 14:30, ..., 20:30 UTC Mon-Fri
+    - cron: "0,30 14-20 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write  # for artifact upload
+
+concurrency:
+  group: trader-intraday-risk-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore latest trader-journal artifact (cross-workflow)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data/
+          ARTIFACT_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=trader-journal&per_page=10" \
+                       --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[0].id // empty')
+          if [ -n "$ARTIFACT_ID" ] && [ "$ARTIFACT_ID" != "null" ]; then
+            ARTIFACT_RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" --jq '.workflow_run.id // empty')
+            gh run download "$ARTIFACT_RUN" -n trader-journal -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "no journal artifact"
+          fi
+        continue-on-error: true
+
+      - name: Restore intraday-risk-state artifact (within-day continuity)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ARTIFACT_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=intraday-risk-state&per_page=10" \
+                       --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[0].id // empty')
+          if [ -n "$ARTIFACT_ID" ] && [ "$ARTIFACT_ID" != "null" ]; then
+            ARTIFACT_RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" --jq '.workflow_run.id // empty')
+            gh run download "$ARTIFACT_RUN" -n intraday-risk-state -D data/ -R "$GITHUB_REPOSITORY" 2>&1 || echo "no intraday state"
+          fi
+        continue-on-error: true
+
+      - name: Run intraday risk watch
+        id: watch
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+          ALPACA_PAPER: "true"
+        run: |
+          set +e
+          python scripts/run_intraday_risk_watch.py
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          set -e
+
+      - name: Save intraday-risk state for next half-hour
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: intraday-risk-state
+          path: |
+            data/intraday_risk_log.json
+            data/risk_freeze_state.json
+          retention-days: 7
+          overwrite: true
+
+      - name: Save journal (freeze state changes counted)
+        uses: actions/upload-artifact@v4
+        if: steps.watch.outputs.exit_code == '2'
+        with:
+          name: trader-journal
+          path: data/journal.db
+          retention-days: 90
+          overwrite: true
+
+      - name: Alert on freeze
+        if: steps.watch.outputs.exit_code == '2'
+        env:
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: "587"
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_TO: richard.chen.1989@gmail.com
+          EMAIL_FROM: ${{ secrets.SMTP_USER }}
+        run: |
+          python scripts/notify_cli.py \
+            --subject "trader: intraday risk freeze TRIGGERED" \
+            --body "Intraday risk watch (run-id: ${{ github.run_id }}) tripped a freeze state. Next daily-run will skip rebalancing. Check workflow log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}. Review data/intraday_risk_log.json for context. Common causes: market crash mid-session, broker margin call, deployment-DD threshold crossed. Do NOT manually reset the freeze without reading docs/BEHAVIORAL_PRECOMMIT.md."
+
+      - name: Fail loudly on hard error
+        if: steps.watch.outputs.exit_code != '0' && steps.watch.outputs.exit_code != '2'
+        run: |
+          echo "intraday-risk-watch exited with code ${{ steps.watch.outputs.exit_code }}"
+          exit ${{ steps.watch.outputs.exit_code }}
