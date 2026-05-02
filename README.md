@@ -286,7 +286,52 @@ If you propose any of these, check the kill date and reason first.
 
 ---
 
-## Setup
+## Architecture diagrams
+
+See **[`docs/ARCHITECTURE_DIAGRAM.md`](docs/ARCHITECTURE_DIAGRAM.md)** for rendered Mermaid diagrams covering:
+- System overview (every component, data flow, storage layer)
+- Daily run sequence (21:10 UTC step-by-step)
+- 3-gate promotion pipeline (survivor → PIT → CPCV)
+- Defense-in-depth (4 layers from code → real money)
+- Broker abstraction (Alpaca paper ↔ Public.com swap)
+
+GitHub renders Mermaid natively — view that file on github.com.
+
+---
+
+## Docker
+
+A `Dockerfile` exists but is **not used in production.** Production runs entirely on GitHub Actions cron (no containers, no servers). The Dockerfile is a reference for future migration to Lightsail / Fly / Cloud Run if we ever outgrow GitHub Actions limits.
+
+**To run it locally for debugging:**
+
+```bash
+cd ~/trader
+docker build -t trader .
+# Mount data dir + pass .env so SQLite journal + secrets persist:
+docker run --rm \
+  --env-file .env \
+  -v $(pwd)/data:/app/data \
+  trader
+```
+
+Default `CMD` is `python scripts/run_daily.py --force`, so this will execute one full daily run inside the container — pre-flight gates → variant ranking → Alpaca paper orders → journal write → reconcile → narrative. Use `--force` because the container has no idempotency state across runs.
+
+**To run a different script** (override the default CMD):
+
+```bash
+docker run --rm --env-file .env -v $(pwd)/data:/app/data \
+  trader scripts/run_reconcile.py
+
+docker run --rm --env-file .env -v $(pwd)/data:/app/data \
+  trader scripts/test_public_connection.py
+```
+
+**Recommendation:** for local dev/debugging just use the venv path below — it's faster and the parquet cache is shared. Reach for Docker only when you want to verify the prod-equivalent Python 3.11-slim image still builds clean before pushing.
+
+---
+
+## Setup (venv path — preferred for local dev)
 
 ```bash
 git clone <this repo> ~/trader
