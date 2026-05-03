@@ -387,34 +387,47 @@ with st.sidebar:
         from collections import namedtuple
         _T = namedtuple("_T", ["id", "title", "created_at", "updated_at"])
         threads = [_T(*x) for x in threads_data]
-        # ALWAYS show the section header — even when empty
-        st.caption(f"💬 RECENTS ({len(threads)})")
-        if not threads:
-            st.caption("_no chats yet — type below to start_")
-        for t in threads:
-            is_active_thread = (st.session_state.get("current_thread_id") == t.id)
-            btype = "primary" if is_active_thread else "secondary"
-            # Format relative time
-            try:
-                from datetime import datetime
-                ts = datetime.fromisoformat(t.updated_at)
-                age_sec = (datetime.utcnow() - ts).total_seconds()
-                if age_sec < 60:
-                    age = f"{int(age_sec)}s"
-                elif age_sec < 3600:
-                    age = f"{int(age_sec // 60)}m"
-                elif age_sec < 86400:
-                    age = f"{int(age_sec // 3600)}h"
-                else:
-                    age = f"{int(age_sec // 86400)}d"
-            except Exception:
-                age = ""
-            # Truncate title for sidebar width
-            disp_title = t.title if len(t.title) <= 28 else t.title[:26] + "…"
-            label = f"{disp_title}"
-            if st.button(label, key=f"thread_{t.id}",
-                         use_container_width=True, type=btype,
-                         help=f"{t.title}  ·  {age} ago"):
+        # v3.56.6: collapsible chat-history section. Default-expanded only
+        # if there are <= 8 chats; collapsed by default if more, since 50
+        # chats would blow up the sidebar height. Active chat always
+        # shown above the expander so the user knows where they are.
+        active_id = st.session_state.get("current_thread_id")
+        active_thread = next((t for t in threads if t.id == active_id), None)
+        if active_thread:
+            st.caption("💬 ACTIVE")
+            disp = active_thread.title if len(active_thread.title) <= 28 else active_thread.title[:26] + "…"
+            st.button(disp, key=f"active_thread_{active_thread.id}",
+                       use_container_width=True, type="primary",
+                       disabled=True, help=active_thread.title)
+        # Default expansion: open if few chats, closed if many
+        default_open = len(threads) <= 8 and not active_thread
+        with st.expander(f"💬 RECENTS ({len(threads)})",
+                         expanded=default_open):
+            if not threads:
+                st.caption("_no chats yet — type below to start_")
+            # Show non-active threads inside the expander
+            visible = [t for t in threads if t.id != active_id]
+            for t in visible:
+                btype = "secondary"
+                # Format relative time for hover tooltip
+                try:
+                    from datetime import datetime
+                    ts = datetime.fromisoformat(t.updated_at)
+                    age_sec = (datetime.utcnow() - ts).total_seconds()
+                    if age_sec < 60:
+                        age = f"{int(age_sec)}s"
+                    elif age_sec < 3600:
+                        age = f"{int(age_sec // 60)}m"
+                    elif age_sec < 86400:
+                        age = f"{int(age_sec // 3600)}h"
+                    else:
+                        age = f"{int(age_sec // 86400)}d"
+                except Exception:
+                    age = ""
+                disp_title = t.title if len(t.title) <= 26 else t.title[:24] + "…"
+                if st.button(disp_title, key=f"thread_{t.id}",
+                             use_container_width=True, type=btype,
+                             help=f"{t.title}  ·  {age} ago"):
                     # Save current first if dirty
                     try:
                         from trader.copilot_storage import save_thread, ChatThread
