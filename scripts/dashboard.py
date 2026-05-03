@@ -578,7 +578,13 @@ def _live_portfolio():
 # with a timestamp; if the file is < 300s old, return it instantly.
 # Otherwise recompute + persist.
 _BRIEFING_CACHE_FILE = ROOT / "data" / "briefing_cache.json"
-_BRIEFING_TTL_SEC = 300
+# v3.56.9: bumped from 300s (5min) to 3600s (1h). The briefing is a
+# 'today at a glance' view; market state doesn't change meaningfully on
+# 5-min granularity for a monthly-rebalance strategy. 1h cache means
+# the user only eats the cold-compute once per hour at most, NOT every
+# 5 min throughout the day. Disk-backed so container restarts don't
+# wipe it.
+_BRIEFING_TTL_SEC = 3600
 
 
 def _read_disk_briefing():
@@ -644,11 +650,12 @@ def _write_disk_briefing(brief):
         pass
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _morning_briefing():
     """Get the morning briefing. Tries disk cache first (instant), else
-    recomputes via compute_briefing() (~3-8s on cold start) and persists
-    to disk for the next session.
+    recomputes via compute_briefing() (~3s on cold start, was 7s before
+    we removed per-symbol earnings calendar from the briefing path) and
+    persists to disk for the next session.
     """
     disk_cached = _read_disk_briefing()
     if disk_cached is not None:

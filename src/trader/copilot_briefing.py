@@ -132,12 +132,15 @@ def compute_briefing() -> MorningBriefing:
         pass
 
     # Upcoming events (next 7 days)
+    # v3.56.9: PORTFOLIO-WIDE ONLY (FOMC + OPEX) by default. Per-symbol
+    # earnings calendars (yfinance Ticker.get_earnings_dates) cost
+    # ~200-500ms per held name = 3-7s for a 15-position book. That single
+    # call dominated the 7.4s briefing cold-start. Per-symbol earnings
+    # are still computed in the Events view (where the user is explicitly
+    # asking for them) — the briefing is meant for instant glance.
     try:
         from .events_calendar import compute_upcoming_events
-        from .positions_live import fetch_live_portfolio
-        pf = fetch_live_portfolio()
-        symbols = [p.symbol for p in (pf.positions or [])]
-        events = compute_upcoming_events(symbols, days_ahead=7)
+        events = compute_upcoming_events(symbols=[], days_ahead=7)
         brief.upcoming_events_next7d = [
             {"date": str(e.date), "days_until": e.days_until,
              "type": e.event_type, "symbol": e.symbol, "note": e.note}
