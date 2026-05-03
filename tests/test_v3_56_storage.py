@@ -106,10 +106,15 @@ def test_load_nonexistent_returns_none(tmp_path, monkeypatch):
 
 
 def test_path_for_sanitizes_thread_id():
-    from trader.copilot_storage import _path_for
-    # Must not allow path traversal
+    from trader.copilot_storage import _path_for, CHATS_DIR
+    # Must not allow path traversal — output must stay inside CHATS_DIR
     p = _path_for("../../etc/passwd")
-    assert "etc" not in str(p) or "passwd" not in str(p)
+    # The slashes get stripped, leaving alphanumeric chars only.
+    # Critical: result must be within CHATS_DIR (no escape via .. or /).
+    assert str(p.parent).rstrip("/") == str(CHATS_DIR).rstrip("/")
+    assert "/" not in p.name  # filename has no slashes
+    assert ".." not in p.name  # no parent-traversal in filename
     # Must produce a .json file
     p2 = _path_for("abc-def-123")
     assert str(p2).endswith(".json")
+    assert p2.name == "abc-def-123.json"
