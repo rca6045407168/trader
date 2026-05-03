@@ -68,7 +68,8 @@ class LowVolSleeve:
     lookback_days: int = 60
 
     def status(self) -> str:
-        return os.getenv("LOW_VOL_SLEEVE_STATUS", "NOT_WIRED")
+        # v3.58.1: promoted to SHADOW per user-approved ramp.
+        return os.getenv("LOW_VOL_SLEEVE_STATUS", "SHADOW")
 
     def describe(self) -> str:
         return (
@@ -105,7 +106,8 @@ class SectorNeutralizer:
     max_sector_pct: float = 0.35
 
     def status(self) -> str:
-        return os.getenv("SECTOR_NEUTRALIZE_STATUS", "NOT_WIRED")
+        # v3.58.1: promoted to SHADOW per user-approved ramp.
+        return os.getenv("SECTOR_NEUTRALIZE_STATUS", "SHADOW")
 
     def describe(self) -> str:
         return (
@@ -230,7 +232,8 @@ class TrailingStop:
     pct: float = 0.15
 
     def status(self) -> str:
-        return os.getenv("TRAILING_STOP_STATUS", "NOT_WIRED")
+        # v3.58.1: promoted to SHADOW per user-approved ramp.
+        return os.getenv("TRAILING_STOP_STATUS", "SHADOW")
 
     def describe(self) -> str:
         return (
@@ -262,7 +265,8 @@ class RiskParitySizer:
     target_vol_annual: float = 0.15
 
     def status(self) -> str:
-        return os.getenv("RISK_PARITY_STATUS", "NOT_WIRED")
+        # v3.58.1: promoted to SHADOW per user-approved ramp.
+        return os.getenv("RISK_PARITY_STATUS", "SHADOW")
 
     def describe(self) -> str:
         return (
@@ -294,7 +298,10 @@ class DrawdownCircuitBreaker:
     pct_from_peak: float = 0.10
 
     def status(self) -> str:
-        return os.getenv("DRAWDOWN_BREAKER_STATUS", "SHADOW")
+        # v3.58.1: PROMOTED TO LIVE — wired into risk_manager.check_account_risk.
+        # Halts new orders when peak-to-trough drawdown >= pct_from_peak.
+        # Reversible: set DRAWDOWN_BREAKER_STATUS=SHADOW to deactivate.
+        return os.getenv("DRAWDOWN_BREAKER_STATUS", "LIVE")
 
     def describe(self) -> str:
         return (
@@ -323,7 +330,10 @@ class EarningsRule:
     trim_to_pct_of_target: float = 0.50
 
     def status(self) -> str:
-        return os.getenv("EARNINGS_RULE_STATUS", "SHADOW")
+        # v3.58.1: PROMOTED TO LIVE — wired into order_planner.plan_orders.
+        # T-1 day before earnings, target weight is multiplied by trim_to_pct_of_target.
+        # Reversible: set EARNINGS_RULE_STATUS=SHADOW to deactivate.
+        return os.getenv("EARNINGS_RULE_STATUS", "LIVE")
 
     def describe(self) -> str:
         return (
@@ -359,7 +369,8 @@ class TwapSlicer:
     threshold_adv_pct: float = 0.05
 
     def status(self) -> str:
-        return os.getenv("TWAP_SLICER_STATUS", "NOT_WIRED")
+        # v3.58.1: promoted to SHADOW per user-approved ramp.
+        return os.getenv("TWAP_SLICER_STATUS", "SHADOW")
 
     def describe(self) -> str:
         return (
@@ -400,7 +411,9 @@ class SlippageTracker:
     """
 
     def status(self) -> str:
-        return os.getenv("SLIPPAGE_TRACKER_STATUS", "NOT_WIRED")
+        # v3.58.1: promoted to SHADOW per user-approved ramp.
+        # Wired into execute.py — every fill writes a slippage row to journal.
+        return os.getenv("SLIPPAGE_TRACKER_STATUS", "SHADOW")
 
     def describe(self) -> str:
         return (
@@ -433,7 +446,8 @@ class TaxLotManager:
     wash_sale_days: int = 30
 
     def status(self) -> str:
-        return os.getenv("TAX_LOT_STATUS", "NOT_WIRED")
+        # v3.58.1: promoted to SHADOW per user-approved ramp.
+        return os.getenv("TAX_LOT_STATUS", "SHADOW")
 
     def describe(self) -> str:
         return (

@@ -316,6 +316,43 @@ def main(force: bool = False) -> dict:
 
     final_targets = risk.adjusted_targets
 
+    # v3.58.1 — EarningsRule: trim positions whose earnings hit T-N days.
+    # Only fires when status() == LIVE; SHADOW logs the would-trim list
+    # without actually trimming. Failsafe: any error keeps targets unchanged.
+    try:
+        from .v358_world_class import EarningsRule
+        from .events_calendar import compute_upcoming_events
+        er = EarningsRule()
+        if er.status() in ("LIVE", "SHADOW") and final_targets:
+            symbols = list(final_targets.keys())
+            today = datetime.utcnow()
+            today_d = today.date()
+            events = compute_upcoming_events(symbols, days_ahead=er.days_before + 1)
+            # Build {symbol: earliest_earnings_date} from events
+            sym_to_earnings: dict[str, datetime] = {}
+            for ev in events:
+                if ev.event_type == "earnings" and ev.symbol:
+                    edt = datetime.combine(ev.date, datetime.min.time())
+                    if ev.symbol not in sym_to_earnings or edt < sym_to_earnings[ev.symbol]:
+                        sym_to_earnings[ev.symbol] = edt
+            trimmed = {}
+            for sym, weight in list(final_targets.items()):
+                edate = sym_to_earnings.get(sym)
+                if edate and er.needs_trim(today, edate):
+                    new_w = weight * er.trim_to_pct_of_target
+                    trimmed[sym] = (weight, new_w, edate.date().isoformat())
+                    if er.status() == "LIVE":
+                        final_targets[sym] = new_w
+            if trimmed:
+                action = "TRIMMED" if er.status() == "LIVE" else "would trim (SHADOW)"
+                print(f"  EarningsRule {action} {len(trimmed)} positions:")
+                for s, (old, new, d) in trimmed.items():
+                    print(f"    {s}: {old:.3f} → {new:.3f} (earnings {d})")
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"  EarningsRule check failed (non-fatal): {type(e).__name__}: {e}")
+
     # v0.9: validate targets before any order leaves the system
     try:
         target_check = validate_targets(final_targets)

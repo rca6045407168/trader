@@ -8,6 +8,8 @@ Two modes:
 
 Paper trading by default. Switch to live by setting ALPACA_PAPER=false in .env.
 """
+from datetime import datetime
+
 from .config import ALPACA_KEY, ALPACA_SECRET, ALPACA_PAPER
 from .order_planner import OrderPlan
 
@@ -143,6 +145,34 @@ def place_target_weights(
             except Exception as e:
                 out.append({"symbol": symbol, "side": "close", "status": "error", "error": str(e)})
 
+    # v3.58.1 — SlippageTracker SHADOW logging. Best-effort, never blocks.
+    def _log_slip(symbol: str, side: str, decision_mid: float,
+                  notional: float):
+        try:
+            from .v358_world_class import SlippageTracker
+            from .journal import _conn
+            sl = SlippageTracker()
+            if sl.status() not in ("LIVE", "SHADOW"):
+                return
+            # We don't have fill price yet at submit — log decision_mid only;
+            # reconcile.py will close the loop with the actual filled_avg.
+            with _conn() as c:
+                c.execute(
+                    "CREATE TABLE IF NOT EXISTS slippage_log ("
+                    "ts TEXT, symbol TEXT, side TEXT, decision_mid REAL, "
+                    "notional REAL, fill_price REAL, slippage_bps REAL, "
+                    "status TEXT)"
+                )
+                c.execute(
+                    "INSERT INTO slippage_log "
+                    "(ts, symbol, side, decision_mid, notional, status) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (datetime.utcnow().isoformat(), symbol, side,
+                     decision_mid, notional, sl.status()),
+                )
+        except Exception:
+            pass
+
     from .journal import open_lot
     for symbol, target_pct in targets.items():
         target_value = equity * target_pct
@@ -156,6 +186,12 @@ def place_target_weights(
             symbol=symbol, notional=round(abs(delta), 2),
             side=side, time_in_force=TimeInForce.DAY,
         )
+        # v3.58.1 SlippageTracker — capture decision-mid pre-submit
+        try:
+            decision_mid = get_last_price(symbol)
+        except Exception:
+            decision_mid = 0.0
+        _log_slip(symbol, side.value, decision_mid, abs(delta))
         try:
             order = client.submit_order(req)
             order_id = str(order.id)
@@ -168,9 +204,9 @@ def place_target_weights(
             # We don't know the fill price yet at submit time — use last_price as estimate.
             if side == OrderSide.BUY:
                 try:
-                    last = get_last_price(symbol)
-                    qty_est = round(abs(delta) / last, 4)
-                    open_lot(symbol, "MOMENTUM", qty=qty_est, open_price=last, open_order_id=order_id)
+                    qty_est = round(abs(delta) / decision_mid, 4) if decision_mid > 0 else 0
+                    if qty_est > 0:
+                        open_lot(symbol, "MOMENTUM", qty=qty_est, open_price=decision_mid, open_order_id=order_id)
                 except Exception:
                     pass  # journal write is best-effort
         except Exception as e:

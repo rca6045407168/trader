@@ -1366,6 +1366,58 @@ def view_performance():
                 f"{perf.beta_vs_spy:.2f}" if perf.beta_vs_spy is not None else "n/a",
                 "1.0 = market exposure")
 
+    # ---- v3.58.1 NetCostModel — gross vs after-cost ----
+    try:
+        from trader.v358_world_class import NetCostModel
+        nc = NetCostModel()
+        if nc.status() in ("LIVE", "SHADOW"):
+            st.subheader("After costs (v3.58 NetCostModel — SHADOW)")
+            st.caption(
+                "Backtest Sharpe is gross of spread, borrow, and tax drag. "
+                "These columns subtract the realistic cost stack so you see "
+                "**after-cost** numbers — which is what actually compounds in "
+                "the account."
+            )
+            drag_bps = nc.annual_drag_bps()
+            net_cagr = nc.net_return(perf.cagr) if perf.cagr is not None else None
+            # Approx net Sharpe ≈ gross Sharpe × (1 - drag_share_of_return).
+            # If drag is 60bps and CAGR 19%, drag is ~3% of return — Sharpe
+            # drops the same fraction. Conservative.
+            if perf.sharpe is not None and perf.cagr and perf.cagr > 0:
+                drag_share = (drag_bps / 1e4) / max(perf.cagr, 1e-6)
+                net_sharpe = perf.sharpe * (1 - drag_share) * (1 - nc.st_cap_gains_pct)
+            else:
+                net_sharpe = None
+            cc = st.columns(4)
+            cc[0].metric(
+                "Annual cost drag",
+                f"{drag_bps:.1f} bps",
+                f"{nc.spread_bps:.1f}bp/side × {nc.monthly_turnover_pct*100:.0f}% turnover × 12mo",
+            )
+            cc[1].metric(
+                "Net CAGR (after-cost, after-tax)",
+                f"{net_cagr*100:+.2f}%" if net_cagr is not None else "n/a",
+                f"vs gross {perf.cagr*100:+.2f}%" if perf.cagr is not None else None,
+            )
+            cc[2].metric(
+                "Net Sharpe (approx)",
+                f"{net_sharpe:.2f}" if net_sharpe is not None else "n/a",
+                f"vs gross {perf.sharpe:.2f}" if perf.sharpe is not None else None,
+            )
+            cc[3].metric(
+                "Tax assumption",
+                f"{nc.st_cap_gains_pct*100:.0f}% ST",
+                "monthly turnover → ST cap gains",
+            )
+            st.caption(
+                "💡 If net Sharpe is dramatically lower than gross, the "
+                "biggest fixes are (a) reduce monthly turnover via stickier "
+                "rebalance, (b) hold > 365d for LT cap gains rate, (c) tighter "
+                "execution to cut spread drag."
+            )
+    except Exception as e:
+        st.caption(f"_NetCostModel unavailable: {type(e).__name__}: {e}_")
+
     # ---- ALPHA / VOL ----
     c = st.columns(4)
     c[0].metric("Alpha (Jensen, annual)",

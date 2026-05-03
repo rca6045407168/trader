@@ -212,6 +212,34 @@ def check_account_risk(
                 warnings=warnings,
             )
 
+    # 2b) v3.58.1 DrawdownCircuitBreaker — independent layer using ALL-time
+    # snapshot peak (not just 180d). Activated only when status() == LIVE so
+    # users can flip back to SHADOW via env without code changes.
+    try:
+        from .v358_world_class import DrawdownCircuitBreaker
+        cb = DrawdownCircuitBreaker()
+        if cb.status() == "LIVE":
+            from .journal import recent_snapshots as _rs_all
+            all_snaps = _rs_all(days=10_000)  # effectively all-time
+            if all_snaps:
+                all_peak = max(s["equity"] for s in all_snaps if s.get("equity"))
+                if cb.is_tripped(peak_equity=all_peak, current_equity=equity):
+                    return RiskDecision(
+                        proceed=False,
+                        reason=(
+                            f"HALT: v3.58 circuit breaker tripped — equity "
+                            f"${equity:.0f} is "
+                            f"{(equity/all_peak-1)*100:+.1f}% from all-time "
+                            f"peak ${all_peak:.0f}, threshold "
+                            f"-{cb.pct_from_peak*100:.0f}%. Mechanical "
+                            f"halt-and-review. Set "
+                            f"DRAWDOWN_BREAKER_STATUS=SHADOW to deactivate."
+                        ),
+                        warnings=warnings,
+                    )
+    except Exception as e:
+        warnings.append(f"v3.58 breaker check failed (non-fatal): {type(e).__name__}: {e}")
+
     # 3) Deployment-anchor drawdown gates (v3.46 NEW)
     try:
         from .deployment_anchor import drawdown_from_deployment

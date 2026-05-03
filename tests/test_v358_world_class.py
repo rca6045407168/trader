@@ -257,3 +257,51 @@ def test_every_class_describes_itself():
         s = inst.status()
         assert isinstance(d, str) and len(d) > 30, f"{cls.__name__} describe too short"
         assert s in ("LIVE", "SHADOW", "NOT_WIRED"), f"{cls.__name__} status invalid: {s}"
+
+
+def test_v3_58_1_default_promotions(monkeypatch):
+    """v3.58.1 ramp: DrawdownCircuitBreaker + EarningsRule default to LIVE,
+    most other observational items default to SHADOW. OptionsOverlay,
+    LongShortOverlay, AltDataAdapter remain NOT_WIRED (need broker / data
+    sources we can't write blind)."""
+    # Clear any user overrides
+    for var in ("DRAWDOWN_BREAKER_STATUS", "EARNINGS_RULE_STATUS",
+                "LOW_VOL_SLEEVE_STATUS", "SECTOR_NEUTRALIZE_STATUS",
+                "TRAILING_STOP_STATUS", "SLIPPAGE_TRACKER_STATUS",
+                "TWAP_SLICER_STATUS", "RISK_PARITY_STATUS",
+                "TAX_LOT_STATUS", "NET_COST_MODEL_STATUS",
+                "LONGSHORT_STATUS", "OPTIONS_OVERLAY_STATUS",
+                "ALT_DATA_STATUS", "AUTO_PROMOTION_GATE_STATUS",
+                "REGIME_ROUTER_STATUS"):
+        monkeypatch.delenv(var, raising=False)
+
+    from trader.v358_world_class import (
+        DrawdownCircuitBreaker, EarningsRule, LowVolSleeve, SectorNeutralizer,
+        TrailingStop, SlippageTracker, TwapSlicer, RiskParitySizer,
+        TaxLotManager, NetCostModel,
+        LongShortOverlay, OptionsOverlay, AltDataAdapter,
+        AutoPromotionGate, RegimeRouter,
+    )
+
+    # The 2 user-approved LIVE flips
+    assert DrawdownCircuitBreaker().status() == "LIVE"
+    assert EarningsRule().status() == "LIVE"
+
+    # SHADOW promotions — observational, no money moves
+    assert LowVolSleeve().status() == "SHADOW"
+    assert SectorNeutralizer().status() == "SHADOW"
+    assert TrailingStop().status() == "SHADOW"
+    assert SlippageTracker().status() == "SHADOW"
+    assert TwapSlicer().status() == "SHADOW"
+    assert RiskParitySizer().status() == "SHADOW"
+    assert TaxLotManager().status() == "SHADOW"
+    assert NetCostModel().status() == "SHADOW"
+
+    # Stays NOT_WIRED — needs broker integration / data source we can't write blind
+    assert LongShortOverlay().status() == "NOT_WIRED"
+    assert OptionsOverlay().status() == "NOT_WIRED"
+    assert AltDataAdapter().status() == "NOT_WIRED"
+    # Research-infra items also remain NOT_WIRED (consumer-side glue, no
+    # automatic shadow signal)
+    assert AutoPromotionGate().status() == "NOT_WIRED"
+    assert RegimeRouter().status() == "NOT_WIRED"
