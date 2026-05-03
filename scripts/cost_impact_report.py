@@ -39,9 +39,12 @@ class FlipImpact:
     rationale: str
     requires_capital: bool   # True if it changes allocation, False if pure cost reduction
     requires_more_data: bool # True if it depends on shadow data we don't have yet
+    verification_status: str = "CALIBRATED"  # VERIFIED / REFUTED / CALIBRATED
+    verification_evidence: str = ""           # which backtest tested this
 
 
 # Honest, calibrated estimates. Each line cites its basis.
+# v3.60.1: added verification_status — VERIFIED / REFUTED / CALIBRATED.
 FLIPS: list[FlipImpact] = [
     FlipImpact(
         name="Use MOC (closing-auction) orders for monthly rebalance",
@@ -54,13 +57,15 @@ FLIPS: list[FlipImpact] = [
         current_default="false",
         proposed="true",
         annual_bps_estimate=35,  # ~5bp savings per side × 2 sides × 60% turnover × 12 months
-        confidence="medium",
+        confidence="low",  # downgraded — not measured on our fills
         rationale=(
-            "Conservative midpoint of expected-vs-actual fill literature. "
-            "Real number depends on whether your cron runs after the close-cutoff "
-            "(15:50 ET). Run TCA after first month to confirm or adjust."
+            "Calibrated from spread-cost literature; NOT measured on our actual "
+            "fills. Real number depends on cron timing AND the actual spread "
+            "at our broker. Run TCA after 30 days to verify or adjust."
         ),
-        requires_capital=False, requires_more_data=False,
+        requires_capital=False, requires_more_data=True,
+        verification_status="CALIBRATED",
+        verification_evidence="literature only; no slippage_log data yet",
     ),
     FlipImpact(
         name="Slippage tracker (already SHADOW; close the loop)",
@@ -72,13 +77,17 @@ FLIPS: list[FlipImpact] = [
         current_default="SHADOW",
         proposed="LIVE + scheduled reconcile",
         annual_bps_estimate=10,
-        confidence="medium",
+        confidence="low",
         rationale=(
-            "Indirect: tracking doesn't save cost directly, but creates the "
-            "feedback loop that catches a ~2× slippage regression within "
-            "30 days vs 6+ months blind."
+            "UNVERIFIED: slippage_log table doesn't exist yet — only created "
+            "on first order, and we haven't placed any since shipping. The "
+            "infrastructure exists; the data does not. Indirect benefit "
+            "(catches cost regressions sooner) is real in principle but "
+            "unmeasurable until LIVE orders accumulate."
         ),
-        requires_capital=False, requires_more_data=False,
+        requires_capital=False, requires_more_data=True,
+        verification_status="UNTESTED",
+        verification_evidence="slippage_log table doesn't exist yet",
     ),
     FlipImpact(
         name="DrawdownCircuitBreaker LIVE (already LIVE in v3.58.1)",
@@ -99,21 +108,25 @@ FLIPS: list[FlipImpact] = [
         requires_capital=False, requires_more_data=False,
     ),
     FlipImpact(
-        name="EarningsRule LIVE (already LIVE in v3.58.1)",
+        name="EarningsRule LIVE (already LIVE in v3.58.1) — INERT",
         description=(
             "T-1 day before earnings, trim held names to 50% of target weight."
         ),
         env_var="EARNINGS_RULE_STATUS",
         current_default="LIVE",
-        proposed="LIVE (already)",
-        annual_bps_estimate=15,
-        confidence="medium",
+        proposed="LIVE (already) — but BROKEN",
+        annual_bps_estimate=0,
+        confidence="high",
         rationale=(
-            "Earnings are a binary 5-15% gap. Trimming ahead of them removes "
-            "~50% of the earnings variance from the portfolio. Net positive "
-            "expected because we don't actually have edge on earnings direction."
+            "REFUTED VIA NO-OP: scripts/backtest_overlays.py shows yfinance "
+            "earnings_dates returns empty for most major tickers (silent "
+            "failure). The LIVE wiring in v3.58.1 has been doing NOTHING. "
+            "ACTION: switch earnings calendar source (Polygon free, Finnhub "
+            "free, or manual scrape) before this rule does anything."
         ),
         requires_capital=False, requires_more_data=False,
+        verification_status="REFUTED",
+        verification_evidence="scripts/backtest_overlays.py — 0 trims applied",
     ),
     FlipImpact(
         name="Momentum-crash detector LIVE",
@@ -123,16 +136,23 @@ FLIPS: list[FlipImpact] = [
         ),
         env_var="MOMENTUM_CRASH_STATUS",
         current_default="SHADOW",
-        proposed="LIVE",
-        annual_bps_estimate=80,  # Avoiding one -30% momentum crash every 5 years
-        confidence="medium",
+        proposed="STAY SHADOW",  # downgraded after backtest
+        annual_bps_estimate=-64,  # MEASURED, not estimated
+        confidence="high",  # high confidence in the negative finding
         rationale=(
-            "Daniel-Moskowitz Table 4: momentum loses 25-40% in regime where "
-            "this signal fires. Cutting to 50% saves half that loss. Spread "
-            "across 5-year frequency: ~150bp/yr expected, but signal fires "
-            "rarely so stdev is high."
+            "REFUTED on real backtest. scripts/backtest_crash_detector.py on "
+            "SPY 2008-2026: signal fires correctly during 2008 GFC (saved "
+            "+3.3pp) BUT misfires during V-recoveries (-2.9pp on 2020 COVID "
+            "rally, -3.4pp on April 2020 reopen). Net CAGR -64bp/yr; Sharpe "
+            "lift only +0.04 from vol-reduction not return-improvement. Same "
+            "V-recovery problem as the killed v3.x HMM regime overlay. "
+            "DO NOT FLIP LIVE on SPY proxy. May still help on actual momentum "
+            "sleeve where DD is deeper (Daniel-Moskowitz Table 4) — needs a "
+            "momentum-proxy backtest before any LIVE consideration."
         ),
         requires_capital=False, requires_more_data=False,
+        verification_status="REFUTED",
+        verification_evidence="scripts/backtest_crash_detector.py 2008-2026 SPY proxy",
     ),
     FlipImpact(
         name="Residual momentum scorer LIVE (replaces vanilla)",
@@ -142,16 +162,23 @@ FLIPS: list[FlipImpact] = [
         ),
         env_var="(in-code change to rank function)",
         current_default="SHADOW (sleeve_shadows.residual_momentum_picks)",
-        proposed="LIVE swap",
-        annual_bps_estimate=70,
-        confidence="medium",
+        proposed="STAY SHADOW",  # downgraded after backtest
+        annual_bps_estimate=-564,  # MEASURED, not literature
+        confidence="medium",  # 8-window backtest, period may be unrepresentative
         rationale=(
-            "Published Sharpe lift from vanilla → residual momentum: +0.3 to "
-            "+0.5 across multiple replications. At our LIVE Sharpe ~1.16 OOS, "
-            "+0.3 lift = +25% improvement = ~70bp/yr at our vol. Requires 30 "
-            "days of side-by-side shadow before promotion."
+            "REFUTED on our universe / period. scripts/backtest_residual_momentum.py "
+            "on liquid_50 walk-forward 2022-2026: vanilla CAGR +0.74% / "
+            "residual CAGR -4.90%. Sharpe -0.20 vs vanilla +0.13 (residual "
+            "WORSE). 67% pick-set overlap. Possible explanations: (a) short "
+            "period not enough for residual factor to express, (b) liquid_50 "
+            "is too narrow for FF5 regression to be meaningful, (c) post-2020 "
+            "Mag-7 dominance violates the residual-mean-reversion thesis. "
+            "DO NOT FLIP LIVE. Re-test when we have SP500 universe + longer "
+            "history."
         ),
         requires_capital=False, requires_more_data=True,
+        verification_status="REFUTED",
+        verification_evidence="scripts/backtest_residual_momentum.py 2022-2026 liquid_50",
     ),
     FlipImpact(
         name="LowVolSleeve LIVE blend",
@@ -172,6 +199,8 @@ FLIPS: list[FlipImpact] = [
             "LowVol as SHADOW signal only."
         ),
         requires_capital=True, requires_more_data=False,
+        verification_status="REFUTED",
+        verification_evidence="scripts/multi_sleeve_backtest.py 2022-2026",
     ),
     FlipImpact(
         name="Cost-aware screener (drop sub-$50M ADV names)",
