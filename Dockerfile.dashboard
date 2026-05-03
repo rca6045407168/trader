@@ -52,6 +52,8 @@ RUN pip install --user --no-cache-dir \
 COPY --chown=trader:trader src/ ./src/
 COPY --chown=trader:trader scripts/ ./scripts/
 COPY --chown=trader:trader pyproject.toml .
+# v3.55.1: bake the theme config into the image so dark-mode is default
+COPY --chown=trader:trader .streamlit/ ./.streamlit/
 
 VOLUME ["/app/data"]
 

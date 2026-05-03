@@ -43,6 +43,201 @@ st.set_page_config(
 )
 
 # ============================================================
+# v3.55.1: Sleek dark aesthetic via CSS injection
+# ============================================================
+st.markdown("""
+<style>
+  /* Hide Streamlit chrome */
+  #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
+  div[data-testid="stToolbar"] { display: none; }
+  div[data-testid="stDecoration"] { display: none; }
+
+  /* Tighter top padding */
+  div.block-container {
+    padding-top: 1.5rem !important;
+    padding-bottom: 2rem !important;
+    max-width: 1400px;
+  }
+
+  /* Typography — system font stack for sans, JetBrains Mono for data */
+  html, body, [class*="st"] {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI",
+                 "Helvetica Neue", sans-serif;
+    font-feature-settings: "cv11", "ss01", "ss03";
+    letter-spacing: -0.005em;
+  }
+  code, pre, [data-testid="stCode"] {
+    font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace !important;
+    font-size: 0.85em;
+  }
+
+  /* Headings: tighter, lower weight than Streamlit default */
+  h1 { font-size: 1.75rem !important; font-weight: 600 !important;
+       letter-spacing: -0.02em; margin-bottom: 0.25rem !important; }
+  h2 { font-size: 1.25rem !important; font-weight: 600 !important;
+       letter-spacing: -0.015em; margin-top: 1.5rem !important; }
+  h3 { font-size: 1rem !important; font-weight: 600 !important;
+       letter-spacing: -0.01em; }
+
+  /* Captions: smaller, muted */
+  div[data-testid="stCaption"] {
+    font-size: 0.8rem !important; color: #9ca3af !important;
+    letter-spacing: 0.005em;
+  }
+
+  /* Sidebar polish */
+  section[data-testid="stSidebar"] {
+    background-color: #0a0a0b;
+    border-right: 1px solid #1f1f23;
+    padding-top: 0.5rem;
+  }
+  section[data-testid="stSidebar"] > div { padding-top: 1rem; }
+  section[data-testid="stSidebar"] h3 {
+    font-size: 1.05rem !important; font-weight: 600 !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  /* Sidebar buttons — cleaner, less Streamlit-default */
+  section[data-testid="stSidebar"] button {
+    border: 1px solid transparent !important;
+    background: transparent !important;
+    color: #d1d5db !important;
+    font-weight: 400 !important;
+    text-align: left !important;
+    padding: 0.4rem 0.75rem !important;
+    margin: 0 !important;
+    border-radius: 6px !important;
+    transition: background-color 120ms ease, border-color 120ms ease;
+    font-size: 0.875rem !important;
+  }
+  section[data-testid="stSidebar"] button:hover {
+    background: #18181b !important;
+    border-color: #27272a !important;
+  }
+  section[data-testid="stSidebar"] button[kind="primary"] {
+    background: #1e293b !important;
+    border-color: #3b82f6 !important;
+    color: #ffffff !important;
+    font-weight: 500 !important;
+  }
+
+  /* Section labels in sidebar (the — VIEWS — captions) */
+  section[data-testid="stSidebar"] [data-testid="stCaption"] {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.65rem !important;
+    color: #6b7280 !important;
+    margin-top: 1rem !important;
+    margin-bottom: 0.25rem !important;
+    padding-left: 0.5rem;
+  }
+
+  /* Metrics: cleaner cards */
+  [data-testid="stMetric"] {
+    background: #111114;
+    border: 1px solid #1f1f23;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+  }
+  [data-testid="stMetricValue"] {
+    font-size: 1.5rem !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.01em;
+  }
+  [data-testid="stMetricLabel"] {
+    font-size: 0.75rem !important;
+    color: #9ca3af !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 500 !important;
+  }
+  [data-testid="stMetricDelta"] { font-size: 0.8rem !important; }
+
+  /* DataFrames: tighter rows */
+  [data-testid="stDataFrame"] {
+    border: 1px solid #1f1f23 !important;
+    border-radius: 8px;
+  }
+
+  /* Containers (used for chat box) */
+  [data-testid="stVerticalBlockBorderWrapper"] {
+    border: 1px solid #1f1f23 !important;
+    border-radius: 10px !important;
+    background: #0d0d0f;
+  }
+
+  /* Chat messages: cleaner backgrounds */
+  [data-testid="stChatMessage"] {
+    background: transparent !important;
+    border: none !important;
+    padding: 0.5rem 0 !important;
+  }
+
+  /* Chat input bar: pill shape */
+  [data-testid="stChatInput"] {
+    border-radius: 24px !important;
+    background: #18181b !important;
+    border: 1px solid #27272a !important;
+  }
+  [data-testid="stChatInput"]:focus-within {
+    border-color: #3b82f6 !important;
+  }
+
+  /* Expanders */
+  [data-testid="stExpander"] {
+    border: 1px solid #1f1f23 !important;
+    border-radius: 8px !important;
+    background: #0d0d0f;
+  }
+  [data-testid="stExpander"] summary {
+    font-weight: 500 !important;
+    color: #d1d5db !important;
+  }
+
+  /* Buttons in main area: cleaner */
+  div[data-testid="stHorizontalBlock"] button,
+  .main button {
+    border-radius: 6px !important;
+    font-weight: 500 !important;
+    font-size: 0.875rem !important;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+
+  /* Dividers: subtler */
+  hr {
+    border-color: #1f1f23 !important;
+    margin: 1.5rem 0 !important;
+  }
+
+  /* Code blocks */
+  code:not(pre code) {
+    background: #18181b !important;
+    color: #93c5fd !important;
+    padding: 1px 5px !important;
+    border-radius: 4px !important;
+    font-size: 0.85em !important;
+  }
+
+  /* st.json: monospace */
+  [data-testid="stJson"] {
+    font-family: "JetBrains Mono", "SF Mono", monospace !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Subtler scrollbars in chat container */
+  [data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar {
+    width: 6px;
+  }
+  [data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar-thumb {
+    background: #2a2a2e; border-radius: 3px;
+  }
+  [data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar-track {
+    background: transparent;
+  }
+</style>
+""", unsafe_allow_html=True)
+
+# ============================================================
 # Session state defaults
 # ============================================================
 if "active_view" not in st.session_state:

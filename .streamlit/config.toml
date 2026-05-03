@@ -1,0 +1,21 @@
+# Streamlit theme — sleek dark aesthetic for the trader dashboard.
+# Loaded automatically by Streamlit when launched with WORKDIR=/app.
+# Note: also injected via CSS in dashboard.py for elements config can't reach.
+
+[theme]
+base = "dark"
+primaryColor = "#3b82f6"
+backgroundColor = "#0a0a0b"
+secondaryBackgroundColor = "#161618"
+textColor = "#e5e7eb"
+font = "sans serif"
+
+[server]
+headless = true
+runOnSave = false
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
