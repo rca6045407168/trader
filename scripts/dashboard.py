@@ -233,54 +233,64 @@ def _morning_briefing():
     except Exception as e:
         return None
 
-brief_col, chat_col = st.columns([1, 2])
+# v3.54.1: briefing collapsed into expander (saves vertical space) + chat
+# wrapped in st.container(height=...) so the conversation scrolls INTERNALLY
+# instead of pushing the page down. Fixes the "boxes blow up" complaint.
 
-with brief_col:
-    st.subheader("📰 Today's briefing")
+with st.expander("📰 Today's briefing — click to expand", expanded=True):
     brief = _morning_briefing()
     if brief is None:
         st.caption("_could not compute briefing_")
     else:
-        st.markdown(brief.to_markdown())
-        with st.expander("raw briefing data"):
+        bcol1, bcol2 = st.columns([2, 1])
+        with bcol1:
+            st.markdown(brief.to_markdown())
+        with bcol2:
+            st.caption("**raw**")
             st.json({
-                "timestamp": brief.timestamp,
                 "equity_now": brief.equity_now,
                 "day_pl_pct": brief.day_pl_pct,
                 "spy_today_pct": brief.spy_today_pct,
-                "excess_today_pct": brief.excess_today_pct,
                 "regime": brief.regime,
-                "regime_overlay_mult": brief.regime_overlay_mult,
                 "regime_enabled": brief.regime_enabled,
                 "freeze_active": brief.freeze_active,
-                "upcoming_events_next7d": brief.upcoming_events_next7d,
-                "yesterday_pm_summary": brief.yesterday_pm_summary,
-                "notable_facts": brief.notable_facts,
-            })
+                "upcoming_events": len(brief.upcoming_events_next7d),
+            }, expanded=False)
 
-with chat_col:
-    st.subheader("🤖 Copilot")
-    st.caption("Ask anything about your portfolio, decisions, regime, performance. "
-               "The Copilot has 10 tools and uses them autonomously.")
+st.subheader("🤖 Copilot")
+st.caption("Ask anything about your portfolio, decisions, regime, performance. "
+           "The Copilot has 10 tools and uses them autonomously. "
+           "**Conversation scrolls inside the box below — page won't grow.**")
 
-    # Suggested prompts
-    sug_cols = st.columns(4)
-    suggested = [
-        "Why am I down today?",
-        "What's coming up this week?",
-        "Show my best/worst positions",
-        "What did the post-mortem flag?",
-    ]
-    for i, sg in enumerate(suggested):
-        if sug_cols[i].button(sg, key=f"suggested_{i}", use_container_width=True):
-            st.session_state["_pending_user_input"] = sg
+# Suggested prompts (above the chat box)
+sug_cols = st.columns(4)
+suggested = [
+    "Why am I up/down today?",
+    "What's coming up this week?",
+    "Show best/worst positions",
+    "What did the post-mortem flag?",
+]
+for i, sg in enumerate(suggested):
+    if sug_cols[i].button(sg, key=f"suggested_{i}", use_container_width=True):
+        st.session_state["_pending_user_input"] = sg
 
-    # Initialize chat history
-    if "copilot_messages" not in st.session_state:
+# Initialize chat history + new-chat button
+if "copilot_messages" not in st.session_state:
+    st.session_state.copilot_messages = []
+
+clear_col, _ = st.columns([1, 5])
+with clear_col:
+    if st.button("🔄 New chat", use_container_width=True):
         st.session_state.copilot_messages = []
+        st.rerun()
 
-    # Show message history (last 10 to keep page snappy)
-    msgs_to_show = st.session_state.copilot_messages[-10:]
+# v3.54.1: FIXED-HEIGHT scrollable container so the page stops growing.
+# Streamlit's st.container(height=...) gives a CSS overflow:auto box.
+chat_box = st.container(height=520, border=True)
+with chat_box:
+    msgs_to_show = st.session_state.copilot_messages
+    if not msgs_to_show:
+        st.caption("_no messages yet — click a suggested prompt above or type below_")
     for msg in msgs_to_show:
         if msg["role"] == "user":
             with st.chat_message("user"):
@@ -296,15 +306,18 @@ with chat_col:
                             st.caption("result:")
                             st.json(tc.get("result", {}), expanded=False)
 
-    # Input — either typed or from suggested-prompt button
-    typed_input = st.chat_input("Ask the copilot...")
-    pending_from_button = st.session_state.pop("_pending_user_input", None)
-    user_input = typed_input or pending_from_button
+# Input box stays OUTSIDE the fixed-height scrollable container so it's
+# always visible at the bottom of the chat region.
+typed_input = st.chat_input("Ask the copilot...")
+pending_from_button = st.session_state.pop("_pending_user_input", None)
+user_input = typed_input or pending_from_button
 
-    if user_input:
-        st.session_state.copilot_messages.append({
-            "role": "user", "display_text": user_input, "content": user_input,
-        })
+if user_input:
+    st.session_state.copilot_messages.append({
+        "role": "user", "display_text": user_input, "content": user_input,
+    })
+    # Render the new user turn INSIDE the chat box
+    with chat_box:
         with st.chat_message("user"):
             st.markdown(user_input)
 
@@ -361,7 +374,7 @@ with chat_col:
                 text_placeholder.error(f"{type(e).__name__}: {e}")
 
 st.divider()
-st.caption("📁 Reference views below — the 14 tabs are kept for power users "
+st.caption("📁 **Reference views below** — the 14 tabs are kept for power users "
            "who want to inspect raw data. The chat above is the primary surface.")
 
 # ============================================================
