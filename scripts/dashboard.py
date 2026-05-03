@@ -48,30 +48,21 @@ st.set_page_config(
 st.markdown("""
 <style>
   /* Hide Streamlit chrome */
-  #MainMenu, footer { visibility: hidden; height: 0; }
-  /* v3.55.3: keep header visible but minimal — it contains the sidebar
-     toggle button. Hiding it entirely (as v3.55.1 did) made a closed
-     sidebar impossible to reopen. */
+  /* v3.56.2: stop fighting Streamlit's header — just hide the
+     hamburger menu, footer, and Streamlit-cloud deploy banner.
+     Header stays in its default state so the sidebar collapse/expand
+     toggle ALWAYS works (Streamlit moves that button between header
+     and a standalone position when sidebar is collapsed; our previous
+     whitelist couldn't catch all positions). */
+  #MainMenu, footer { visibility: hidden !important; height: 0 !important; }
   header[data-testid="stHeader"] {
     background: transparent !important;
-    height: 2.5rem !important;
   }
-  /* Hide everything inside the header EXCEPT the sidebar toggle */
-  header[data-testid="stHeader"] > * {
-    visibility: hidden;
-  }
-  header[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"],
-  header[data-testid="stHeader"] [data-testid="stSidebarCollapsedControl"],
-  header[data-testid="stHeader"] button[kind="header"] {
-    visibility: visible !important;
-  }
-  /* Belt-and-suspenders: standalone collapsed control (Streamlit renders
-     this OUTSIDE the header in some versions). */
-  [data-testid="stSidebarCollapsedControl"],
-  [data-testid="collapsedControl"] {
-    visibility: visible !important;
-    display: block !important;
-    z-index: 999 !important;
+  /* Only hide Streamlit-cloud's deploy button, not the entire header */
+  [data-testid="stToolbarActions"],
+  button[kind="deploy"],
+  [data-testid="stStatusWidget"] {
+    display: none !important;
   }
   div[data-testid="stToolbar"] { display: none; }
   div[data-testid="stDecoration"] { display: none; }
@@ -354,9 +345,21 @@ with st.sidebar:
     st.write("")
 
     # v3.56.0: chat threads list (newest first, max 20 visible)
+    # v3.56.2: cached at 30s so the sidebar doesn't disk-scan on every rerun
+    @st.cache_data(ttl=30, show_spinner=False)
+    def _cached_thread_list():
+        try:
+            from trader.copilot_storage import list_threads
+            return [(t.id, t.title, t.created_at, t.updated_at)
+                    for t in list_threads(limit=20)]
+        except Exception:
+            return []
     try:
-        from trader.copilot_storage import list_threads, delete_thread
-        threads = list_threads(limit=20)
+        threads_data = _cached_thread_list()
+        # Reconstruct lightweight thread objects (we only need id/title for display)
+        from collections import namedtuple
+        _T = namedtuple("_T", ["id", "title", "created_at", "updated_at"])
+        threads = [_T(*x) for x in threads_data]
         if threads:
             st.caption("— CHATS —")
             for t in threads:
@@ -470,7 +473,7 @@ def read_state_file(path_str: str) -> dict:
         return {}
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60, show_spinner=False)
 def _live_portfolio():
     try:
         from trader.positions_live import fetch_live_portfolio
@@ -503,9 +506,14 @@ def _overlay_signal():
         return None
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_snapshots(db_path: str):
+    return query(db_path, "SELECT * FROM daily_snapshot ORDER BY date DESC LIMIT 30")
+
+
 def _headline_metrics():
     """Render the headline metrics row used at top of Overview + Chat views."""
-    snaps = query(str(DB_PATH), "SELECT * FROM daily_snapshot ORDER BY date DESC LIMIT 30")
+    snaps = _cached_snapshots(str(DB_PATH))
     cols = st.columns(6)
     if not snaps.empty:
         latest = snaps.iloc[0]
@@ -661,6 +669,12 @@ def view_chat():
                                 )
                                 save_thread(cur)
                                 st.session_state.current_thread_title = cur.title
+                                # v3.56.2: invalidate the sidebar list cache so
+                                # the new/updated thread title appears
+                                try:
+                                    _cached_thread_list.clear()
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
                             if tool_log:
