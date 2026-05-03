@@ -2717,12 +2717,14 @@ def view_grid():
         "Pattern: \"run this question across my entire watchlist.\""
     )
 
-    # Load live portfolio symbols
+    # Load live portfolio symbols. tool_get_portfolio_status ALWAYS returns
+    # the "error" key (set to None on success), so we must check the value
+    # is truthy, not just key presence.
     try:
         from trader.copilot import dispatch_tool
         with st.spinner("Loading live positions..."):
             ports = dispatch_tool("get_portfolio_status", {})
-        if "error" in ports:
+        if ports.get("error"):
             st.error(f"Could not load portfolio: {ports['error']}")
             return
         positions = ports.get("positions", []) or []
