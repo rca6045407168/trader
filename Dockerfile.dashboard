@@ -46,7 +46,8 @@ ENV PATH=/home/trader/.local/bin:$PATH
 RUN pip install --user --no-cache-dir \
     "streamlit>=1.30" \
     "hmmlearn>=0.3" \
-    "arch>=6.0"
+    "arch>=6.0" \
+    "plotly>=5.20"
 
 COPY --chown=trader:trader src/ ./src/
 COPY --chown=trader:trader scripts/ ./scripts/

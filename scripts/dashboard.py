@@ -222,17 +222,24 @@ else:
 # ============================================================
 # Tabs
 # ============================================================
+# v3.52.0: Bloomberg-inspired additions appended at the end. Original 10
+# tabs unchanged; new 4 (Live positions, Events, Attribution, Sleeve health)
+# at indices 10-13.
 tabs = st.tabs([
-    "🏠 Overview",
-    "🎯 Decisions",
-    "📦 Positions",
-    "🌡️ Regime overlay",
-    "👥 Shadow variants",
-    "⚡ Intraday risk",
-    "📈 Performance",
-    "📜 Postmortems",
-    "📄 Reports",
-    "🔧 Manual",
+    "🏠 Overview",            # 0  TODAY
+    "🎯 Decisions",           # 1  TIME
+    "📦 Positions (lots)",    # 2  TIME
+    "🌡️ Regime overlay",      # 3  TODAY
+    "👥 Shadow variants",     # 4  RESEARCH
+    "⚡ Intraday risk",        # 5  TODAY
+    "📈 Performance",         # 6  TIME
+    "📜 Postmortems",         # 7  TIME
+    "📄 Reports",             # 8  TIME
+    "🔧 Manual",              # 9  RESEARCH
+    "💼 Live positions",     # 10 TODAY (Bloomberg MON, v3.52.0)
+    "📅 Events",             # 11 TODAY (Bloomberg EVTS, v3.52.0)
+    "📊 Attribution",        # 12 TIME (Bloomberg PORT / Brinson, v3.52.1)
+    "🔍 Sleeve health",       # 13 RESEARCH (sleeve correlation + decay, v3.51.0)
 ])
 
 # ---------------- Overview ----------------
@@ -274,6 +281,48 @@ with tabs[0]:
                 st.warning(f"⚠️ {len(recent)} ≥ 3 — peek_counter alert threshold")
         else:
             st.caption("no events logged")
+
+    st.divider()
+
+    # ---- v3.52.0: Bloomberg IMAP-style sector heatmap ----
+    st.subheader("🗺️ Sector heatmap (live, 30s cache)")
+    st.caption("Tile size = position weight. Color = today's P&L %. Bloomberg IMAP-style.")
+    try:
+        from trader.positions_live import fetch_live_portfolio
+        from trader.portfolio_heatmap import heatmap_dataframe_dict, sector_summary
+
+        @st.cache_data(ttl=30)
+        def _heatmap_portfolio():
+            return fetch_live_portfolio()
+
+        live_hm = _heatmap_portfolio()
+        if live_hm.error:
+            st.caption(f"_heatmap unavailable: {live_hm.error}_")
+        elif not live_hm.positions:
+            st.caption("_no live positions to chart_")
+        else:
+            try:
+                import plotly.express as px
+                hm = heatmap_dataframe_dict(live_hm.positions)
+                if hm["symbol"]:
+                    fig = px.treemap(
+                        names=hm["symbol"], parents=hm["sector"],
+                        values=hm["weight"], color=hm["day_pl_pct"],
+                        color_continuous_scale="RdYlGn",
+                        color_continuous_midpoint=0,
+                        custom_data=[hm["hover_text"]],
+                    )
+                    fig.update_traces(hovertemplate="%{customdata[0]}<extra></extra>")
+                    fig.update_layout(height=400, margin=dict(t=10, l=10, r=10, b=10))
+                    st.plotly_chart(fig, use_container_width=True)
+                ss = sector_summary(live_hm.positions)
+                if ss:
+                    st.markdown("**Sector summary**")
+                    st.dataframe(ss, use_container_width=True, hide_index=True)
+            except ImportError:
+                st.info("plotly not installed in this image — rebuild dashboard")
+    except Exception as e:
+        st.caption(f"_heatmap error: {type(e).__name__}: {e}_")
 
     st.divider()
     st.subheader("Latest run")
@@ -516,24 +565,88 @@ with tabs[5]:
     else:
         st.caption("no intraday log yet (first run will populate)")
 
-# ---------------- Performance ----------------
+# ---------------- Performance (v3.52.1: Bloomberg GP-style overlay) ----------------
 with tabs[6]:
-    st.subheader("Equity curve")
+    st.subheader("Equity curve vs SPY benchmark")
+    st.caption("Equity (green line) + SPY normalized to same start (gray dashed) "
+               "+ drawdown from rolling peak (red area). Bloomberg GP-style "
+               "single-chart overlay so the eye can compare excess return + DD "
+               "in one glance.")
     if not snaps.empty and len(snaps) >= 2:
         chart_data = snaps[["date", "equity"]].copy()
         chart_data["date"] = pd.to_datetime(chart_data["date"])
         chart_data = chart_data.sort_values("date").set_index("date")
-        st.line_chart(chart_data["equity"])
-
-        # Drawdown chart
         eq = chart_data["equity"]
         peak = eq.cummax()
-        dd = (eq / peak - 1) * 100
-        dd_chart = pd.DataFrame({"drawdown_pct": dd})
-        st.subheader("Drawdown (%)")
-        st.area_chart(dd_chart)
+        dd_pct = (eq / peak - 1) * 100
+
+        # Pull SPY benchmark over the same window
+        spy_normalized = None
+        try:
+            import yfinance as yf
+            spy_df = yf.download("SPY", start=eq.index.min().strftime("%Y-%m-%d"),
+                                  end=(eq.index.max() + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+                                  progress=False, auto_adjust=True)
+            if spy_df is not None and not spy_df.empty:
+                spy_close = spy_df["Close"].dropna()
+                # Normalize SPY to start at the same equity value
+                spy_normalized = (spy_close / spy_close.iloc[0]) * float(eq.iloc[0])
+        except Exception:
+            spy_normalized = None
+
+        try:
+            import plotly.graph_objects as go
+            fig = go.Figure()
+            # Equity line
+            fig.add_trace(go.Scatter(
+                x=eq.index, y=eq.values, name="equity",
+                line=dict(color="#16a34a", width=2),
+                hovertemplate="%{x|%Y-%m-%d}<br>$%{y:,.0f}<extra></extra>",
+            ))
+            # SPY benchmark dashed
+            if spy_normalized is not None and not spy_normalized.empty:
+                fig.add_trace(go.Scatter(
+                    x=spy_normalized.index, y=spy_normalized.values,
+                    name="SPY (normalized)",
+                    line=dict(color="#888888", width=1.5, dash="dash"),
+                    hovertemplate="%{x|%Y-%m-%d}<br>SPY $%{y:,.0f}<extra></extra>",
+                ))
+            # Drawdown on a secondary y-axis (red area, below 0)
+            fig.add_trace(go.Scatter(
+                x=dd_pct.index, y=dd_pct.values, name="drawdown %",
+                yaxis="y2", fill="tozeroy",
+                line=dict(color="rgba(220,38,38,0.4)"),
+                hovertemplate="%{x|%Y-%m-%d}<br>DD %{y:.2f}%<extra></extra>",
+            ))
+            fig.update_layout(
+                height=500,
+                hovermode="x unified",
+                yaxis=dict(title="equity ($)", side="left"),
+                yaxis2=dict(title="drawdown (%)", side="right",
+                            overlaying="y", showgrid=False, range=[-50, 5]),
+                margin=dict(t=20, l=10, r=10, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Excess return summary
+            if spy_normalized is not None and not spy_normalized.empty and len(eq) >= 2:
+                eq_total_ret = (float(eq.iloc[-1]) - float(eq.iloc[0])) / float(eq.iloc[0])
+                spy_total_ret = (float(spy_normalized.iloc[-1]) - float(spy_normalized.iloc[0])) / float(spy_normalized.iloc[0])
+                excess = eq_total_ret - spy_total_ret
+                ec1, ec2, ec3, ec4 = st.columns(4)
+                ec1.metric("Equity total return", f"{eq_total_ret*100:+.2f}%")
+                ec2.metric("SPY total return", f"{spy_total_ret*100:+.2f}%")
+                ec3.metric("Excess vs SPY", f"{excess*100:+.2f}%")
+                ec4.metric("Worst DD", f"{dd_pct.min():.2f}%")
+        except ImportError:
+            # plotly missing — fall back to two stacked charts
+            st.line_chart(chart_data["equity"])
+            st.subheader("Drawdown (%)")
+            st.area_chart(pd.DataFrame({"drawdown_pct": dd_pct}))
     else:
-        st.caption("need ≥ 2 daily snapshots to draw curves")
+        st.caption("need ≥ 2 daily snapshots to draw curves — sync from GitHub "
+                   "via sidebar to populate")
 
 # ---------------- Postmortems ----------------
 with tabs[7]:
@@ -648,6 +761,253 @@ with tabs[9]:
 
         if st.button("🔄 Force UI refresh"):
             st.rerun()
+
+# ---------------- v3.52.0: Live positions (Bloomberg MON) ----------------
+with tabs[10]:
+    st.subheader("💼 Live positions — mark-to-market")
+    st.caption("Pulls Alpaca positions every 30s. Day P&L vs yesterday's "
+               "close (yfinance) + total unrealized P&L vs avg cost. **The "
+               "between-rebalances trading view.**")
+    try:
+        from trader.positions_live import fetch_live_portfolio
+
+        @st.cache_data(ttl=30)
+        def _live_portfolio_tab():
+            return fetch_live_portfolio()
+
+        live = _live_portfolio_tab()
+        if live.error:
+            st.warning(f"broker fetch failed: {live.error}")
+        else:
+            cc1, cc2, cc3, cc4 = st.columns(4)
+            cc1.metric("Equity (live)", f"${live.equity:,.0f}" if live.equity else "n/a")
+            cc2.metric("Cash", f"${live.cash:,.0f}" if live.cash else "n/a")
+            cc3.metric(
+                "Day P&L",
+                f"${live.total_day_pl_dollar:+,.0f}" if live.total_day_pl_dollar is not None else "n/a",
+                f"{live.total_day_pl_pct:+.2%}" if live.total_day_pl_pct is not None else None,
+            )
+            cc4.metric("Total unrealized", f"${live.total_unrealized_pl:+,.0f}")
+
+            if live.positions:
+                rows = []
+                for p in live.positions:
+                    rows.append({
+                        "symbol": p.symbol,
+                        "sector": p.sector or "",
+                        "qty": f"{p.qty:.4f}",
+                        "avg_cost": f"${p.avg_cost:.2f}" if p.avg_cost else "",
+                        "last": f"${p.last_price:.2f}" if p.last_price else "",
+                        "weight": f"{p.weight_of_book*100:.1f}%" if p.weight_of_book else "",
+                        "market_val": f"${p.market_value:,.0f}" if p.market_value else "",
+                        "day_$": f"{p.day_pl_dollar:+,.0f}" if p.day_pl_dollar is not None else "",
+                        "day_%": f"{p.day_pl_pct*100:+.2f}%" if p.day_pl_pct is not None else "",
+                        "total_$": f"{p.unrealized_pl:+,.0f}" if p.unrealized_pl is not None else "",
+                        "total_%": f"{p.unrealized_pl_pct*100:+.2f}%" if p.unrealized_pl_pct is not None else "",
+                    })
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+            else:
+                st.info("no open positions in broker account")
+    except Exception as e:
+        st.warning(f"live positions tab unavailable: {type(e).__name__}: {e}")
+
+# ---------------- v3.52.0: Events calendar (Bloomberg EVTS) ----------------
+with tabs[11]:
+    st.subheader("📅 Upcoming events: held names + portfolio-wide")
+    st.caption("Earnings + ex-div per held name (yfinance) + FOMC (hard-coded "
+               "2026 calendar) + monthly OPEX (3rd Friday). The 'what could "
+               "blow up my book this week' view.")
+    try:
+        from trader.positions_live import fetch_live_portfolio
+        from trader.events_calendar import compute_upcoming_events
+
+        @st.cache_data(ttl=600)
+        def _events():
+            live = fetch_live_portfolio()
+            symbols = [p.symbol for p in (live.positions or [])]
+            return compute_upcoming_events(symbols, days_ahead=30)
+
+        with st.spinner("fetching earnings calendar..."):
+            events = _events()
+
+        if not events:
+            st.info("no upcoming events in next 30 days")
+        else:
+            rows = []
+            for e in events:
+                emoji = {"earnings": "📊", "ex_div": "💵",
+                         "fomc": "🏦", "opex": "🎯"}.get(e.event_type, "📌")
+                rows.append({
+                    "date": str(e.date),
+                    "in days": e.days_until,
+                    "type": f"{emoji} {e.event_type}",
+                    "symbol": e.symbol or "(portfolio-wide)",
+                    "note": e.note,
+                    "confidence": e.confidence,
+                })
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+    except Exception as e:
+        st.warning(f"events tab unavailable: {type(e).__name__}: {e}")
+
+# ---------------- v3.52.1: Attribution (Bloomberg PORT / Brinson) ----------------
+with tabs[12]:
+    st.subheader("📊 Brinson PnL attribution")
+    st.caption("Decomposes day P&L into **allocation effect** (sector "
+               "over/underweighting) + **selection effect** (within-sector "
+               "name picking) + **interaction**. Tells you WHY you made/lost "
+               "money, not just how much. Brinson, Hood, Beebower (1986).")
+    try:
+        from trader.positions_live import fetch_live_portfolio
+        from trader.brinson_attribution import compute_brinson, SECTOR_ETF_MAP
+
+        @st.cache_data(ttl=300)
+        def _brinson_today():
+            """Today's Brinson, day-level. Uses live mark-to-market sector
+            returns + SPDR sector ETF returns as benchmark."""
+            live = fetch_live_portfolio()
+            if not live.positions:
+                return None, "no positions"
+
+            # Aggregate portfolio sector weights + sector returns (cap-weighted)
+            sec_w_p: dict = {}
+            sec_r_num: dict = {}
+            sec_r_den: dict = {}
+            total_eq = sum((p.market_value or 0) for p in live.positions)
+            for p in live.positions:
+                sec = p.sector or "Unknown"
+                w = (p.market_value or 0) / total_eq if total_eq > 0 else 0
+                sec_w_p[sec] = sec_w_p.get(sec, 0) + w
+                if p.day_pl_pct is not None and (p.market_value or 0) > 0:
+                    sec_r_num[sec] = sec_r_num.get(sec, 0) + (p.day_pl_pct * (p.market_value or 0))
+                    sec_r_den[sec] = sec_r_den.get(sec, 0) + (p.market_value or 0)
+            sec_r_p = {s: (sec_r_num.get(s, 0) / sec_r_den.get(s, 1)) for s in sec_w_p}
+
+            # Pull benchmark (SPDR sector ETF) returns via yfinance
+            try:
+                import yfinance as yf
+                etf_syms = [SECTOR_ETF_MAP.get(s) for s in sec_w_p if SECTOR_ETF_MAP.get(s)]
+                if etf_syms:
+                    df = yf.download(" ".join(etf_syms), period="5d",
+                                      progress=False, auto_adjust=True, group_by="ticker")
+                    sec_r_b: dict = {}
+                    for sec, etf in SECTOR_ETF_MAP.items():
+                        try:
+                            if len(etf_syms) == 1:
+                                closes = df["Close"].dropna()
+                            else:
+                                closes = df[(etf, "Close")].dropna() if (etf, "Close") in df.columns else df[etf]["Close"].dropna()
+                            if len(closes) >= 2:
+                                sec_r_b[sec] = (float(closes.iloc[-1]) - float(closes.iloc[-2])) / float(closes.iloc[-2])
+                        except Exception:
+                            continue
+                else:
+                    sec_r_b = {}
+            except Exception:
+                sec_r_b = {}
+
+            # Crude SPY-equal-weight benchmark weights — proxy until we have
+            # historical SPY sector weights cached. Each sector = its share of
+            # SPDR sector ETFs by current ETF AUM is the right answer; using
+            # equal-weight as a placeholder so the math runs.
+            n = len(SECTOR_ETF_MAP) or 1
+            sec_w_b = {s: 1.0 / n for s in SECTOR_ETF_MAP}
+
+            return compute_brinson(
+                portfolio_weights=sec_w_p,
+                portfolio_sector_returns=sec_r_p,
+                benchmark_weights=sec_w_b,
+                benchmark_sector_returns=sec_r_b,
+            ), None
+
+        report, err = _brinson_today()
+        if err:
+            st.info(err)
+        elif report:
+            cm1, cm2, cm3 = st.columns(3)
+            cm1.metric("Allocation effect", f"{report.sum_allocation*100:+.3f}%")
+            cm2.metric("Selection effect", f"{report.sum_selection*100:+.3f}%")
+            cm3.metric("Active return", f"{report.active_return*100:+.3f}%")
+            rows = []
+            for s in report.by_sector:
+                rows.append({
+                    "sector": s.sector,
+                    "port_w": f"{s.portfolio_weight*100:.1f}%",
+                    "bench_w": f"{s.benchmark_weight*100:.1f}%",
+                    "port_ret": f"{s.portfolio_sector_return*100:+.2f}%",
+                    "bench_ret": f"{s.benchmark_sector_return*100:+.2f}%",
+                    "alloc_eff": f"{s.allocation_effect*100:+.3f}%",
+                    "select_eff": f"{s.selection_effect*100:+.3f}%",
+                })
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+            with st.expander("How to read this"):
+                st.markdown("""
+- **Allocation effect**: P&L from over/underweighting sectors that the
+  benchmark moved on. Positive if you overweighted winners.
+- **Selection effect**: P&L from picking outperforming names within a
+  sector. Positive if your picks beat the sector ETF.
+- **Interaction effect**: cross-term; usually small.
+- **Caveat**: benchmark sector weights are currently equal-weight
+  placeholder. Real SPY sector weights need historical cap-weighted data
+  (todo: cache via yfinance — v3.52.2).
+                """)
+    except Exception as e:
+        st.warning(f"attribution unavailable: {type(e).__name__}: {e}")
+
+# ---------------- v3.51.0: Sleeve health ----------------
+with tabs[13]:
+    st.subheader("🔍 Sleeve health — correlation + decay monitor")
+    st.caption("Cross-sleeve correlation (60d rolling Pearson) + per-sleeve "
+               "rolling Sharpe (90d) + auto-demote recommendations. Defensive "
+               "observability over the multi-sleeve thesis.")
+    try:
+        from trader.sleeve_health import compute_health
+
+        @st.cache_data(ttl=600)
+        def _health():
+            return compute_health()
+
+        rep = _health()
+        health_color = {"green": "✅", "yellow": "⚠️", "red": "🚨"}.get(
+            rep.overall_health, "❔")
+        st.markdown(f"### {health_color} Overall: **{rep.overall_health.upper()}**")
+        st.caption(rep.rationale)
+
+        st.markdown("**Per-sleeve rolling Sharpe (90d)**")
+        if rep.per_sleeve:
+            sleeve_rows = []
+            for s in rep.per_sleeve:
+                sleeve_rows.append({
+                    "sleeve": s.sleeve_id,
+                    "status": s.status,
+                    "n_obs": s.n_observations,
+                    "sharpe": f"{s.rolling_sharpe:.2f}" if s.rolling_sharpe is not None else "n/a",
+                    "sortino": f"{s.rolling_sortino:.2f}" if s.rolling_sortino is not None else "n/a",
+                    "vol_ann": f"{s.rolling_vol_annual*100:.1f}%" if s.rolling_vol_annual else "n/a",
+                    "flagged": "⚠️" if s.flagged_for_demote else "",
+                    "reason": s.flag_reason,
+                })
+            st.dataframe(sleeve_rows, use_container_width=True, hide_index=True)
+        else:
+            st.caption("no sleeve data yet")
+
+        st.markdown("**Cross-sleeve correlations (60d)**")
+        if rep.correlations:
+            corr_rows = [{"a": c.sleeve_a, "b": c.sleeve_b,
+                          "correlation": f"{c.correlation:+.3f}",
+                          "n": c.n_observations,
+                          "alert": "⚠️ over threshold" if c.over_threshold else ""}
+                         for c in rep.correlations]
+            st.dataframe(corr_rows, use_container_width=True, hide_index=True)
+        else:
+            st.caption("need ≥2 sleeves with closed lots to compute correlations")
+
+        if rep.demote_recommendations:
+            st.warning(f"{len(rep.demote_recommendations)} demote recommendation(s)")
+            for d in rep.demote_recommendations:
+                with st.expander(f"⚠️ {d['sleeve_id']} → {d['proposed_status']}"):
+                    st.json(d)
+    except Exception as e:
+        st.warning(f"sleeve health unavailable: {type(e).__name__}: {e}")
 
 # ============================================================
 # Auto-refresh timer (must be at end so all UI renders first)

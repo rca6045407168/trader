@@ -34,7 +34,7 @@ ENV PATH=/home/trader/.local/bin:$PATH
 # requests (already pulled but explicit). hmmlearn + arch were not in
 # requirements.txt because the existing variants only loaded them lazily and
 # v3.49 wires them into LIVE — they need to be present for tests to pass.
-RUN pip install --user --no-cache-dir "pytest>=8.0" "hmmlearn>=0.3" "arch>=6.0"
+RUN pip install --user --no-cache-dir "pytest>=8.0" "hmmlearn>=0.3" "arch>=6.0" "plotly>=5.20"
 
 COPY --chown=trader:trader src/ ./src/
 COPY --chown=trader:trader scripts/ ./scripts/
