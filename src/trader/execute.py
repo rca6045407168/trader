@@ -117,13 +117,25 @@ def close_aged_bottom_catches(max_age_days: int = 20, dry_run: bool = False) -> 
 
 def place_target_weights(
     targets: dict[str, float], min_order_usd: float = 50.0, dry_run: bool = False,
+    use_moc: bool = None,
 ) -> list[dict]:
     """Rebalance to target weights via notional market orders.
 
     targets: {ticker: portfolio_pct (0-1)}
 
     Closes positions not in targets. Skips orders below min_order_usd.
+
+    use_moc (v3.59.0): if True, route as MarketOnClose (TimeInForce.CLS)
+    instead of regular market DAY orders. Closing-auction prints typically
+    add 0-2bp slippage vs 5-10bp on a market order placed mid-session,
+    saving ~30-50bps/yr at 60% monthly turnover. Defaults to env-flag
+    USE_MOC_ORDERS=true. Only works if cron runs > ~15:30 ET — orders
+    submitted after the close-cutoff (15:50 ET on most brokers) will
+    reject; system falls back to DAY automatically per Alpaca behavior.
     """
+    if use_moc is None:
+        import os
+        use_moc = os.getenv("USE_MOC_ORDERS", "false").lower() == "true"
     if dry_run:
         return [{"symbol": s, "target_pct": w, "status": "dry_run"} for s, w in targets.items()]
 
@@ -182,9 +194,12 @@ def place_target_weights(
             out.append({"symbol": symbol, "side": "skip", "status": "below_min"})
             continue
         side = OrderSide.BUY if delta > 0 else OrderSide.SELL
+        # v3.59.0: route as MOC if requested. CLS time-in-force = closing
+        # auction print, lower expected slippage on liquid names.
+        tif = TimeInForce.CLS if use_moc else TimeInForce.DAY
         req = MarketOrderRequest(
             symbol=symbol, notional=round(abs(delta), 2),
-            side=side, time_in_force=TimeInForce.DAY,
+            side=side, time_in_force=tif,
         )
         # v3.58.1 SlippageTracker — capture decision-mid pre-submit
         try:

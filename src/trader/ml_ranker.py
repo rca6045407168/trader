@@ -1,4 +1,13 @@
-"""Machine-learning cross-sectional stock ranker.
+"""[v3.59.0 — DEPRECATED, NOT-LIVE]
+Machine-learning cross-sectional stock ranker.
+
+DEPRECATION NOTICE (V5 Phase 1, 2026-05-03):
+This module is loaded ONLY by `scripts/regime_stress_test.py` for research.
+It is NOT in any LIVE rebalance path. Per V5_ALPHA_DISCOVERY_PROPOSAL.md,
+naive ML-on-cross-sectional-features is replaced by the focused
+ML-augmented PEAD sleeve (Sleeve C in V5). When that sleeve ships, this
+module will be either repurposed as the PEAD feature pipeline or moved
+to `scripts/archive/`. Do not import from LIVE code.
 
 Trains Random Forest / Gradient Boosting on cross-sectional features to
 predict forward returns. Used to rank stocks at each rebalance and pick

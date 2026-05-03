@@ -25,7 +25,13 @@ SLACK_WEBHOOK = os.getenv("SLACK_WEBHOOK", "")
 TOP_N = int(os.getenv("TOP_N", "3"))  # v3.6 fix — was 5; LIVE variant is top-3 at 80%
 LOOKBACK_MONTHS = int(os.getenv("LOOKBACK_MONTHS", "12"))
 USE_REGIME_FILTER = os.getenv("USE_REGIME_FILTER", "false").lower() == "true"
-USE_DEBATE = os.getenv("USE_DEBATE", "true").lower() == "true"
+# v3.59.0 (V5 Phase 1): default flipped from true → false.
+# Per V5_ALPHA_DISCOVERY_PROPOSAL.md, the LLM-debate bottom-catch path
+# is on the killed-list. CLAUDE.md explicitly forbids LLM stock-picking
+# ("verified-failed pattern"). The code remains in the repo but the
+# default behavior no longer routes capital through find_bottoms+debate.
+# To re-enable for research/A-B: USE_DEBATE=true in env.
+USE_DEBATE = os.getenv("USE_DEBATE", "false").lower() == "true"
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 # v3.28: production universe selection.
 #   "liquid_50" — hand-picked top-50 mega-caps (default, matches v3.x backtest survivor universe)

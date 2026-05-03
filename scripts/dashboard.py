@@ -927,7 +927,13 @@ def view_chat():
         key="cmd_bar",
         label_visibility="collapsed",
     )
-    if cmd_pick:
+    # v3.59.0 fix: Streamlit forbids writing to a widget's key after it
+    # instantiates. Track last_cmd_pick separately to detect the change
+    # and only fire ONCE per new selection. Re-selecting the same option
+    # won't re-fire — pick "" first, then re-pick.
+    last_pick = st.session_state.get("_last_cmd_pick", "")
+    if cmd_pick and cmd_pick != last_pick:
+        st.session_state["_last_cmd_pick"] = cmd_pick
         if cmd_pick.startswith("⚡ "):
             wf_name = cmd_pick[2:]
             wf = next((w for w in _wfs if w["name"] == wf_name), None)
@@ -935,8 +941,9 @@ def view_chat():
                 st.session_state["_pending_user_input"] = "\n\n".join(wf["prompts"])
         elif cmd_pick.startswith("💡 "):
             st.session_state["_pending_user_input"] = cmd_pick[2:]
-        # Reset selectbox so the same pick can fire again
-        st.session_state.cmd_bar = ""
+    elif not cmd_pick:
+        # Reset the change-detector when user clears the selectbox
+        st.session_state["_last_cmd_pick"] = ""
 
     # v3.57.1 (Phase 3): Plan Mode toggle. When ON, sim/live tools are stubbed
     # so the model describes the intended action without executing it.

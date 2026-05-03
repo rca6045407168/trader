@@ -101,6 +101,15 @@ def main() -> int:
         return b
     _prewarm_section("morning briefing", _brief)
 
+    # 5. v3.59.0 — Nightly journal backup. Idempotent (uses date stamp);
+    # safe to run on every container restart. Backups written to
+    # data/backups/journal.YYYY-MM-DD.db with 30-day retention.
+    def _backup():
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import backup_journal  # type: ignore
+        return backup_journal.main()
+    _prewarm_section("journal backup", _backup)
+
     # 4. v3.58.3 — LowVolSleeve daily shadow runner (best-effort).
     # Re-running the same day is idempotent (replaces today's row).
     def _lowvol():
