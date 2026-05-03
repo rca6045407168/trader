@@ -534,6 +534,7 @@ with st.sidebar:
         ("📄 Reports", "reports"),
         ("— SYSTEM —", None),
         ("🔧 Manual triggers", "manual"),
+        ("🛑 Manual override", "manual_override"),
         ("🧰 World-class gaps", "world_class"),
         ("⚙️ Settings", "settings"),
     ]
@@ -1504,6 +1505,86 @@ def view_performance():
             st.plotly_chart(fig, use_container_width=True)
         except ImportError:
             st.line_chart(chart_data["equity"])
+
+    # ---- v3.58.3: LowVolSleeve shadow overlay ----
+    try:
+        lowvol_csv = ROOT / "data" / "low_vol_shadow.csv"
+        if lowvol_csv.exists():
+            lv = pd.read_csv(lowvol_csv)
+            if not lv.empty and "cum_equity" in lv.columns and len(lv) >= 5:
+                st.subheader("📊 LowVolSleeve shadow vs LIVE momentum")
+                st.caption(
+                    "Daily shadow run of the second sleeve (lowest-vol top-15 from "
+                    "the LIVE universe). Both curves normalized to 1.0 at the start "
+                    "of the LowVol shadow window. **If LowVol consistently beats or "
+                    "diversifies LIVE, that's the case for promoting it.**"
+                )
+                lv["date"] = pd.to_datetime(lv["date"])
+                lv = lv.sort_values("date").set_index("date")
+                # Re-normalize LIVE equity to start at the same point as LowVol
+                if not snaps.empty:
+                    eq_live = snaps[["date", "equity"]].copy()
+                    eq_live["date"] = pd.to_datetime(eq_live["date"])
+                    eq_live = eq_live.sort_values("date").set_index("date")
+                    overlap_start = max(lv.index.min(), eq_live.index.min())
+                    eq_live_clip = eq_live.loc[eq_live.index >= overlap_start]
+                    if len(eq_live_clip) > 0:
+                        eq_live_norm = eq_live_clip["equity"] / eq_live_clip["equity"].iloc[0]
+                    else:
+                        eq_live_norm = None
+                else:
+                    eq_live_norm = None
+                lv_norm = lv["cum_equity"] / lv["cum_equity"].iloc[0]
+                try:
+                    import plotly.graph_objects as go
+                    fig = go.Figure()
+                    if eq_live_norm is not None:
+                        fig.add_trace(go.Scatter(
+                            x=eq_live_norm.index, y=eq_live_norm.values,
+                            name="LIVE momentum",
+                            line=dict(color="#16a34a", width=2),
+                        ))
+                    fig.add_trace(go.Scatter(
+                        x=lv_norm.index, y=lv_norm.values,
+                        name="LowVolSleeve (SHADOW)",
+                        line=dict(color="#3b82f6", width=2, dash="dot"),
+                    ))
+                    fig.update_layout(
+                        height=320, hovermode="x unified",
+                        yaxis=dict(title="normalized equity"),
+                        margin=dict(t=20, l=10, r=10, b=10),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    # Stats
+                    sc = st.columns(3)
+                    sc[0].metric("LowVol total return",
+                                 f"{(lv_norm.iloc[-1] - 1)*100:+.2f}%",
+                                 f"over {len(lv_norm)} days")
+                    if eq_live_norm is not None and len(eq_live_norm) > 0:
+                        sc[1].metric("LIVE total return",
+                                     f"{(eq_live_norm.iloc[-1] - 1)*100:+.2f}%",
+                                     f"same window")
+                        # Correlation of daily returns
+                        try:
+                            lv_daily = lv["day_return"].astype(float).reset_index()
+                            eq_daily = eq_live_clip["equity"].pct_change().dropna().reset_index()
+                            merged = lv_daily.merge(eq_daily, on="date", how="inner")
+                            if len(merged) >= 10:
+                                corr = merged["day_return"].corr(merged["equity"])
+                                sc[2].metric(
+                                    "Correlation (daily)",
+                                    f"{corr:.2f}",
+                                    "below 0.5 → diversifying" if corr < 0.5 else "high — overlapping",
+                                )
+                        except Exception:
+                            pass
+                except ImportError:
+                    st.line_chart(lv_norm)
+            else:
+                st.caption("_LowVol shadow CSV exists but has < 5 rows yet — run the prewarm a few more days_")
+    except Exception as e:
+        st.caption(f"_LowVol overlay failed: {type(e).__name__}: {e}_")
 
     # ---- ROLLING SHARPE ----
     st.subheader("Rolling 30-day Sharpe")
@@ -3601,6 +3682,170 @@ def _maybe_open_symbol_modal():
 
 
 # ============================================================
+# View: Manual override (v3.58.3) — guarded kill-glass actions
+# ============================================================
+def view_manual_override():
+    st.title("🛑 Manual override — kill-glass actions")
+    st.caption(
+        "Per-symbol actions that bypass the cron rebalance. "
+        "**2-step confirmation**: (1) Plan — pure read, generates a token. "
+        "(2) Execute — refuses unless `MANUAL_OVERRIDE_ALLOWED=true` env "
+        "is set AND the token is < 60s old. Default mode is DRY_RUN; flip "
+        "`MANUAL_OVERRIDE_DRY_RUN=false` to actually submit."
+    )
+
+    import os as _os
+    allowed = _os.getenv("MANUAL_OVERRIDE_ALLOWED", "false").lower() == "true"
+    dry_run = _os.getenv("MANUAL_OVERRIDE_DRY_RUN", "true").lower() == "true"
+
+    sc = st.columns(3)
+    sc[0].metric(
+        "MANUAL_OVERRIDE_ALLOWED",
+        "🟢 true" if allowed else "🔴 false",
+        "set in container env to enable execute()",
+    )
+    sc[1].metric(
+        "MANUAL_OVERRIDE_DRY_RUN",
+        "🟡 true" if dry_run else "🔴 LIVE",
+        "true = no broker call, plan only",
+    )
+    sc[2].metric(
+        "Plan token TTL",
+        "60s",
+        "re-plan if you walk away",
+    )
+
+    if not allowed:
+        st.warning(
+            "Manual override **disabled**. Plan buttons work; Execute "
+            "buttons will refuse. To enable, set `MANUAL_OVERRIDE_ALLOWED=true` "
+            "in your docker-compose env and restart the dashboard."
+        )
+
+    if not dry_run and allowed:
+        st.error(
+            "🚨 **LIVE manual override is enabled.** Execute buttons will "
+            "submit real orders. Set `MANUAL_OVERRIDE_DRY_RUN=true` to disarm."
+        )
+
+    st.divider()
+
+    try:
+        from trader import manual_override as mo
+        from trader.copilot import dispatch_tool
+        ports = dispatch_tool("get_portfolio_status", {})
+        positions = (ports.get("positions") or []) if not ports.get("error") else []
+        symbols = [p.get("symbol") for p in positions if p.get("symbol")]
+    except Exception as e:
+        st.error(f"could not load: {e}")
+        return
+
+    # ---- Action 1: Flatten position ----
+    st.subheader("1️⃣ Flatten a position (close 100%)")
+    fl_cols = st.columns([2, 1, 1])
+    fl_sym = fl_cols[0].selectbox("Symbol to flatten",
+                                    [""] + symbols, key="mo_flat_sym")
+    if fl_cols[1].button("📋 Plan", key="mo_flat_plan",
+                          use_container_width=True,
+                          disabled=not fl_sym):
+        plan = mo.plan_flatten(fl_sym)
+        if not plan.get("ok"):
+            st.error(plan.get("reason"))
+        else:
+            st.session_state["mo_flat_plan"] = plan
+            st.success(f"Plan ready: {plan['summary']}")
+            st.caption(f"_token: `{plan['plan_token']}` (expires in 60s)_")
+    plan_cached = st.session_state.get("mo_flat_plan")
+    if plan_cached and plan_cached.get("symbol") == fl_sym:
+        if fl_cols[2].button("⚡ Execute", key="mo_flat_exec",
+                              use_container_width=True,
+                              type="primary", disabled=not allowed):
+            res = mo.execute_flatten(plan_cached["plan_token"])
+            st.session_state.pop("mo_flat_plan", None)
+            if res.get("refused"):
+                st.warning(f"Refused: {res['refused']}")
+            elif res.get("dry_run"):
+                st.info("DRY RUN — would have flattened. No order submitted.")
+                st.json(res)
+            elif res.get("executed"):
+                st.success(f"✅ Flattened {res['symbol']}.")
+            else:
+                st.error(f"Failed: {res.get('error')}")
+
+    st.divider()
+
+    # ---- Action 2: Trim position by % ----
+    st.subheader("2️⃣ Trim a position by %")
+    tc = st.columns([2, 1, 1, 1])
+    tr_sym = tc[0].selectbox("Symbol", [""] + symbols, key="mo_trim_sym")
+    tr_pct = tc[1].slider("Trim %", 5, 95, 50, step=5, key="mo_trim_pct") / 100
+    if tc[2].button("📋 Plan", key="mo_trim_plan",
+                     use_container_width=True, disabled=not tr_sym):
+        plan = mo.plan_trim(tr_sym, tr_pct)
+        if not plan.get("ok"):
+            st.error(plan.get("reason"))
+        else:
+            st.session_state["mo_trim_plan"] = plan
+            st.success(f"Plan ready: {plan['summary']}")
+    pc = st.session_state.get("mo_trim_plan")
+    if pc and pc.get("symbol") == tr_sym and pc.get("pct") == tr_pct:
+        if tc[3].button("⚡ Execute", key="mo_trim_exec",
+                         use_container_width=True, type="primary",
+                         disabled=not allowed):
+            res = mo.execute_trim(pc["plan_token"])
+            st.session_state.pop("mo_trim_plan", None)
+            if res.get("refused"):
+                st.warning(f"Refused: {res['refused']}")
+            elif res.get("dry_run"):
+                st.info("DRY RUN — would have trimmed. No order submitted.")
+            elif res.get("executed"):
+                st.success(f"✅ Submitted trim. Order id: `{res['order_id']}`")
+            else:
+                st.error(f"Failed: {res.get('error')}")
+
+    st.divider()
+
+    # ---- Action 3: Force pause (deploy-DD freeze) ----
+    st.subheader("3️⃣ Force pause (30-day no-new-position freeze)")
+    st.caption(
+        "Trips the deployment-DD freeze in risk_manager. All future runs "
+        "halt new orders for 30 days. Existing positions remain held. "
+        "Use when you need to step away or re-evaluate the strategy."
+    )
+    pc2 = st.columns([2, 1, 1])
+    fp_reason = pc2[0].text_input("Reason (logged)", key="mo_fp_reason",
+                                    placeholder="taking a break / market regime shift / etc")
+    if pc2[1].button("📋 Plan", key="mo_fp_plan", use_container_width=True):
+        plan = mo.plan_force_pause(fp_reason or "manual")
+        st.session_state["mo_fp_plan"] = plan
+        st.success(f"Plan ready: {plan['summary']}")
+    fpc = st.session_state.get("mo_fp_plan")
+    if fpc:
+        if pc2[2].button("⚡ Execute", key="mo_fp_exec",
+                          use_container_width=True, type="primary",
+                          disabled=not allowed):
+            res = mo.execute_force_pause(fpc["plan_token"])
+            st.session_state.pop("mo_fp_plan", None)
+            if res.get("refused"):
+                st.warning(f"Refused: {res['refused']}")
+            elif res.get("dry_run"):
+                st.info("DRY RUN — would have triggered freeze.")
+            elif res.get("executed"):
+                st.success(f"✅ Freeze triggered. {res.get('note')}")
+            else:
+                st.error(f"Failed: {res.get('error')}")
+
+    with st.expander("📚 How to safely use this panel"):
+        st.markdown("""
+- **Default state is safe.** `MANUAL_OVERRIDE_ALLOWED=false` and `MANUAL_OVERRIDE_DRY_RUN=true` mean every Execute button refuses and every Plan is a pure read.
+- **First-time wiring:** flip `MANUAL_OVERRIDE_ALLOWED=true` in `docker-compose.yml`, leave DRY_RUN=true. Verify the dry-run output looks correct.
+- **Going live:** set `MANUAL_OVERRIDE_DRY_RUN=false`. The big red banner appears. Each Execute now submits a real order.
+- **Plan tokens expire in 60s.** If you walk away mid-flow, you'll have to re-Plan — by design, so you don't accidentally execute an outdated plan.
+- **Audit trail:** every executed action writes to `journal.orders`. Review in the Decisions tab.
+""")
+
+
+# ============================================================
 # View: World-class gaps (v3.58.0) — surfaces every item from the
 # "if you were a world-class trader, what's still missing" review.
 # ============================================================
@@ -3722,6 +3967,7 @@ VIEW_DISPATCH = {
     "postmortems": view_postmortems,
     "reports": view_reports,
     "manual": view_manual,
+    "manual_override": view_manual_override,
     "world_class": view_world_class,
     "settings": view_settings,
 }

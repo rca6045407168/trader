@@ -101,6 +101,25 @@ def main() -> int:
         return b
     _prewarm_section("morning briefing", _brief)
 
+    # 4. v3.58.3 — LowVolSleeve daily shadow runner (best-effort).
+    # Re-running the same day is idempotent (replaces today's row).
+    def _lowvol():
+        from datetime import datetime as _dt
+        last_marker = ROOT / "data" / ".last_lowvol_run"
+        today_iso = _dt.utcnow().date().isoformat()
+        if last_marker.exists() and last_marker.read_text().strip() == today_iso:
+            return "already-ran-today"
+        # Run the shadow. Best-effort: import + call main().
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import run_lowvol_shadow as rl  # type: ignore
+            rl.main()
+            last_marker.write_text(today_iso)
+            return True
+        except SystemExit:
+            return True
+    _prewarm_section("low-vol shadow", _lowvol)
+
     overall = (time.time() - overall_t0) * 1000
     print(f"=== prewarm done in {overall:.0f}ms — Streamlit can now start ===", flush=True)
     return 0
