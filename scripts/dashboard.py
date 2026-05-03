@@ -453,8 +453,10 @@ with st.sidebar:
     except Exception:
         pass
 
+    # v3.56.7: removed standalone "🤖 Chat" nav item — redundant with the
+    # "💬 New chat" CTA above and the RECENTS list which both route to the
+    # chat view. User: 'i think you don't need chat, recent is good enough'.
     NAV = [
-        ("🤖 Chat", "chat"),
         ("— VIEWS —", None),
         ("🏠 Overview", "overview"),
         ("💼 Live positions", "live_positions"),
