@@ -522,6 +522,7 @@ with st.sidebar:
         ("🌡️ Regime overlay", "regime"),
         ("⚡ Intraday risk", "intraday"),
         ("— RESEARCH —", None),
+        ("🎯 V5 sleeves", "v5_sleeves"),
         ("👁️ Watchlist", "watchlist"),
         ("🗂️ Grid", "grid"),
         ("🔎 Screener", "screener"),
@@ -3689,6 +3690,136 @@ def _maybe_open_symbol_modal():
 
 
 # ============================================================
+# View: V5 sleeves (v3.59.1) — pre-FOMC drift / VRP / ML-PEAD scaffolds
+# ============================================================
+def view_v5_sleeves():
+    st.title("🎯 V5 sleeves — pre-FOMC drift, VRP, ML-PEAD")
+    st.caption(
+        "Per `docs/V5_ALPHA_DISCOVERY_PROPOSAL.md`. Each sleeve is "
+        "uncorrelated to momentum and has a structural reason to persist. "
+        "Default status NOT_WIRED / SHADOW. Promotion requires 3-gate "
+        "validation + adversarial review + 30-60 day shadow period."
+    )
+
+    # ---- Sleeve B: pre-FOMC drift ----
+    st.subheader("📅 Sleeve B — Pre-FOMC Drift")
+    try:
+        from trader.fomc_drift import (
+            status as fomc_status, compute_signal as fomc_signal,
+            days_until_next_fomc, sleeve_capital_pct as fomc_pct,
+        )
+        sig = fomc_signal()
+        cc = st.columns(4)
+        cc[0].metric("Status", fomc_status())
+        cc[1].metric("In drift window today",
+                     "🟡 YES" if sig.in_drift_window else "🟢 no")
+        days = days_until_next_fomc()
+        cc[2].metric("Days to next FOMC",
+                     f"{days}" if days is not None else "n/a")
+        cc[3].metric("Sleeve capital %",
+                     f"{fomc_pct()*100:.0f}%")
+        if sig.fomc_date:
+            st.caption(f"_Next FOMC: **{sig.fomc_date}** — {sig.rationale}_")
+        if sig.in_drift_window and sig.target_weight_spy > 0:
+            st.success(f"Would route **{sig.target_weight_spy*100:.0f}%** "
+                        f"to SPY long today.")
+    except Exception as e:
+        st.caption(f"_FOMC drift module: {type(e).__name__}: {e}_")
+
+    st.divider()
+
+    # ---- Sleeve A: Variance Risk Premium ----
+    st.subheader("📉 Sleeve A — Variance Risk Premium (defined-risk)")
+    try:
+        from trader.vrp_sleeve import (
+            status as vrp_status, plan_today as vrp_plan,
+            fetch_chain_yfinance, sleeve_capital_pct as vrp_pct,
+        )
+        vrp_state = vrp_status()
+        cc = st.columns(3)
+        cc[0].metric("Status", vrp_state)
+        cc[1].metric("Sleeve capital %", f"{vrp_pct()*100:.0f}%")
+        cc[2].metric(
+            "Promotion gate",
+            "60-day shadow + Volmageddon stress",
+            "blocked until validated",
+        )
+        if st.button("📋 Compute today's plan (no execute)",
+                      key="v5_vrp_plan_btn"):
+            with st.spinner("Fetching SPY option chain via yfinance..."):
+                spot, chain = fetch_chain_yfinance("SPY")
+            if not chain:
+                st.warning("Could not fetch chain (yfinance offline or rate-limited).")
+            else:
+                # Use $100k for the plan demo if equity unavailable
+                try:
+                    from trader.copilot import dispatch_tool
+                    ports = dispatch_tool("get_portfolio_status", {})
+                    eq = float(ports.get("equity") or 100_000)
+                except Exception:
+                    eq = 100_000
+                plan = vrp_plan(spot, chain, total_equity=eq)
+                if plan.error:
+                    st.warning(f"Plan: {plan.error}")
+                else:
+                    st.success(plan.rationale)
+                    pcols = st.columns(4)
+                    pcols[0].metric("Short strike", f"${plan.short_strike:.0f}")
+                    pcols[1].metric("Long strike", f"${plan.long_strike:.0f}")
+                    pcols[2].metric("Credit/spread", f"${plan.credit:.2f}")
+                    pcols[3].metric("# spreads", str(plan.n_spreads))
+    except Exception as e:
+        st.caption(f"_VRP module: {type(e).__name__}: {e}_")
+
+    st.divider()
+
+    # ---- Sleeve C: ML-augmented PEAD ----
+    st.subheader("📊 Sleeve C — ML-augmented PEAD")
+    try:
+        from trader.pead_sleeve import (
+            status as pead_status, expected_targets as pead_targets,
+            sleeve_capital_pct as pead_pct, rank_today,
+        )
+        pead_state = pead_status()
+        cc = st.columns(3)
+        cc[0].metric("Status", pead_state)
+        cc[1].metric("Sleeve capital %", f"{pead_pct()*100:.0f}%")
+        cc[2].metric(
+            "Note",
+            "scaffold scoring",
+            "trained model = follow-up commit",
+        )
+        if st.button("📋 Rank universe by PEAD scaffold-score",
+                      key="v5_pead_rank_btn"):
+            try:
+                from trader.universe import DEFAULT_LIQUID_50
+                with st.spinner(f"Ranking {len(DEFAULT_LIQUID_50)} names by recent surprise..."):
+                    ranked = rank_today(DEFAULT_LIQUID_50, window_days=60)
+                if ranked:
+                    st.success(f"Found {len(ranked)} names with earnings in last 60d.")
+                    st.dataframe([{"symbol": s, "score": f"{v:.2f}"}
+                                   for s, v in ranked[:20]],
+                                  use_container_width=True, hide_index=True)
+                else:
+                    st.info("No qualifying names — no recent earnings or yfinance offline.")
+            except Exception as e:
+                st.error(f"{type(e).__name__}: {e}")
+    except Exception as e:
+        st.caption(f"_PEAD module: {type(e).__name__}: {e}_")
+
+    st.divider()
+
+    st.markdown("""
+**What's deferred until validation completes:**
+
+- VRP backtest on 2018-Q1 (Volmageddon) and 2020-Q1 (COVID) regimes — needs historical options-chain snapshots; yfinance only gives current. Use Cboe DataShop free quarterly samples for the validation pass, or treat shadow period as forward-only validation.
+- ML-PEAD trained model (lightgbm rolling-window). Current ranker uses a heuristic composite score (`last_surprise × run_length × time_decay`). Replace with trained model once 30-day shadow accumulates a labeled dataset.
+- Sleeve-level kill switches (-25% in 5d → freeze). Required for VRP before any LIVE flip.
+- Phase 7 integration: drop momentum from 80% → 50% to make room for sleeves A/B/C. Cannot ship until all three sleeves complete shadow validation.
+""")
+
+
+# ============================================================
 # View: Manual override (v3.58.3) — guarded kill-glass actions
 # ============================================================
 def view_manual_override():
@@ -3963,6 +4094,7 @@ VIEW_DISPATCH = {
     "events": view_events,
     "regime": view_regime,
     "intraday": view_intraday,
+    "v5_sleeves": view_v5_sleeves,
     "watchlist": view_watchlist,
     "grid": view_grid,
     "screener": view_screener,
