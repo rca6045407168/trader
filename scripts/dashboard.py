@@ -557,7 +557,7 @@ def read_state_file(path_str: str) -> dict:
         return {}
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner="📡 Fetching live positions from broker...")
 def _live_portfolio():
     try:
         from trader.positions_live import fetch_live_portfolio
@@ -650,7 +650,7 @@ def _write_disk_briefing(brief):
         pass
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner="📰 Computing today's briefing (HMM + macro + GARCH)...")
 def _morning_briefing():
     """Get the morning briefing. Tries disk cache first (instant), else
     recomputes via compute_briefing() (~3s on cold start, was 7s before
@@ -718,7 +718,7 @@ def _write_disk_overlay(sig):
         pass
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner="⚙️ Computing regime overlay...")
 def _overlay_signal():
     disk = _read_disk_overlay()
     if disk is not None:

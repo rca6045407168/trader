@@ -94,11 +94,54 @@ class OverlaySignal:
         return " ".join(bits)
 
 
+# v3.56.10: HMM model fit cached to disk. EM training takes 2-3s on every
+# call but the model fit itself doesn't change minute-to-minute — daily
+# training is plenty for a monthly-rebalance strategy. We persist the
+# regime classification result (not the model object — that's not picklable
+# safely across versions) and rebuild only when the cache is > 24h old.
+import json as _json
+import os as _os
+from pathlib import Path as _Path
+
+_HMM_CACHE_FILE = _Path(_os.environ.get("TRADER_DATA_DIR",
+    str(_Path(__file__).resolve().parent.parent.parent / "data"))) / "hmm_cache.json"
+_HMM_CACHE_TTL_SEC = 86400  # 24h
+
+
+def _read_disk_hmm():
+    if not _HMM_CACHE_FILE.exists():
+        return None
+    try:
+        d = _json.loads(_HMM_CACHE_FILE.read_text())
+        ts = datetime.fromisoformat(d.get("_cached_at", "1970-01-01"))
+        if (datetime.utcnow() - ts).total_seconds() > _HMM_CACHE_TTL_SEC:
+            return None
+        return (d["mult"], d["regime"], d["posterior"], None)
+    except Exception:
+        return None
+
+
+def _write_disk_hmm(mult, regime, posterior):
+    try:
+        _HMM_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _HMM_CACHE_FILE.write_text(_json.dumps({
+            "_cached_at": datetime.utcnow().isoformat(),
+            "mult": mult, "regime": regime, "posterior": posterior,
+        }, indent=2))
+    except Exception:
+        pass
+
+
 def _compute_hmm_mult(history_days: int = 504) -> tuple[float, str, float, Optional[str]]:
     """Train HMM on SPY returns, classify current regime, return multiplier.
 
     Returns (mult, regime, posterior, error_msg). Failure → (1.0, "error", 0.0, msg).
+
+    v3.56.10: 24h disk cache. EM training (2-3s) only runs once per day.
     """
+    cached = _read_disk_hmm()
+    if cached is not None:
+        return cached
     try:
         from .data import fetch_history
         from .hmm_regime import fit_hmm, classify_current_regime
@@ -119,6 +162,7 @@ def _compute_hmm_mult(history_days: int = 504) -> tuple[float, str, float, Optio
             mult = HMM_MULT_BEAR
         else:
             mult = HMM_MULT_TRANSITION
+        _write_disk_hmm(mult, regime, float(sig.posterior))
         return mult, regime, sig.posterior, None
     except Exception as e:
         return 1.0, "error", 0.0, f"{type(e).__name__}: {e}"
