@@ -72,27 +72,35 @@ def main():
         print(f"  import failed: {e}")
         return 1
 
-    # rank_momentum doesn't take an as-of arg yet. To make this test honest,
-    # we'd need to refactor rank_momentum to accept end_date. For now, this
-    # script flags the gap and returns a partial check.
+    # v3.59.4: rank_momentum now accepts end_date. We can run a real
+    # AS-OF re-derivation now.
     try:
-        cur_picks = [c.ticker for c in rank_momentum(DEFAULT_LIQUID_50, top_n=15)]
+        cur_picks = [c.ticker for c in
+                      rank_momentum(DEFAULT_LIQUID_50, top_n=15, end_date=asof)]
     except Exception as e:
         print(f"  rank_momentum failed: {e}")
         return 1
 
     recorded_picks = [r["ticker"] for r in recorded if r["action"] == "BUY"]
     overlap = set(cur_picks) & set(recorded_picks)
+    n_recorded = len(set(recorded_picks))
     print(f"  recorded picks: {sorted(recorded_picks)}")
-    print(f"  re-derived picks (today): {sorted(cur_picks)}")
-    print(f"  overlap: {len(overlap)}/{len(set(recorded_picks))}")
+    print(f"  re-derived picks (as-of {asof}): {sorted(cur_picks)}")
+    print(f"  overlap: {len(overlap)}/{n_recorded}")
 
-    # Honest gap: this test cannot be fully deterministic without an
-    # as-of-date refactor of rank_momentum. We surface the limitation.
-    print("\n⚠️  HONEST GAP: rank_momentum does not yet accept end_date param.")
-    print("   The test above re-runs as of TODAY, not as of {asof}, so any")
-    print("   divergence reflects price-history-after-asof, not code bugs.")
-    print("   Full determinism requires rank_momentum(universe, end_date=asof).")
+    if n_recorded > 0:
+        match_pct = len(overlap) / n_recorded * 100
+        if match_pct >= 95:
+            print(f"  ✅ DETERMINISTIC: {match_pct:.0f}% match")
+            return 0
+        elif match_pct >= 80:
+            print(f"  🟡 BORDERLINE: {match_pct:.0f}% match — investigate divergence")
+            return 0
+        else:
+            print(f"  ❌ NON-DETERMINISTIC: {match_pct:.0f}% match")
+            print("     Likely causes: unseeded RNG, dict ordering, library drift,")
+            print("     yfinance backfill changes since {asof}.".format(asof=asof))
+            return 1
     return 0
 
 

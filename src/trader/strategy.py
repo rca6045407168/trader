@@ -25,11 +25,31 @@ def rank_momentum(
     lookback_months: int = 12,
     skip_months: int = 1,
     top_n: int = 5,
+    end_date: pd.Timestamp | str | None = None,
 ) -> list[Candidate]:
-    """Long the top-N stocks by trailing momentum, skipping the most recent month."""
-    end = pd.Timestamp.today()
+    """Long the top-N stocks by trailing momentum, skipping the most recent month.
+
+    v3.59.4: end_date enables AS-OF backtesting and unlocks the determinism
+    test (Cat 9 in TESTING_PRACTICES). When None (default), uses today's
+    date — original behavior. When set, returns the picks the strategy
+    WOULD HAVE made on that date using only data up to that date.
+
+    The momentum_score and ATR are both computed on the price series clipped
+    at end_date, so no look-ahead.
+    """
+    if end_date is None:
+        end = pd.Timestamp.today()
+    else:
+        end = pd.Timestamp(end_date) if not isinstance(end_date, pd.Timestamp) else end_date
     start = (end - pd.DateOffset(months=lookback_months + skip_months + 2)).strftime("%Y-%m-%d")
+    end_str = end.strftime("%Y-%m-%d")
+    # Pull history through end_date (inclusive). fetch_history accepts a
+    # start; we slice afterwards to ensure no future-data leak.
     prices = fetch_history(universe, start=start)
+    if end_date is not None and not prices.empty:
+        # Strip any rows after end_date — defensive against fetch_history
+        # returning extra trailing data.
+        prices = prices[prices.index <= end]
 
     scored = []
     for t in universe:
@@ -46,9 +66,12 @@ def rank_momentum(
         atr_pct = 0.0
         try:
             ohlc = fetch_ohlcv(t, start=start)
-            a = atr(ohlc)
-            last_close = float(ohlc["Close"].iloc[-1])
-            atr_pct = a / last_close if last_close else 0.0
+            if end_date is not None and not ohlc.empty:
+                ohlc = ohlc[ohlc.index <= end]
+            if not ohlc.empty:
+                a = atr(ohlc)
+                last_close = float(ohlc["Close"].iloc[-1])
+                atr_pct = a / last_close if last_close else 0.0
         except Exception:
             pass
         out.append(
@@ -57,7 +80,9 @@ def rank_momentum(
                 action="BUY",
                 style="MOMENTUM",
                 score=m,
-                rationale={"trailing_return": round(m, 4), "lookback_months": lookback_months},
+                rationale={"trailing_return": round(m, 4),
+                            "lookback_months": lookback_months,
+                            "as_of": end_str},
                 atr_pct=atr_pct,
             )
         )
