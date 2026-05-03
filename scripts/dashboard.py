@@ -48,7 +48,31 @@ st.set_page_config(
 st.markdown("""
 <style>
   /* Hide Streamlit chrome */
-  #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
+  #MainMenu, footer { visibility: hidden; height: 0; }
+  /* v3.55.3: keep header visible but minimal — it contains the sidebar
+     toggle button. Hiding it entirely (as v3.55.1 did) made a closed
+     sidebar impossible to reopen. */
+  header[data-testid="stHeader"] {
+    background: transparent !important;
+    height: 2.5rem !important;
+  }
+  /* Hide everything inside the header EXCEPT the sidebar toggle */
+  header[data-testid="stHeader"] > * {
+    visibility: hidden;
+  }
+  header[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"],
+  header[data-testid="stHeader"] [data-testid="stSidebarCollapsedControl"],
+  header[data-testid="stHeader"] button[kind="header"] {
+    visibility: visible !important;
+  }
+  /* Belt-and-suspenders: standalone collapsed control (Streamlit renders
+     this OUTSIDE the header in some versions). */
+  [data-testid="stSidebarCollapsedControl"],
+  [data-testid="collapsedControl"] {
+    visibility: visible !important;
+    display: block !important;
+    z-index: 999 !important;
+  }
   div[data-testid="stToolbar"] { display: none; }
   div[data-testid="stDecoration"] { display: none; }
 
@@ -284,6 +308,13 @@ if "auto_refresh_enabled" not in st.session_state:
     st.session_state.auto_refresh_enabled = False  # off by default in v3.55 — chat-first
 if "copilot_messages" not in st.session_state:
     st.session_state.copilot_messages = []
+# v3.56.0: chat-thread persistence state
+if "current_thread_id" not in st.session_state:
+    st.session_state.current_thread_id = None
+if "current_thread_title" not in st.session_state:
+    st.session_state.current_thread_title = "(new chat)"
+if "current_thread_created_at" not in st.session_state:
+    st.session_state.current_thread_created_at = ""
 
 
 # ============================================================
@@ -296,10 +327,69 @@ with st.sidebar:
 
     # Primary action up top
     if st.button("💬 New chat", use_container_width=True, type="primary"):
+        # v3.56.0: save current thread before starting a new one
+        try:
+            from trader.copilot_storage import new_thread, save_thread, ChatThread
+            if st.session_state.copilot_messages:
+                # Persist whatever was in the active thread first
+                _cur_id = st.session_state.get("current_thread_id")
+                if _cur_id:
+                    cur = ChatThread(
+                        id=_cur_id,
+                        title=st.session_state.get("current_thread_title", "(new chat)"),
+                        created_at=st.session_state.get("current_thread_created_at", ""),
+                        updated_at="",
+                        messages=st.session_state.copilot_messages,
+                    )
+                    save_thread(cur)
+            t = new_thread()
+            st.session_state.current_thread_id = t.id
+            st.session_state.current_thread_title = t.title
+            st.session_state.current_thread_created_at = t.created_at
+        except Exception:
+            pass
         st.session_state.copilot_messages = []
         st.session_state.active_view = "chat"
         st.rerun()
     st.write("")
+
+    # v3.56.0: chat threads list (newest first, max 20 visible)
+    try:
+        from trader.copilot_storage import list_threads, delete_thread
+        threads = list_threads(limit=20)
+        if threads:
+            st.caption("— CHATS —")
+            for t in threads:
+                is_active_thread = (st.session_state.get("current_thread_id") == t.id)
+                btype = "primary" if is_active_thread else "secondary"
+                # Truncate title for sidebar width
+                disp_title = t.title if len(t.title) <= 32 else t.title[:30] + "…"
+                if st.button(disp_title, key=f"thread_{t.id}",
+                             use_container_width=True, type=btype):
+                    # Save current first if dirty
+                    try:
+                        from trader.copilot_storage import save_thread, ChatThread
+                        cur_id = st.session_state.get("current_thread_id")
+                        if cur_id and cur_id != t.id and st.session_state.copilot_messages:
+                            cur = ChatThread(
+                                id=cur_id,
+                                title=st.session_state.get("current_thread_title", "(new chat)"),
+                                created_at=st.session_state.get("current_thread_created_at", ""),
+                                updated_at="",
+                                messages=st.session_state.copilot_messages,
+                            )
+                            save_thread(cur)
+                    except Exception:
+                        pass
+                    # Load the clicked thread
+                    st.session_state.current_thread_id = t.id
+                    st.session_state.current_thread_title = t.title
+                    st.session_state.current_thread_created_at = t.created_at
+                    st.session_state.copilot_messages = list(t.messages)
+                    st.session_state.active_view = "chat"
+                    st.rerun()
+    except Exception:
+        pass
 
     NAV = [
         ("🤖 Chat", "chat"),
@@ -553,6 +643,26 @@ def view_chat():
                                                 if ev["messages"] else acc,
                                 "tool_calls": tool_log,
                             })
+                            # v3.56.0: persist thread on every assistant response
+                            try:
+                                from trader.copilot_storage import save_thread, ChatThread, new_thread as _new
+                                cur_id = st.session_state.get("current_thread_id")
+                                if not cur_id:
+                                    _t = _new()
+                                    cur_id = _t.id
+                                    st.session_state.current_thread_id = _t.id
+                                    st.session_state.current_thread_created_at = _t.created_at
+                                cur = ChatThread(
+                                    id=cur_id,
+                                    title=st.session_state.get("current_thread_title", "(new chat)"),
+                                    created_at=st.session_state.get("current_thread_created_at", ""),
+                                    updated_at="",
+                                    messages=st.session_state.copilot_messages,
+                                )
+                                save_thread(cur)
+                                st.session_state.current_thread_title = cur.title
+                            except Exception:
+                                pass
                             if tool_log:
                                 with st.expander(f"🔧 {len(tool_log)} tool call(s)", expanded=False):
                                     for tc in tool_log:
