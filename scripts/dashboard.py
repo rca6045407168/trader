@@ -59,7 +59,12 @@ ENABLE_AUTO = st.sidebar.checkbox("auto-refresh", value=True)
 st.sidebar.divider()
 st.sidebar.subheader("Sync from GitHub")
 st.sidebar.caption("Pulls the latest trader-journal artifact from any "
-                   "workflow run. Requires `gh` CLI authenticated.")
+                   "workflow run. Auth options (in priority order): "
+                   "(1) GH_TOKEN env var — fastest, set on host before "
+                   "`docker compose up`; (2) bind-mount `~/.config/gh` "
+                   "with token auth (NOT keyring — macOS Keychain doesn't "
+                   "survive a bind-mount). On host: `gh auth login` → "
+                   "choose 'Paste an authentication token'.")
 
 if st.sidebar.button("⬇️  Pull latest journal artifact"):
     with st.spinner("running gh api..."):
@@ -112,7 +117,7 @@ else:
 # Top header — system state + headline metrics
 # ============================================================
 st.title("trader · live dashboard")
-st.caption(f"v3.49.x · journal: `{DB_PATH}` · last UI refresh: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"v3.50.2 · journal: `{DB_PATH}` · last UI refresh: {datetime.now().strftime('%H:%M:%S')}")
 
 
 @st.cache_data(ttl=10)
@@ -139,8 +144,20 @@ def read_state_file(path_str: str) -> dict:
         return {}
 
 
-# Top metrics row
-col1, col2, col3, col4, col5 = st.columns(5)
+# Top metrics row — 6 cols now: Equity / Cash / vs anchor / Window / Regime / Freeze
+col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+# Compute regime overlay snapshot up-front so the headline can show it.
+# Cached 5 min so we don't recompute on every dashboard refresh.
+@st.cache_data(ttl=300)
+def _headline_overlay():
+    try:
+        from trader.regime_overlay import compute_overlay
+        return compute_overlay()
+    except Exception as e:
+        return None
+
+overlay_top = _headline_overlay()
 
 snaps = query(str(DB_PATH), "SELECT * FROM daily_snapshot ORDER BY date DESC LIMIT 30")
 if not snaps.empty:
@@ -160,26 +177,47 @@ if not snaps.empty:
             dd = (eq - anchor_eq) / anchor_eq
             col3.metric("vs deployment anchor", f"{dd:+.2%}", f"${anchor_eq:,.0f} baseline")
 
-    # 30d return
+    # Window return — needs >=2 daily snapshots. If we only have 1 (e.g. just
+    # synced a fresh GitHub artifact), use deployment_anchor as the baseline
+    # so the user still sees the +6.50% number they expect.
     if len(snaps) >= 2:
         first_eq = float(snaps.iloc[-1]["equity"])
-        ret_30d = (eq - first_eq) / first_eq if first_eq > 0 else 0
-        col4.metric("Recent return", f"{ret_30d:+.2%}", f"over {len(snaps)} snapshots")
+        ret_window = (eq - first_eq) / first_eq if first_eq > 0 else 0
+        col4.metric("Window return", f"{ret_window:+.2%}", f"{len(snaps)} snapshots")
+    else:
+        if anchor and float(anchor.get("equity_at_deploy", 0)) > 0:
+            anchor_eq = float(anchor["equity_at_deploy"])
+            since_anchor = (eq - anchor_eq) / anchor_eq
+            col4.metric("Since deployment", f"{since_anchor:+.2%}",
+                        f"only 1 snapshot — anchor baseline")
+        else:
+            col4.metric("Window return", "need ≥2 snapshots", "sync from GitHub")
 else:
     col1.metric("Equity", "n/a", "no snapshots in journal")
 
-# Freeze state badge
+# Regime headline (col5) — shows HMM regime + final overlay multiplier so user
+# sees market state at a glance without clicking into the Regime overlay tab.
+if overlay_top is not None:
+    regime_label = overlay_top.hmm_regime.upper() if overlay_top.hmm_regime else "?"
+    regime_emoji = {"BULL": "🟢", "BEAR": "🔴", "TRANSITION": "🟡"}.get(regime_label, "⚪")
+    col5.metric(f"{regime_emoji} Regime", regime_label,
+                f"overlay {overlay_top.final_mult:.2f}×"
+                + (" (DISABLED)" if not overlay_top.enabled else ""))
+else:
+    col5.metric("Regime", "computing…", "see overlay tab")
+
+# Freeze state badge (col6)
 freeze = read_state_file(str(ROOT / "data" / "risk_freeze_state.json"))
 if freeze.get("liquidation_gate_tripped"):
-    col5.error("🚨 LIQUIDATION GATE TRIPPED")
+    col6.error("🚨 LIQ GATE")
 elif "deploy_dd_freeze_until" in freeze:
     until = datetime.fromisoformat(freeze["deploy_dd_freeze_until"])
     col5.warning(f"❄️ DEPLOY-DD FREEZE until {until.strftime('%m/%d %H:%M')}")
 elif "daily_loss_freeze_until" in freeze:
     until = datetime.fromisoformat(freeze["daily_loss_freeze_until"])
-    col5.warning(f"❄️ DAILY-LOSS FREEZE until {until.strftime('%m/%d %H:%M')}")
+    col6.warning(f"❄️ DAILY-LOSS FREEZE")
 else:
-    col5.success("✅ No freeze active")
+    col6.success("✅ No freeze")
 
 # ============================================================
 # Tabs
@@ -250,12 +288,43 @@ with tabs[0]:
 # ---------------- Decisions ----------------
 with tabs[1]:
     st.subheader("Recent decisions (last 50)")
+    st.caption("Each row is a decision the LIVE variant made. The **why** column "
+               "is parsed from the rationale stored at decision time — typically "
+               "the trailing 12-1 momentum return that drove the score, plus any "
+               "variant-specific reasoning. The **final** column shows the "
+               "variant_id that owns the decision and the resulting weight.")
 
     decisions = query(str(DB_PATH),
-                      "SELECT ts, ticker, action, style, score, final FROM decisions "
-                      "ORDER BY ts DESC LIMIT 50")
+                      "SELECT ts, ticker, action, style, score, rationale_json, final "
+                      "FROM decisions ORDER BY ts DESC LIMIT 50")
     if not decisions.empty:
-        st.dataframe(decisions, use_container_width=True, hide_index=True)
+        # Parse rationale_json into a 'why' column for human reading.
+        def _format_why(raw):
+            if not raw:
+                return ""
+            try:
+                d = json.loads(raw) if isinstance(raw, str) else raw
+            except Exception:
+                return str(raw)[:120]
+            if not isinstance(d, dict):
+                return str(d)[:120]
+            # Common rationale fields produced by rank_momentum / find_bottoms
+            tr = d.get("trailing_return", d.get("momentum"))
+            why_explicit = d.get("why", "")
+            bits = []
+            if tr is not None:
+                bits.append(f"12-1 mom {tr*100:+.1f}%")
+            if d.get("rsi") is not None:
+                bits.append(f"RSI {d['rsi']:.0f}")
+            if d.get("z_score") is not None:
+                bits.append(f"z {d['z_score']:+.2f}")
+            if why_explicit:
+                bits.append(why_explicit)
+            return " · ".join(bits) if bits else (str(d)[:120] if d else "")
+        decisions["why"] = decisions["rationale_json"].apply(_format_why)
+        # Reorder + drop the raw json column
+        view = decisions[["ts", "ticker", "action", "style", "score", "why", "final"]]
+        st.dataframe(view, use_container_width=True, hide_index=True)
     else:
         st.caption("no decisions in journal yet")
 
@@ -362,6 +431,32 @@ with tabs[3]:
 # ---------------- Shadow variants ----------------
 with tabs[4]:
     st.subheader("Shadow variant decisions (last 7 days)")
+    with st.expander("ℹ️ What is a shadow variant?", expanded=False):
+        st.markdown("""
+A **shadow variant** is a strategy that runs alongside the LIVE strategy on every
+daily run but **places NO orders and uses NO real capital**. It just records what
+it *would* have done. We have ~12 of these registered today (see `variants.py`):
+top-3 concentrated, top-3 full deploy, residual momentum, HMM-aggressive, etc.
+
+**Why we use shadows:**
+1. New strategy ideas are dangerous — 80%+ of backtested strategies fail live.
+2. Running them as shadows lets us collect 30+ days of evidence on **real** market
+   conditions (not just historical backtest) before risking any capital.
+3. The **3-gate promotion pipeline** (survivor 5-regime → PIT → CPCV) decides if a
+   shadow is allowed to graduate to LIVE. 40+ candidates have failed this pipeline
+   and been killed (`docs/CRITIQUE.md`).
+4. The current LIVE variant `momentum_top15_mom_weighted_v1` was a shadow itself
+   for 30+ days before promotion in v3.42 — the only candidate to survive PIT
+   validation (Sharpe stayed within sampling noise of the prior baseline).
+
+**How to read this tab:**
+- Each row is one shadow's daily decision (last 7 days)
+- `n_picks` = number of names the shadow chose
+- `gross` = total % of capital the shadow would have deployed
+- `top5` = the largest 5 picks by weight
+- A shadow that consistently beats LIVE by Sharpe ≥0.2 over 30+ days is a
+  promotion candidate — then it has to pass CPCV before going LIVE.
+""")
 
     cutoff_iso = (datetime.utcnow() - timedelta(days=7)).isoformat()
     shadows = query(str(DB_PATH),

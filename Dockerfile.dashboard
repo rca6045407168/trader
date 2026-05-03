@@ -14,10 +14,22 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# build-essential + git for pip; curl + ca-certs for gh CLI install;
+# gh CLI itself for the dashboard's "Pull latest journal artifact" button.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    ca-certificates \
+    gnupg \
+ && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends gh \
+ && rm -rf /var/lib/apt/lists/*
 
 # Non-root user; pre-create writable data dir
 RUN useradd -m -u 1000 trader \

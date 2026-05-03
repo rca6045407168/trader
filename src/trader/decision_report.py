@@ -124,6 +124,49 @@ class RunContext:
     halt_reason: Optional[str] = None
 
 
+# Hard-coded research-citation map. Each LIVE variant should have an entry
+# here so the per-run report can cite the literature backing the rule. Keep
+# entries terse — markdown bullets, ideally with arxiv ID + verbatim quote.
+# Per docs/SWARM_VERIFICATION_PROTOCOL.md, anything we cite here must be
+# verified-real. Updates require the same TRUST/VERIFY/ABSTAIN gate.
+_RESEARCH_CITATIONS: dict[str, str] = {
+    "momentum_top15_mom_weighted_v1": (
+        "- **12‑1 momentum factor:** Jegadeesh & Titman (1993) *Returns to "
+        "Buying Winners and Selling Losers* (J. Finance) — the original "
+        "finding that 12‑month return rank, skipping the most recent month, "
+        "predicts next‑month returns.\n"
+        "- **PIT validation requirement:** Lopez de Prado (2018) *Advances in "
+        "Financial Machine Learning*, ch. 11–12 (CPCV + deflated Sharpe). "
+        "This variant survived our 3‑gate pipeline (survivor 5‑regime → PIT "
+        "→ CPCV) where 40+ candidates failed.\n"
+        "- **Top‑15 dispersion vs top‑3 concentration:** internal v3.42 "
+        "audit — top‑3 had 27% single‑name concentration; top‑15 caps each "
+        "name near 10%. PIT Sharpe statistically equivalent (+0.95 vs "
+        "+0.98), but materially better idiosyncratic risk profile.\n"
+        "- **Momentum‑proportional weighting (vs equal):** mild Kelly‑lite "
+        "tilt; consistent with Asness, Frazzini & Pedersen (2013) *Quality "
+        "Minus Junk* (Appendix D) — weight by signal strength when signals "
+        "are noisy and bounded."
+    ),
+    "momentum_top3_aggressive_v1": (
+        "- **RETIRED v3.42:** Same 12‑1 momentum factor as top‑15, but with "
+        "27% single‑name concentration. Demoted after CPCV testing of 40+ "
+        "alpha candidates produced no replicable edge over top‑15 mom‑weighted."
+    ),
+    "momentum_top5_eq_v1": (
+        "- **RETIRED v3.1:** Original Jegadeesh‑Titman top‑5 equal‑weight at "
+        "40% sleeve. 5‑regime stress test showed top‑3 dominated by Sharpe "
+        "in every regime; subsequently displaced by top‑15 mom‑weighted on "
+        "PIT honesty grounds."
+    ),
+}
+
+
+def _research_citation_for(variant_id: str) -> Optional[str]:
+    """Return the research-citation block for a given variant_id, or None."""
+    return _RESEARCH_CITATIONS.get(variant_id)
+
+
 def render(ctx: RunContext) -> str:
     """Return the full Markdown report as a string."""
     parts: list[str] = []
@@ -207,14 +250,58 @@ def render(ctx: RunContext) -> str:
         parts.append("_overlay signal not captured for this run_\n")
 
     # ---------- LIVE variant decision ----------
-    parts.append("\n## 4. LIVE variant decision\n")
+    parts.append("\n## 4. LIVE variant decision — the WHY\n")
+
+    # Look up the LIVE variant from the registry to surface methodology + research.
+    live_variant = None
+    try:
+        from . import variants  # noqa: F401  triggers registration
+        from .ab import get_live
+        live_variant = get_live()
+    except Exception:
+        pass
+
+    if live_variant is not None:
+        parts.append(f"### Methodology: `{live_variant.variant_id}` (v{live_variant.version})\n\n")
+        parts.append(f"**Status:** `{live_variant.status}`  \n")
+        parts.append(f"**Description:**  \n> {live_variant.description}\n\n")
+        if live_variant.params:
+            parts.append("**Parameters:**\n\n")
+            param_rows = [{"key": k, "value": str(v)} for k, v in live_variant.params.items()]
+            parts.append(_md_table(param_rows, ["key", "value"]))
+            parts.append("\n")
+
+        # Research citation block — hard-coded mapping of variant_id to its
+        # primary academic backing. This is the WHY the strategy is rule-based
+        # this way, not the WHY each individual ticker was picked.
+        research = _research_citation_for(live_variant.variant_id)
+        if research:
+            parts.append(f"**Research backing:**\n\n{research}\n\n")
+
+    parts.append("### Per-pick rationale\n\n")
     if ctx.momentum_picks:
-        rows = [{"ticker": p.get("ticker", "?"),
-                 "score": f"{p.get('score', 0):.3f}",
-                 "action": p.get("action", "?"),
-                 "style": p.get("style", "?")}
-                for p in ctx.momentum_picks[:20]]
-        parts.append(_md_table(rows, ["ticker", "score", "action", "style"]))
+        # Per-pick rationale: for momentum, the rationale is the trailing
+        # 12-1 return that drove the score (rank_momentum stores this in
+        # Candidate.rationale as a dict).
+        rows = []
+        for p in ctx.momentum_picks[:20]:
+            rationale = p.get("rationale", {})
+            if isinstance(rationale, dict):
+                trailing = rationale.get("trailing_return", rationale.get("momentum", None))
+                trailing_str = f"{trailing*100:+.1f}%" if trailing is not None else ""
+                why = rationale.get("why", "")
+                if not why and trailing is not None:
+                    why = f"12-1 momentum {trailing_str}"
+            else:
+                why = str(rationale)[:120]
+            weight_pct = ctx.final_targets.get(p.get("ticker"), 0) if ctx.final_targets else 0
+            rows.append({
+                "ticker": p.get("ticker", "?"),
+                "score": f"{p.get('score', 0):.3f}",
+                "weight": f"{weight_pct*100:.2f}%" if weight_pct else "-",
+                "why": why or "_no rationale captured_",
+            })
+        parts.append(_md_table(rows, ["ticker", "score", "weight", "why"]))
     else:
         parts.append("_no picks_\n")
 

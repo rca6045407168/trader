@@ -191,8 +191,11 @@ def build_daily_report(
         prefix = "TOMORROW" if days_until == 1 else f"{days_until}d"
         subject_parts.append(f"{prefix}: {a.name}")
     subject_parts.append(f"day {_fmt_pct(day_pct)}")
-    if alpha is not None:
-        subject_parts.append(f"alpha {_fmt_pct(alpha)}")
+    # v3.50.2 FIX: was 'alpha' (undefined NameError that crashed 3 of 4 recent
+    # daily-runs). True Jensen alpha needs 5+ days history; until then we ship
+    # excess_return (day P&L vs SPY) which IS defined above.
+    if excess_return is not None:
+        subject_parts.append(f"excess {_fmt_pct(excess_return)}")
     subject_parts.append(f"equity {_fmt_money(equity_after)}")
     subject = " | ".join(subject_parts)
 
@@ -408,7 +411,9 @@ def build_daily_report(
                 "yesterday_equity": yesterday_equity,
                 "drawdown_from_peak": dd_from_peak,
             },
-            "market": {"spy_today_return": spy_today_return, "vix": vix, "alpha_today": alpha},
+            "market": {"spy_today_return": spy_today_return, "vix": vix,
+                       "excess_today": excess_return,
+                       "jensen_alpha_annualized": (beta_alpha or {}).get("alpha_annualized")},
             "decisions": {
                 "momentum_picks": [
                     {"ticker": c.ticker, "trailing_return": c.rationale.get("trailing_return", 0),

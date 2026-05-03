@@ -43,7 +43,14 @@ services:
       # to authenticate, and for the regime-overlay tab if you want it to
       # use real broker creds (it doesn't trade).
       - ./.env:/app/.env:ro
+      # v3.50.2: bind-mount host gh CLI config so the "Pull latest journal
+      # artifact" button can auth as the host user. Read-only so the
+      # container can never modify host credentials.
+      - ${HOME}/.config/gh:/home/trader/.config/gh:ro
     environment:
+      # GH_TOKEN env-var auth as a fallback if the config mount is missing.
+      # Sourced from the host shell where docker compose is invoked.
+      - GH_TOKEN=${GH_TOKEN-}
       # Default: regime overlay computes for observability but isn't applied.
       # The dashboard tab shows the live multiplier either way.
       - REGIME_OVERLAY_ENABLED=false

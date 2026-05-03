@@ -392,9 +392,12 @@ def main(force: bool = False) -> dict:
             cash_after = equity
             positions_now = {}
 
-        # Re-scan for daily picks/candidates so the report has the structured data
+        # Re-scan for daily picks/candidates so the report has the structured data.
+        # v3.50.2 FIX: was top_n=TOP_N (=3), which made the per-pick rationale
+        # table in decision_report show only 3 names instead of all 15 LIVE picks.
+        # Pull top-20 so every name in final_targets gets a 'why' row.
         from .strategy import rank_momentum, find_bottoms
-        momentum_picks_for_report = rank_momentum(universe, top_n=TOP_N)
+        momentum_picks_for_report = rank_momentum(universe, top_n=20)
         bottom_candidates_for_report = find_bottoms(universe)
 
         spy_today = fetch_spy_today_return()
