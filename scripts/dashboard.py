@@ -523,6 +523,7 @@ with st.sidebar:
         ("⚡ Intraday risk", "intraday"),
         ("— RESEARCH —", None),
         ("🎯 V5 sleeves", "v5_sleeves"),
+        ("🧪 Validation", "validation"),
         ("🧪 Stress test", "stress_test"),
         ("👁️ Watchlist", "watchlist"),
         ("🗂️ Grid", "grid"),
@@ -3691,6 +3692,190 @@ def _maybe_open_symbol_modal():
 
 
 # ============================================================
+# View: Walk-forward + sensitivity + chaos (v3.59.5)
+# ============================================================
+def view_validation():
+    st.title("🧪 Validation — walk-forward · sensitivity grid · chaos checks")
+    st.caption(
+        "Per `docs/TESTING_PRACTICES.md` Cat 1, 5, 8. Walk-forward shows "
+        "OOS performance per quarter; sensitivity grid shows whether "
+        "results survive parameter perturbation; chaos check shows what "
+        "calendar/library oddities affect today."
+    )
+
+    tabs = st.tabs(["📈 Walk-forward", "🎛️ Parameter sensitivity",
+                    "🌪️ Chaos / calendar"])
+
+    # ---- Walk-forward ----
+    with tabs[0]:
+        wf_path = ROOT / "data" / "walk_forward_results.json"
+        if not wf_path.exists():
+            st.warning("No walk-forward results yet. Run "
+                       "`python scripts/run_walk_forward.py`.")
+        else:
+            try:
+                wf = json.loads(wf_path.read_text())
+                summary = wf.get("summary", {})
+                cols = st.columns(4)
+                cols[0].metric("Windows", summary.get("n_windows", 0))
+                ms = summary.get("mean_sharpe")
+                cols[1].metric("Mean Sharpe",
+                               f"{ms:+.2f}" if ms is not None else "n/a")
+                pp = summary.get("pct_windows_positive")
+                cols[2].metric("% windows positive",
+                               f"{pp*100:.0f}%" if pp is not None else "n/a")
+                ww = summary.get("worst_window_return")
+                cols[3].metric("Worst window",
+                               f"{ww*100:+.1f}%" if ww is not None else "n/a")
+                # Verdict
+                if pp is not None and ms is not None:
+                    if pp >= 0.70 and ms > 0.5:
+                        st.success("✅ STRONG: >70% positive AND mean Sharpe > 0.5")
+                    elif pp >= 0.55:
+                        st.warning("🟡 OK: 55-70% positive — edge is modest")
+                    else:
+                        st.error("❌ WEAK: <55% positive — strategy may not generalize OOS")
+
+                # Per-window table
+                st.subheader("Per-quarter OOS results")
+                rows = []
+                for w in wf.get("windows", []):
+                    if w.get("error"):
+                        rows.append({"period": f"{w['test_start']} → {w['test_end']}",
+                                      "return": "ERROR",
+                                      "sharpe": w["error"][:40],
+                                      "max_dd": "", "picks": ""})
+                    else:
+                        ret = w.get("period_return")
+                        rows.append({
+                            "period": f"{w['test_start']} → {w['test_end']}",
+                            "return": f"{ret*100:+.2f}%" if ret is not None else "n/a",
+                            "sharpe": f"{w.get('sharpe', 0):+.2f}" if w.get("sharpe") is not None else "n/a",
+                            "max_dd": f"{w['max_drawdown']*100:+.1f}%" if w.get("max_drawdown") is not None else "n/a",
+                            "picks": ", ".join(w.get("picks", [])[:5]) + ("..." if len(w.get("picks", [])) > 5 else ""),
+                        })
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+
+                # Returns distribution chart
+                returns = [w.get("period_return") for w in wf.get("windows", [])
+                           if w.get("period_return") is not None]
+                if returns:
+                    try:
+                        import plotly.graph_objects as go
+                        fig = go.Figure(data=[go.Histogram(
+                            x=[r * 100 for r in returns], nbinsx=15,
+                            marker_color="#16a34a",
+                        )])
+                        fig.add_vline(x=0, line_dash="dash", line_color="white")
+                        fig.update_layout(
+                            title="OOS quarter-return distribution",
+                            xaxis_title="quarterly return (%)",
+                            yaxis_title="count",
+                            height=300, margin=dict(t=40, l=10, r=10, b=10),
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    except ImportError:
+                        pass
+            except Exception as e:
+                st.error(f"could not parse: {e}")
+
+    # ---- Parameter sensitivity ----
+    with tabs[1]:
+        ps_path = ROOT / "data" / "parameter_sensitivity.json"
+        if not ps_path.exists():
+            st.warning("No sensitivity results yet. Run "
+                       "`python scripts/parameter_sensitivity.py`.")
+        else:
+            try:
+                ps = json.loads(ps_path.read_text())
+                results = ps.get("results", [])
+                if results:
+                    # Build the (top_n × lookback) grid
+                    top_n_values = sorted({r["top_n"] for r in results})
+                    lb_values = sorted({r["lookback_months"] for r in results})
+                    grid_rows = []
+                    for tn in top_n_values:
+                        row = {"top_n": tn}
+                        for lb in lb_values:
+                            cell = next((r for r in results
+                                          if r["top_n"] == tn and r["lookback_months"] == lb),
+                                         None)
+                            if cell and cell.get("mean_sharpe") is not None:
+                                row[f"lb={lb}m"] = f"{cell['mean_sharpe']:+.2f}"
+                            else:
+                                row[f"lb={lb}m"] = "n/a"
+                        grid_rows.append(row)
+                    st.subheader("Mean Sharpe by (top_n × lookback_months)")
+                    st.dataframe(grid_rows, use_container_width=True, hide_index=True)
+
+                    # Stability verdict
+                    sharpes = [r["mean_sharpe"] for r in results
+                                if r.get("mean_sharpe") is not None]
+                    if sharpes:
+                        import statistics as _s
+                        med = _s.median(sharpes)
+                        spread = max(sharpes) - min(sharpes)
+                        rel = spread / abs(med) if med != 0 else float("inf")
+                        cc = st.columns(3)
+                        cc[0].metric("Median Sharpe", f"{med:+.2f}")
+                        cc[1].metric("Best / Worst",
+                                      f"{max(sharpes):+.2f} / {min(sharpes):+.2f}")
+                        cc[2].metric("Spread / |median|",
+                                      f"{rel*100:.1f}%")
+                        if rel < 0.30:
+                            st.success("✅ Sharpe surface is FLAT (<30% spread) — robust to params")
+                        elif rel < 0.60:
+                            st.warning("🟡 Sharpe surface is BUMPY (30-60% spread) — borderline overfit")
+                        else:
+                            st.error("❌ Sharpe surface is FRAGILE (>60% spread) — likely overfit")
+
+                    st.caption(f"_Generated: {ps.get('generated_at', '?')[:19]}_")
+            except Exception as e:
+                st.error(f"could not parse: {e}")
+
+    # ---- Chaos / calendar ----
+    with tabs[2]:
+        try:
+            from trader.chaos_cases import (todays_caveats, is_market_holiday,
+                                              is_half_day, is_dst_transition_day,
+                                              yfinance_schema_check, alpaca_sdk_check)
+            from datetime import date as _date, datetime as _dt
+            today = _dt.utcnow().date()
+            cv = todays_caveats(today)
+            if cv:
+                st.warning(f"**Today's caveats:** {' · '.join(cv)}")
+            else:
+                st.success("✅ Today is a clean trading day (no holiday, half-day, or DST transition).")
+
+            st.subheader("Library schema checks")
+            yf = yfinance_schema_check()
+            alpaca = alpaca_sdk_check()
+            cc = st.columns(2)
+            cc[0].metric("yfinance", "🟢 OK" if yf["ok"] else "🔴 FAIL")
+            cc[0].caption(yf.get("message", ""))
+            if yf.get("columns"):
+                cc[0].caption(f"_columns: {', '.join(yf['columns'][:6])}_")
+            cc[1].metric("Alpaca SDK", "🟢 OK" if alpaca["ok"] else "🔴 FAIL")
+            cc[1].caption(alpaca.get("message", ""))
+
+            st.subheader("Upcoming calendar caveats (next 14 days)")
+            from datetime import timedelta as _td
+            future_caveats = []
+            for i in range(14):
+                d = today + _td(days=i)
+                cv = todays_caveats(d)
+                if cv:
+                    future_caveats.append({"date": d.isoformat(),
+                                            "caveats": " · ".join(cv)})
+            if future_caveats:
+                st.dataframe(future_caveats, use_container_width=True, hide_index=True)
+            else:
+                st.caption("_no caveats in the next 14 days_")
+        except Exception as e:
+            st.error(f"chaos check failed: {e}")
+
+
+# ============================================================
 # View: Stress test (v3.59.2) — regime × sleeve grid
 # ============================================================
 def view_stress_test():
@@ -4197,6 +4382,7 @@ VIEW_DISPATCH = {
     "regime": view_regime,
     "intraday": view_intraday,
     "v5_sleeves": view_v5_sleeves,
+    "validation": view_validation,
     "stress_test": view_stress_test,
     "watchlist": view_watchlist,
     "grid": view_grid,

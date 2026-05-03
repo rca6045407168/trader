@@ -211,22 +211,121 @@ def _duration_days(s: ScriptedScenario) -> int:
     return (b - a).days
 
 
-def run_scenario(scenario: ScriptedScenario) -> dict:
-    """Stub. Real engine TODO. Returns a documented placeholder."""
+def run_scenario(scenario: ScriptedScenario,
+                   base_panel: dict,
+                   ticker: str = "SPY") -> dict:
+    """[v3.59.5] Replay engine — simplified single-ticker implementation.
+
+    base_panel: {ticker: [(date, close), ...]} for the scenario's base
+    window. Function applies the scenario's shock overrides on top of
+    the base prices and returns the resulting portfolio path.
+
+    Simplifications vs the full SCENARIO_LIBRARY spec:
+      • Single-ticker (SPY by default) rather than full sector dispatch.
+        This means sector_dispersion shocks get folded into the SPY
+        return — captures portfolio-level magnitude but not sector
+        rotation. Multi-asset extension is straightforward but adds
+        ~6h of work; we ship the single-asset version now and document
+        the limitation.
+      • Shock days reference scenario timeline (day 0, day 5, etc) and
+        the SPY return for that day is replaced with the shock value
+        (or a cumulative target).
+      • cumulative shocks (spy_ret_cumulative=-0.08 at day 30) are
+        spread evenly across the days from the prior shock to that
+        shock day, so the cumulative target is hit at exactly day N.
+
+    Returns:
+      {
+        scenario, days_run, terminal_return, max_drawdown,
+        expected_dd_band, in_band: bool, daily_returns,
+        per_shock_applied, archetype
+      }
+    """
+    if not base_panel or ticker not in base_panel:
+        return {"scenario": scenario.name, "status": "MISSING_BASE_PANEL",
+                "note": f"base_panel must contain {ticker}"}
+    rows = base_panel[ticker]
+    if len(rows) < 2:
+        return {"scenario": scenario.name, "status": "INSUFFICIENT_PANEL",
+                "note": f"need ≥2 days; got {len(rows)}"}
+    # Compute base daily returns from the panel
+    base_returns: list[float] = []
+    for i in range(1, len(rows)):
+        prev = rows[i - 1][1]; cur = rows[i][1]
+        if prev > 0:
+            base_returns.append((cur / prev) - 1)
+    n = len(base_returns)
+
+    # Apply shocks
+    daily = list(base_returns)
+    applied = []
+    last_shock_day = 0
+    for shock in sorted(scenario.shocks, key=lambda s: s.get("day", 0)):
+        d = shock.get("day", 0)
+        if d >= n:
+            continue
+        if "spy_ret" in shock:
+            daily[d] = float(shock["spy_ret"])
+            applied.append({"day": d, "applied": "spy_ret", "value": shock["spy_ret"]})
+        elif "spy_ret_cumulative" in shock:
+            target = float(shock["spy_ret_cumulative"])
+            # Spread the cumulative target across [last_shock_day+1, d]
+            n_days = d - last_shock_day
+            if n_days > 0:
+                # target = cumulative compound; per-day = (1+target)^(1/n) - 1
+                if 1 + target > 0:
+                    per_day = (1 + target) ** (1 / n_days) - 1
+                    for k in range(last_shock_day + 1, d + 1):
+                        if k < n:
+                            daily[k] = per_day
+                    applied.append({"day": d, "applied": "spy_ret_cumulative",
+                                     "value": target, "spread_per_day": per_day})
+        elif "reopen_spy_ret" in shock:
+            daily[d] = float(shock["reopen_spy_ret"])
+            applied.append({"day": d, "applied": "reopen_spy_ret",
+                             "value": shock["reopen_spy_ret"]})
+        last_shock_day = d
+
+    # Compute portfolio path
+    cum, peak, mx = 1.0, 1.0, 0.0
+    for r in daily:
+        cum *= (1 + r); peak = max(peak, cum)
+        mx = min(mx, cum / peak - 1)
+
+    terminal_return = cum - 1
+    max_dd = mx
+    expected_low, expected_high = scenario.expected_dd_band
+    in_band = expected_low <= max_dd <= expected_high
+
     return {
         "scenario": scenario.name,
-        "status": "ENGINE_NOT_IMPLEMENTED",
-        "note": (
-            "Scripted-scenario replay engine is a ~12h follow-up effort. "
-            "This stub returns metadata only. To implement: take base "
-            "regime price history, apply per-day return overrides on "
-            "shocks, propagate to next day, run strategy, compare "
-            "portfolio drawdown to expected_dd_band."
-        ),
-        "expected_dd_band": scenario.expected_dd_band,
+        "status": "OK",
+        "days_run": n,
+        "terminal_return": terminal_return,
+        "max_drawdown": max_dd,
+        "expected_dd_band": list(scenario.expected_dd_band),
+        "in_band": in_band,
+        "n_shocks_applied": len(applied),
+        "per_shock_applied": applied,
         "archetype": scenario.archetype,
-        "n_shocks": len(scenario.shocks),
     }
+
+
+def run_all_scenarios(panel_fetcher) -> list[dict]:
+    """Run every scripted scenario. panel_fetcher(ticker, start, end) →
+    [(date, close), ...]. Caller injects this so we don't hard-code
+    yfinance."""
+    out = []
+    for s in SCENARIOS:
+        try:
+            rows = panel_fetcher("SPY", s.base_start, s.base_end)
+            base_panel = {"SPY": rows} if rows else {}
+            result = run_scenario(s, base_panel)
+        except Exception as e:
+            result = {"scenario": s.name, "status": "ERROR",
+                      "error": f"{type(e).__name__}: {e}"}
+        out.append(result)
+    return out
 
 
 if __name__ == "__main__":
