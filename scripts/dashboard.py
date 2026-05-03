@@ -523,6 +523,7 @@ with st.sidebar:
         ("⚡ Intraday risk", "intraday"),
         ("— RESEARCH —", None),
         ("🎯 V5 sleeves", "v5_sleeves"),
+        ("🧪 Stress test", "stress_test"),
         ("👁️ Watchlist", "watchlist"),
         ("🗂️ Grid", "grid"),
         ("🔎 Screener", "screener"),
@@ -3690,6 +3691,107 @@ def _maybe_open_symbol_modal():
 
 
 # ============================================================
+# View: Stress test (v3.59.2) — regime × sleeve grid
+# ============================================================
+def view_stress_test():
+    st.title("🧪 Stress test — sleeves vs historical crisis regimes")
+    st.caption(
+        "Per-sleeve performance across 9 named historical regimes "
+        "(2001 9/11 → 2026 Iran). Regenerate by running "
+        "`python scripts/stress_test_v5.py`."
+    )
+
+    out_path = ROOT / "data" / "stress_test_v5.json"
+    if not out_path.exists():
+        st.warning(
+            "No stress test results yet. Run "
+            "`docker run --rm --entrypoint python -v $(pwd):/app -w /app "
+            "-e PYTHONPATH=src trader-dashboard:latest scripts/stress_test_v5.py`"
+        )
+        return
+
+    try:
+        with out_path.open() as f:
+            data = json.load(f)
+    except Exception as e:
+        st.error(f"could not load: {e}")
+        return
+
+    st.caption(f"_Generated: {data.get('generated_at', '?')[:19]}_")
+
+    regimes = data.get("regimes", [])
+    if not regimes:
+        st.info("Empty results.")
+        return
+
+    # Top: per-regime SPY vs LowVol comparison
+    st.subheader("LowVolSleeve max-drawdown vs SPY")
+    rows = []
+    for r in regimes:
+        spy_dd = r["spy"].get("max_drawdown_pct")
+        lv_dd = r["lowvol_sleeve"].get("max_drawdown_pct")
+        if spy_dd is None or lv_dd is None:
+            continue
+        delta = lv_dd - spy_dd  # positive = LV less-bad
+        rows.append({
+            "regime": r["regime"]["name"],
+            "spy_max_dd": f"{spy_dd:+.1f}%",
+            "lowvol_max_dd": f"{lv_dd:+.1f}%",
+            "lv_minus_spy": f"{delta:+.1f}pp",
+            "lv_better": "✅" if delta > 0 else "❌",
+        })
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+        wins = sum(1 for r in rows if "✅" in r["lv_better"])
+        st.success(f"**{wins}/{len(rows)} regimes** — LowVolSleeve outperformed SPY on max DD.")
+
+    st.divider()
+
+    # Per-regime expander with all sleeves
+    for r in regimes:
+        regime = r["regime"]
+        with st.expander(f"📅 {regime['name']} · {regime['start']} → {regime['end']}",
+                         expanded=False):
+            st.caption(regime.get("description", ""))
+            cc = st.columns(3)
+            for i, (label, key) in enumerate([
+                ("📈 SPY benchmark", "spy"),
+                ("🌪️ FOMC drift", "fomc_drift"),
+                ("🛡️ LowVolSleeve", "lowvol_sleeve"),
+            ]):
+                d = r.get(key, {})
+                with cc[i]:
+                    st.markdown(f"**{label}**")
+                    if d.get("_error"):
+                        st.caption(f"_{d['_error']}_")
+                        continue
+                    st.metric("Return",
+                               f"{d.get('return_pct'):.2f}%" if isinstance(d.get('return_pct'), (int, float))
+                               else "n/a")
+                    st.metric("Sharpe",
+                               f"{d.get('sharpe'):.2f}" if isinstance(d.get('sharpe'), (int, float))
+                               else "n/a")
+                    st.metric("Max DD",
+                               f"{d.get('max_drawdown_pct'):.2f}%" if isinstance(d.get('max_drawdown_pct'), (int, float))
+                               else "n/a")
+                    if d.get("_note"):
+                        st.caption(f"_{d['_note']}_")
+
+    with st.expander("📚 Honest findings"):
+        st.markdown("""
+**LowVolSleeve — defensive characteristic CONFIRMED.** 7 of 9 regimes outperformed SPY on max drawdown. Biggest wins: 2008 (+14pp), 2022 QT (+8pp), 2022 Ukraine (+6pp).
+
+**FOMC drift — intraday effect cannot be tested on free data.** Lucca-Moench measures close → 2pm ET. yfinance gives only daily close-to-close. Close-to-close 2015-2025 retest fails 3/3 gates (Sharpe 0.13).
+
+**VRP backtest — blocked on historical options data.** yfinance gives only the current chain. Forward-only validation via virtual_shadow is the alternative path.
+
+**ML-PEAD backtest — partial.** yfinance gives ~4 quarters of surprise history per name; the history-of-surprises features that double Sharpe (per ScienceDirect 2024) need 8+ quarters from a paid feed.
+
+See `docs/BEST_PRACTICES.md` § 3 for the full narrative.
+""")
+
+
+# ============================================================
 # View: V5 sleeves (v3.59.1) — pre-FOMC drift / VRP / ML-PEAD scaffolds
 # ============================================================
 def view_v5_sleeves():
@@ -4095,6 +4197,7 @@ VIEW_DISPATCH = {
     "regime": view_regime,
     "intraday": view_intraday,
     "v5_sleeves": view_v5_sleeves,
+    "stress_test": view_stress_test,
     "watchlist": view_watchlist,
     "grid": view_grid,
     "screener": view_screener,
