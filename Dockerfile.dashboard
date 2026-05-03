@@ -60,13 +60,12 @@ VOLUME ["/app/data"]
 ENV PYTHONPATH=/app/src
 EXPOSE 8501
 
-# Streamlit-specific options:
+# v3.57.2: entrypoint shell script runs prewarm.py before streamlit so
+# the first user-load hits warm disk caches (HMM + briefing + portfolio).
+# Falls back to lazy compute if prewarm fails (offline, missing creds).
+# Streamlit options it sets:
 #   --server.port=8501           default port
 #   --server.address=0.0.0.0     bind to all interfaces (so the host can connect)
 #   --server.headless=true       don't try to open a browser inside the container
 #   --browser.gatherUsageStats=false   no telemetry
-ENTRYPOINT ["streamlit", "run", "scripts/dashboard.py", \
-            "--server.port=8501", \
-            "--server.address=0.0.0.0", \
-            "--server.headless=true", \
-            "--browser.gatherUsageStats=false"]
+ENTRYPOINT ["/bin/sh", "/app/scripts/dashboard-entrypoint.sh"]
