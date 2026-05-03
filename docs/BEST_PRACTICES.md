@@ -266,13 +266,14 @@ Three rules from the v3.x build:
 
 ## 12. Companion documents
 
-This is the durable engineering contract. Three companion docs cover specific facets:
+This is the durable engineering contract. Four companion docs cover specific facets:
 
 - **`docs/V5_ALPHA_DISCOVERY_PROPOSAL.md`** — the strategic plan: which sleeves, why, in what sequence. Phase status maintained at the top.
 - **`docs/SCENARIO_LIBRARY.md`** — the canonical 38 historical regimes (Tier 1/2/3) + 11 scripted forward scenarios. `scripts/stress_test_v5.py` and `scripts/scripted_scenarios.py` are the runners.
 - **`docs/BLINDSPOTS.md`** — the brutal audit of what we haven't covered: operator-grade alpha, ops failures, tax/regulatory, behavioral failure modes, opportunity cost. Most items here need an explicit decision before they sit any longer.
+- **`docs/TESTING_PRACTICES.md`** — the 12-category testing taxonomy. Backtesting is one rung of a 12-rung ladder. See §15 below for our current coverage.
 
-All three docs MUST be read before any v5+ change. No exception.
+All four docs MUST be read before any v5+ change. No exception.
 
 ---
 
@@ -331,4 +332,52 @@ These gaps are the next batch of work, prioritized in the V5 phase ladder.
 
 ---
 
-*Last updated: 2026-05-03 (v3.59.2)*
+## 15. Testing practice — the 12-category coverage map (per TESTING_PRACTICES.md)
+
+Current state as of v3.59.3. Status: 🟢 covered · 🟡 partial · 🔴 missing.
+
+| # | Category | Status | What we have | Gap |
+|---|---|---|---|---|
+| 1 | Backtesting | 🟢 | `backtest.py`, `iterate_v*` archived, realistic open-fill model, PIT universe via `universe_pit_v5.py` | Walk-forward variants — heavy lift, deferred |
+| 2 | Cross-validation (purged + embargoed) | 🟢 | `cpcv_backtest.py` (CPCV with PBO) | None — gold standard |
+| 3 | Statistical significance | 🟢 | Deflated Sharpe + PBO + **block-bootstrap CIs (`bootstrap_ci.py`, v3.59.3)** | White's Reality Check / SPA test (deferred to v5.x) |
+| 4 | Stress / scenario | 🟢 | 47-regime runner (`stress_test_v5.py`), 11 scripted scaffolds | Replay engine for scripted (~12h, deferred) |
+| 5 | Sensitivity / robustness | 🟡 | `slippage_sensitivity.py`, `account_size_test.py` | Parameter grid, universe sensitivity, white-noise injection |
+| 6 | Data quality | 🟢 | `validation.py` (existing) + **`data_schemas.py` (v3.59.3)** with assert_or_warn | Pandera-strict schemas (optional dep), distribution-drift detection |
+| 7 | Code correctness | 🟢 | 350+ tests, e2e pipeline test + **property-based tests via Hypothesis (v3.59.3)** | Mutation testing baseline (deferred) |
+| 8 | Chaos / failure injection | 🟡 | `chaos_test.py` (existing), `kill_switch.py`, `risk_manager.py` + **`ops_health.py` (v3.59.2)** | Library version drift, time-zone bugs |
+| 9 | Determinism / reproducibility | 🟡 | **`scripts/determinism_test.py` (v3.59.3)** | Full reproducibility blocked on `rank_momentum(end_date=)` refactor |
+| 10 | Live execution / fill calibration | 🟢 | `slippage_sensitivity.py` + **`slippage_log` + `slippage_reconcile.py` (v3.58.1) + `tca.py` (v3.59.3)** | Fill-distribution audit (KS test on actual vs backtest dist) |
+| 11 | Live monitoring / drift | 🟢 | `weekly_degradation_check`, `reconcile.py` + **`drift_monitor.py` (v3.59.3)** with IC/KS/residual-P&L | A/B parallel tracking via virtual_shadow (infra ready in v3.59.0; no LIVE consumers yet) |
+| 12 | Process / human review | 🟢 | `adversarial_review.py`, `postmortem.py`, BEHAVIORAL_PRECOMMIT.md, mistake-db + **`pre_registration.py` (v3.59.3)** with optimism-bias audit | External human review (BLINDSPOTS §7), public pre-registration |
+
+**Score: 9/12 fully covered, 3/12 partial. Compared to v3.59.2 baseline (5/12 fully covered), v3.59.3 closes 4 categories.**
+
+The three remaining partial categories all have clear next steps:
+- **Cat 5** — needs a parameter-grid script (~6h)
+- **Cat 8** — needs DST + market-holiday + library-version test cases (~4h)
+- **Cat 9** — needs `rank_momentum(end_date=)` refactor (~6h)
+
+These are the highest-leverage items in the next ship cycle, per TESTING_PRACTICES.md §"sequencing — what to ship first for v5".
+
+---
+
+## 16. v3.59.3 backlog inventory (test infra delivered)
+
+Eight new modules + scripts, all tested:
+
+| Module | Category | Public API | Tests |
+|---|---|---|---|
+| `bootstrap_ci.py` | Cat 3 | `block_bootstrap_sharpe_ci` / `_max_dd_ci` / `_total_return_ci` / `is_significant` | 5 |
+| `data_schemas.py` | Cat 6 | `validate_price_history` / `validate_targets` / `validate_alpaca_position` / `assert_or_warn` | 5 |
+| `pre_registration.py` | Cat 12 | `register` / `record_actuals` / `audit` (optimism-bias detector) | 3 |
+| `drift_monitor.py` | Cat 11 | `compute_ic` / `ic_drift` / `rolling_sharpe_drift` / `ks_distance` / `feature_drift` / `residual_pnl` | 7 |
+| `tca.py` | Cat 10 | `compute_tca` (30/90d slippage stats) / `alert_if_slippage_high` | 3 |
+| `scripts/determinism_test.py` | Cat 9 | one-day-shift CI | (script smoke) |
+| `tests/test_v3_59_3_property.py` | Cat 7 | Hypothesis-based invariant tests for 5 v358 modules | 6 (when hypothesis installed) |
+
+Total: **+29 tests in v3.59.3**, bringing the suite to 363+ passing.
+
+---
+
+*Last updated: 2026-05-03 (v3.59.3)*
