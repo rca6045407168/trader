@@ -220,7 +220,152 @@ else:
     col6.success("✅ No freeze")
 
 # ============================================================
-# Tabs
+# v3.54.0: AI-NATIVE PRIMARY SURFACE — briefing + Copilot chat
+# ============================================================
+st.divider()
+
+# Auto-briefing (cached 60s; recomputes on refresh)
+@st.cache_data(ttl=60)
+def _morning_briefing():
+    try:
+        from trader.copilot_briefing import compute_briefing
+        return compute_briefing()
+    except Exception as e:
+        return None
+
+brief_col, chat_col = st.columns([1, 2])
+
+with brief_col:
+    st.subheader("📰 Today's briefing")
+    brief = _morning_briefing()
+    if brief is None:
+        st.caption("_could not compute briefing_")
+    else:
+        st.markdown(brief.to_markdown())
+        with st.expander("raw briefing data"):
+            st.json({
+                "timestamp": brief.timestamp,
+                "equity_now": brief.equity_now,
+                "day_pl_pct": brief.day_pl_pct,
+                "spy_today_pct": brief.spy_today_pct,
+                "excess_today_pct": brief.excess_today_pct,
+                "regime": brief.regime,
+                "regime_overlay_mult": brief.regime_overlay_mult,
+                "regime_enabled": brief.regime_enabled,
+                "freeze_active": brief.freeze_active,
+                "upcoming_events_next7d": brief.upcoming_events_next7d,
+                "yesterday_pm_summary": brief.yesterday_pm_summary,
+                "notable_facts": brief.notable_facts,
+            })
+
+with chat_col:
+    st.subheader("🤖 Copilot")
+    st.caption("Ask anything about your portfolio, decisions, regime, performance. "
+               "The Copilot has 10 tools and uses them autonomously.")
+
+    # Suggested prompts
+    sug_cols = st.columns(4)
+    suggested = [
+        "Why am I down today?",
+        "What's coming up this week?",
+        "Show my best/worst positions",
+        "What did the post-mortem flag?",
+    ]
+    for i, sg in enumerate(suggested):
+        if sug_cols[i].button(sg, key=f"suggested_{i}", use_container_width=True):
+            st.session_state["_pending_user_input"] = sg
+
+    # Initialize chat history
+    if "copilot_messages" not in st.session_state:
+        st.session_state.copilot_messages = []
+
+    # Show message history (last 10 to keep page snappy)
+    msgs_to_show = st.session_state.copilot_messages[-10:]
+    for msg in msgs_to_show:
+        if msg["role"] == "user":
+            with st.chat_message("user"):
+                st.markdown(msg.get("display_text", str(msg.get("content", ""))))
+        elif msg["role"] == "assistant":
+            with st.chat_message("assistant"):
+                st.markdown(msg.get("display_text", ""))
+                if msg.get("tool_calls"):
+                    with st.expander(f"🔧 {len(msg['tool_calls'])} tool call(s)", expanded=False):
+                        for tc in msg["tool_calls"]:
+                            st.markdown(f"**{tc['name']}**")
+                            st.json(tc.get("input", {}), expanded=False)
+                            st.caption("result:")
+                            st.json(tc.get("result", {}), expanded=False)
+
+    # Input — either typed or from suggested-prompt button
+    typed_input = st.chat_input("Ask the copilot...")
+    pending_from_button = st.session_state.pop("_pending_user_input", None)
+    user_input = typed_input or pending_from_button
+
+    if user_input:
+        st.session_state.copilot_messages.append({
+            "role": "user", "display_text": user_input, "content": user_input,
+        })
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        api_messages = []
+        for m in st.session_state.copilot_messages:
+            if m["role"] == "user":
+                api_messages.append({"role": "user", "content": m["content"]})
+            elif m["role"] == "assistant" and m.get("api_content"):
+                api_messages.append({"role": "assistant", "content": m["api_content"]})
+
+        with st.chat_message("assistant"):
+            text_placeholder = st.empty()
+            tool_log_placeholder = st.empty()
+            accumulated_text = ""
+            tool_calls_log = []
+            try:
+                from trader.copilot import stream_response
+                for event in stream_response(api_messages):
+                    if event["type"] == "text_delta":
+                        accumulated_text += event["text"]
+                        text_placeholder.markdown(accumulated_text + "▌")
+                    elif event["type"] == "tool_use_start":
+                        tool_calls_log.append({"name": event["name"],
+                                                "input": event.get("input", {}),
+                                                "result": None})
+                        tool_log_placeholder.caption(f"🔧 calling `{event['name']}`...")
+                    elif event["type"] == "tool_result":
+                        if tool_calls_log and tool_calls_log[-1]["name"] == event["name"]:
+                            tool_calls_log[-1]["result"] = event["result"]
+                        tool_log_placeholder.caption(
+                            f"🔧 `{event['name']}` returned ({len(tool_calls_log)} call(s))")
+                    elif event["type"] == "complete":
+                        text_placeholder.markdown(accumulated_text)
+                        tool_log_placeholder.empty()
+                        st.session_state.copilot_messages.append({
+                            "role": "assistant",
+                            "display_text": accumulated_text,
+                            "api_content": event["messages"][-1]["content"]
+                                            if event["messages"] else accumulated_text,
+                            "tool_calls": tool_calls_log,
+                        })
+                        if tool_calls_log:
+                            with st.expander(f"🔧 {len(tool_calls_log)} tool call(s)", expanded=False):
+                                for tc in tool_calls_log:
+                                    st.markdown(f"**{tc['name']}**")
+                                    st.json(tc.get("input", {}), expanded=False)
+                                    st.caption("result:")
+                                    st.json(tc.get("result", {}), expanded=False)
+                        break
+                    elif event["type"] == "error":
+                        text_placeholder.error(f"Copilot error: {event['error']}")
+                        break
+            except Exception as e:
+                text_placeholder.error(f"{type(e).__name__}: {e}")
+
+st.divider()
+st.caption("📁 Reference views below — the 14 tabs are kept for power users "
+           "who want to inspect raw data. The chat above is the primary surface.")
+
+# ============================================================
+# Reference tabs (secondary navigation)
 # ============================================================
 # v3.52.0: Bloomberg-inspired additions appended at the end. Original 10
 # tabs unchanged; new 4 (Live positions, Events, Attribution, Sleeve health)
@@ -240,7 +385,8 @@ tabs = st.tabs([
     "📅 Events",             # 11 TODAY (Bloomberg EVTS, v3.52.0)
     "📊 Attribution",        # 12 TIME (Bloomberg PORT / Brinson, v3.52.1)
     "🔍 Sleeve health",       # 13 RESEARCH (sleeve correlation + decay, v3.51.0)
-    "🤖 Copilot",            # 14 PRIMARY (AI Copilot, v3.53.0) — chat-first interface
+    # v3.54.0: Copilot REMOVED from tabs — promoted to PRIMARY SURFACE above
+    # the tabs row. Tabs are now reference views; chat is the front door.
 ])
 
 # ---------------- Overview ----------------
@@ -1022,7 +1168,12 @@ with tabs[13]:
     except Exception as e:
         st.warning(f"sleeve health unavailable: {type(e).__name__}: {e}")
 
-# ---------------- v3.53.0: AI Copilot (the AI-native primary surface) ----------------
+# v3.54.0: the old tabs[14] Copilot code lived here. It was promoted to
+# the primary surface above the tabs row. The chunk below was the inline
+# code; everything inside got migrated to the new top-level block.
+# The trailing closing-string-literal for the deprecation wrapper is
+# now removed; this block ends with the matching closing fence below.
+_DEPRECATED_REMOVED_TAB_COPILOT = r'''
 with tabs[14]:
     st.subheader("🤖 Trader Copilot")
     st.caption("Chat-first AI interface. Ask anything about your portfolio, "
@@ -1136,6 +1287,7 @@ with tabs[14]:
                         break
             except Exception as e:
                 text_placeholder.error(f"{type(e).__name__}: {e}")
+'''  # end of v3.54.0 deprecated tab[14] block
 
 # ============================================================
 # Auto-refresh timer (must be at end so all UI renders first)
