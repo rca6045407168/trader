@@ -1144,7 +1144,9 @@ with tabs[14]:
 # a mid-stream refresh kills the in-flight chat.
 if ENABLE_AUTO:
     placeholder = st.empty()
-    placeholder.caption(f"auto-refresh in {REFRESH_SEC}s · uncheck in sidebar to pause "
-                         · "(disabled if Copilot is streaming)")
+    placeholder.caption(
+        f"auto-refresh in {REFRESH_SEC}s · uncheck in sidebar to pause "
+        "(disabled if Copilot is streaming)"
+    )
     time.sleep(REFRESH_SEC)
     st.rerun()
