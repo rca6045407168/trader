@@ -530,6 +530,7 @@ with st.sidebar:
         ("📄 Reports", "reports"),
         ("— SYSTEM —", None),
         ("🔧 Manual triggers", "manual"),
+        ("🧰 World-class gaps", "world_class"),
         ("⚙️ Settings", "settings"),
     ]
     for label, key in NAV:
@@ -2856,6 +2857,103 @@ def view_screener():
 
 
 # ============================================================
+# View: World-class gaps (v3.58.0) — surfaces every item from the
+# "if you were a world-class trader, what's still missing" review.
+# ============================================================
+def view_world_class():
+    st.title("🧰 World-class gaps — what's still missing")
+    st.caption(
+        "15 things a world-class trader would expect from this stack. "
+        "Each is implemented as a class in `src/trader/v358_world_class.py` "
+        "with tests. Status: **LIVE** = touching capital, **SHADOW** = "
+        "computed for observability, **NOT_WIRED** = built and tested but "
+        "no LIVE caller. Promote to SHADOW/LIVE deliberately via env var."
+    )
+
+    try:
+        from trader.v358_world_class import status_summary, ALL_GAPS
+    except Exception as e:
+        st.error(f"could not import v358 module: {e}")
+        return
+
+    s = status_summary()
+
+    # Top counters
+    cols = st.columns(3)
+    cols[0].metric("🟢 LIVE", len(s.get("LIVE", [])),
+                   help="Touching capital right now")
+    cols[1].metric("🟡 SHADOW", len(s.get("SHADOW", [])),
+                   help="Computed every run; logged but not enforcing")
+    cols[2].metric("⚪ NOT_WIRED", len(s.get("NOT_WIRED", [])),
+                   help="Implemented + tested; needs deliberate promotion")
+
+    st.divider()
+
+    # Render each bucket
+    BUCKET_ORDER = [("LIVE", "🟢 Touching capital right now"),
+                    ("SHADOW", "🟡 Computed for observability"),
+                    ("NOT_WIRED", "⚪ Implemented but not yet wired into LIVE")]
+    for bucket_key, header in BUCKET_ORDER:
+        items = s.get(bucket_key, [])
+        if not items:
+            continue
+        st.subheader(header)
+        for entry in items:
+            with st.expander(f"**{entry['label']}** — {entry['tagline']}",
+                             expanded=False):
+                st.markdown(entry["describe"])
+                st.caption(f"_class: `trader.v358_world_class.{entry['class']}`_")
+                # Show the env var that flips it
+                env_var = {
+                    "LowVolSleeve": "LOW_VOL_SLEEVE_STATUS",
+                    "SectorNeutralizer": "SECTOR_NEUTRALIZE_STATUS",
+                    "LongShortOverlay": "LONGSHORT_STATUS",
+                    "OptionsOverlay": "OPTIONS_OVERLAY_STATUS",
+                    "TrailingStop": "TRAILING_STOP_STATUS",
+                    "RiskParitySizer": "RISK_PARITY_STATUS",
+                    "DrawdownCircuitBreaker": "DRAWDOWN_BREAKER_STATUS",
+                    "EarningsRule": "EARNINGS_RULE_STATUS",
+                    "TwapSlicer": "TWAP_SLICER_STATUS",
+                    "SlippageTracker": "SLIPPAGE_TRACKER_STATUS",
+                    "TaxLotManager": "TAX_LOT_STATUS",
+                    "AutoPromotionGate": "AUTO_PROMOTION_GATE_STATUS",
+                    "RegimeRouter": "REGIME_ROUTER_STATUS",
+                    "AltDataAdapter": "ALT_DATA_STATUS",
+                    "NetCostModel": "NET_COST_MODEL_STATUS",
+                }.get(entry["class"])
+                if env_var:
+                    st.caption(
+                        f"_env to flip: `{env_var}=SHADOW` or `=LIVE`_"
+                    )
+
+    st.divider()
+    st.subheader("📋 Suggested ramp")
+    st.markdown("""
+The order I'd promote these (highest leverage first):
+
+1. **Tier 4.15 — NetCostModel** (already SHADOW). Look at after-cost Sharpe vs gross. If the gap is >25%, slippage and tax become priority items.
+2. **Tier 1.2 — SectorNeutralizer** (NOT_WIRED → SHADOW). Run it as a shadow variant for 30 days. If shadow Sharpe ≥ LIVE Sharpe, promote to LIVE.
+3. **Tier 1.1 — LowVolSleeve** (NOT_WIRED → SHADOW). Build the second alpha source. Single biggest diversification win.
+4. **Tier 2.7 — DrawdownCircuitBreaker** (already SHADOW → LIVE). Mechanical halt is cheap insurance.
+5. **Tier 2.5 — TrailingStop** (NOT_WIRED → SHADOW). Backtest with stops vs without; the loss-cap typically improves Sortino without hurting Sharpe.
+6. **Tier 2.8 — EarningsRule** (already SHADOW → LIVE). Earnings binaries are uncompensated risk.
+7. **Tier 3.10 — SlippageTracker** (NOT_WIRED → LIVE). Costs nothing, tells you everything.
+8. Then the rest as you build conviction.
+""")
+
+    st.subheader("📚 References")
+    st.markdown("""
+Each module's docstring cites the underlying paper or methodology. Highlights:
+
+- LowVolSleeve → Frazzini-Pedersen (2014) "Betting Against Beta"
+- LongShortOverlay → Asness-Frazzini (2013) momentum L/S
+- RiskParitySizer → simple inverse-vol; full HRP exists in `trader/hrp.py`
+- AutoPromotionGate → wraps existing `deflated_sharpe.py`, `pbo.py`, `validation.py`
+- NetCostModel → Edelen-Evans-Kadlec (2013) implementation costs
+""")
+
+
+# ============================================================
 # Main dispatch
 # ============================================================
 VIEW_DISPATCH = {
@@ -2876,6 +2974,7 @@ VIEW_DISPATCH = {
     "postmortems": view_postmortems,
     "reports": view_reports,
     "manual": view_manual,
+    "world_class": view_world_class,
     "settings": view_settings,
 }
 
