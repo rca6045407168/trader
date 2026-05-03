@@ -60,11 +60,45 @@ st.markdown("""
   }
 
   /* Typography — system font stack for sans, JetBrains Mono for data */
-  html, body, [class*="st"] {
+  html, body {
     font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI",
                  "Helvetica Neue", sans-serif;
     font-feature-settings: "cv11", "ss01", "ss03";
     letter-spacing: -0.005em;
+  }
+  /* v3.55.2 FIX: preserve Material Icons font. The previous
+     [class*="st"] rule was overriding the icon font globally,
+     leaving fallback text like "keyboard_double_arrow_left",
+     "expand_more", "face" (chat avatars), "smart_toy" visible
+     instead of glyph icons. Scope the body font to text elements
+     only and explicitly restore the icon font on icon spans. */
+  span[class*="material-icons"],
+  span[class*="material-symbols"],
+  i[class*="material-"],
+  [data-testid="stIconMaterial"],
+  [class*="MaterialSymbol"] {
+    font-family: 'Material Symbols Outlined', 'Material Symbols Rounded',
+                 'Material Icons', 'Material Icons Extended' !important;
+    font-feature-settings: 'liga' !important;
+    -webkit-font-feature-settings: 'liga' !important;
+    font-style: normal !important;
+    font-weight: normal !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    word-wrap: normal !important;
+    direction: ltr !important;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Hide Streamlit's auto-generated default chat avatars entirely
+     (icon-fontless environment shows them as 'face' / 'smart_toy'
+     plain text otherwise). User can still see who said what via
+     name labels. */
+  [data-testid="stChatMessageAvatarUser"],
+  [data-testid="stChatMessageAvatarAssistant"],
+  [data-testid="chatAvatarIcon-user"],
+  [data-testid="chatAvatarIcon-assistant"] {
+    display: none !important;
   }
   code, pre, [data-testid="stCode"] {
     font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace !important;
