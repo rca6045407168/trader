@@ -240,6 +240,7 @@ tabs = st.tabs([
     "📅 Events",             # 11 TODAY (Bloomberg EVTS, v3.52.0)
     "📊 Attribution",        # 12 TIME (Bloomberg PORT / Brinson, v3.52.1)
     "🔍 Sleeve health",       # 13 RESEARCH (sleeve correlation + decay, v3.51.0)
+    "🤖 Copilot",            # 14 PRIMARY (AI Copilot, v3.53.0) — chat-first interface
 ])
 
 # ---------------- Overview ----------------
@@ -303,17 +304,29 @@ with tabs[0]:
         else:
             try:
                 import plotly.express as px
+                import pandas as _pd
                 hm = heatmap_dataframe_dict(live_hm.positions)
                 if hm["symbol"]:
+                    # v3.52.3 FIX: use path=[Constant, sector, symbol] so plotly
+                    # auto-builds the parent hierarchy. The previous names/
+                    # parents pattern silently rendered empty when sector
+                    # parent rows weren't present in `names`.
+                    df = _pd.DataFrame({
+                        "sector": hm["sector"],
+                        "symbol": hm["symbol"],
+                        "weight": hm["weight"],
+                        "day_pl_pct": hm["day_pl_pct"],
+                    })
                     fig = px.treemap(
-                        names=hm["symbol"], parents=hm["sector"],
-                        values=hm["weight"], color=hm["day_pl_pct"],
+                        df,
+                        path=[px.Constant("Portfolio"), "sector", "symbol"],
+                        values="weight", color="day_pl_pct",
                         color_continuous_scale="RdYlGn",
                         color_continuous_midpoint=0,
-                        custom_data=[hm["hover_text"]],
+                        range_color=[-3, 3],
+                        hover_data={"weight": ":.2f", "day_pl_pct": ":.2f"},
                     )
-                    fig.update_traces(hovertemplate="%{customdata[0]}<extra></extra>")
-                    fig.update_layout(height=400, margin=dict(t=10, l=10, r=10, b=10))
+                    fig.update_layout(height=420, margin=dict(t=10, l=10, r=10, b=10))
                     st.plotly_chart(fig, use_container_width=True)
                 ss = sector_summary(live_hm.positions)
                 if ss:
@@ -1009,11 +1022,129 @@ with tabs[13]:
     except Exception as e:
         st.warning(f"sleeve health unavailable: {type(e).__name__}: {e}")
 
+# ---------------- v3.53.0: AI Copilot (the AI-native primary surface) ----------------
+with tabs[14]:
+    st.subheader("🤖 Trader Copilot")
+    st.caption("Chat-first AI interface. Ask anything about your portfolio, "
+               "recent decisions, regime, performance — the copilot has 10 "
+               "tools (live portfolio, regime overlay, decisions, attribution, "
+               "sleeve health, events, journal SQL, post-mortems, scenario sim, "
+               "period summary) and uses them autonomously.")
+
+    # Suggested questions panel
+    with st.expander("💡 Suggested questions", expanded=False):
+        st.markdown("""
+- *Why am I down today?*
+- *What's my exposure to FOMC tomorrow?*
+- *Show me my best and worst-performing positions this week.*
+- *What's the regime overlay saying right now — should I be worried?*
+- *If NVDA gaps -10% tomorrow, what's the portfolio impact?*
+- *Are any of my sleeves showing decay?*
+- *Summarize what changed between this week and last.*
+- *What did the post-mortem agent flag yesterday?*
+        """)
+
+    # Initialize chat history in session state
+    if "copilot_messages" not in st.session_state:
+        st.session_state.copilot_messages = []
+
+    # Render existing messages
+    for msg in st.session_state.copilot_messages:
+        if msg["role"] == "user":
+            with st.chat_message("user"):
+                st.markdown(msg.get("display_text", str(msg.get("content", ""))))
+        elif msg["role"] == "assistant":
+            with st.chat_message("assistant"):
+                st.markdown(msg.get("display_text", ""))
+                if msg.get("tool_calls"):
+                    with st.expander(f"🔧 {len(msg['tool_calls'])} tool call(s)", expanded=False):
+                        for tc in msg["tool_calls"]:
+                            st.markdown(f"**{tc['name']}**")
+                            st.json(tc.get("input", {}), expanded=False)
+                            st.caption("result:")
+                            st.json(tc.get("result", {}), expanded=False)
+
+    # Input box
+    user_input = st.chat_input("Ask the copilot anything about your portfolio...")
+
+    if user_input:
+        # Append user msg + render
+        st.session_state.copilot_messages.append({
+            "role": "user",
+            "display_text": user_input,
+            "content": user_input,
+        })
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        # Build the API messages list (display_text is for UI only; API needs role+content)
+        api_messages = []
+        for m in st.session_state.copilot_messages:
+            if m["role"] == "user":
+                api_messages.append({"role": "user", "content": m["content"]})
+            elif m["role"] == "assistant" and m.get("api_content"):
+                api_messages.append({"role": "assistant", "content": m["api_content"]})
+
+        # Stream the response
+        with st.chat_message("assistant"):
+            text_placeholder = st.empty()
+            tool_log_placeholder = st.empty()
+            accumulated_text = ""
+            tool_calls_log = []
+
+            try:
+                from trader.copilot import stream_response
+                for event in stream_response(api_messages):
+                    if event["type"] == "text_delta":
+                        accumulated_text += event["text"]
+                        text_placeholder.markdown(accumulated_text + "▌")
+                    elif event["type"] == "tool_use_start":
+                        tool_calls_log.append({
+                            "name": event["name"],
+                            "input": event.get("input", {}),
+                            "result": None,
+                        })
+                        tool_log_placeholder.caption(
+                            f"🔧 calling `{event['name']}`...")
+                    elif event["type"] == "tool_result":
+                        if tool_calls_log and tool_calls_log[-1]["name"] == event["name"]:
+                            tool_calls_log[-1]["result"] = event["result"]
+                        tool_log_placeholder.caption(
+                            f"🔧 `{event['name']}` returned ({len(tool_calls_log)} call(s) so far)")
+                    elif event["type"] == "complete":
+                        text_placeholder.markdown(accumulated_text)
+                        tool_log_placeholder.empty()
+                        # Persist this turn for next round
+                        st.session_state.copilot_messages.append({
+                            "role": "assistant",
+                            "display_text": accumulated_text,
+                            "api_content": event["messages"][-1]["content"]
+                                            if event["messages"] else accumulated_text,
+                            "tool_calls": tool_calls_log,
+                        })
+                        # Render tool log expander
+                        if tool_calls_log:
+                            with st.expander(f"🔧 {len(tool_calls_log)} tool call(s)", expanded=False):
+                                for tc in tool_calls_log:
+                                    st.markdown(f"**{tc['name']}**")
+                                    st.json(tc.get("input", {}), expanded=False)
+                                    st.caption("result:")
+                                    st.json(tc.get("result", {}), expanded=False)
+                        break
+                    elif event["type"] == "error":
+                        text_placeholder.error(f"Copilot error: {event['error']}")
+                        break
+            except Exception as e:
+                text_placeholder.error(f"{type(e).__name__}: {e}")
+
 # ============================================================
 # Auto-refresh timer (must be at end so all UI renders first)
 # ============================================================
+# v3.53.0: auto-refresh disabled while Copilot has unsent state. Otherwise
+# a mid-stream refresh kills the in-flight chat.
 if ENABLE_AUTO:
     placeholder = st.empty()
-    placeholder.caption(f"auto-refresh in {REFRESH_SEC}s · uncheck in sidebar to pause")
+    placeholder.caption(f"auto-refresh in {REFRESH_SEC}s · uncheck in sidebar to pause "
+                         · "(disabled if Copilot is streaming)")
     time.sleep(REFRESH_SEC)
     st.rerun()
