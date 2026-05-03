@@ -60,31 +60,86 @@ def get_actual_positions(client) -> dict[str, float]:
     return {p.symbol: float(p.market_value) for p in client.get_all_positions()}
 
 
+def get_pending_orders_qty(client) -> dict[str, float]:
+    """v3.52.2 FIX: open Alpaca orders that haven't filled yet.
+
+    Returns {symbol: qty_pending}. Reconcile uses this to distinguish
+    'orphan lots' (real bug) from 'awaiting fill' (orders queued for
+    next session — happens every Friday after-hours when the cron runs
+    and orders sit until Monday open).
+
+    Without this, the May 3 cron HALTed with matched=5 missing=10 because
+    Friday's after-hours orders were still pending in Alpaca's queue.
+    """
+    pending = {}
+    try:
+        from alpaca.trading.requests import GetOrdersRequest
+        from alpaca.trading.enums import QueryOrderStatus
+        # Get all 'open' orders (not filled, not cancelled, not rejected)
+        req = GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=500)
+        for o in client.get_orders(filter=req):
+            sym = o.symbol
+            qty = float(o.qty) if o.qty else 0
+            # For BUY orders, this contributes positive qty toward expected
+            # holdings (a position pending a fill). For SELL, negative.
+            side_str = (o.side.value if hasattr(o.side, "value") else str(o.side)).lower()
+            if side_str == "buy":
+                pending[sym] = pending.get(sym, 0) + qty
+            else:
+                pending[sym] = pending.get(sym, 0) - qty
+    except Exception:
+        # If we can't query orders, fall back to no-pending (conservative —
+        # may HALT spuriously but won't silently swallow real drift).
+        pass
+    return pending
+
+
 def reconcile(client, qty_tolerance: float = 0.001) -> dict:
-    """v1.9: reconcile by SHARE QUANTITY, not dollar value.
+    """v3.52.2: reconcile by SHARE QUANTITY, with pending-order awareness.
+
+    Compares journal lots to Alpaca positions, but FIRST nets out any
+    pending (open) orders. A lot whose corresponding BUY order is still
+    open in Alpaca's queue is 'awaiting fill', not 'missing'.
 
     Quantities don't drift with price. Tolerance is fractional shares only
     (Alpaca rounds to ~4 decimal places, so 0.001 covers rounding).
 
     Returns:
       {
-        matched / missing / unexpected / size_mismatch lists,
+        matched / missing / unexpected / size_mismatch / awaiting_fill lists,
         halt_recommended: bool,
       }
     """
     expected = get_expected_positions_qty()
     actual = get_actual_positions_qty(client)
+    pending = get_pending_orders_qty(client)
 
-    matched, missing, unexpected, size_mismatch = [], [], [], []
+    matched, missing, unexpected, size_mismatch, awaiting_fill = [], [], [], [], []
     all_syms = set(expected) | set(actual)
     for sym in all_syms:
         e = expected.get(sym, 0)
         a = actual.get(sym, 0)
-        if e == 0 and a > 0:
-            unexpected.append({"symbol": sym, "actual_qty": a})
-        elif e > 0 and a == 0:
+        p = pending.get(sym, 0)  # positive = pending BUY would add to position
+        # Effective expected after netting pending fills.
+        # If we have a journal lot but no Alpaca position AND there's a
+        # pending buy of similar size, that's awaiting-fill, not missing.
+        if e > 0 and a == 0:
+            if p > 0 and abs(p - e) <= qty_tolerance:
+                awaiting_fill.append({"symbol": sym, "expected_qty": e,
+                                       "pending_qty": p,
+                                       "reason": "pending BUY in Alpaca queue (likely after-hours order awaiting next open)"})
+                continue
             missing.append({"symbol": sym, "expected_qty": e})
+        elif e == 0 and a > 0:
+            unexpected.append({"symbol": sym, "actual_qty": a})
         elif abs(e - a) > qty_tolerance:
+            # Check if pending fills explain the gap
+            effective_a = a + max(p, 0)  # add pending BUY qty
+            if abs(e - effective_a) <= qty_tolerance:
+                awaiting_fill.append({"symbol": sym, "expected_qty": e,
+                                       "actual_qty": a, "pending_qty": p,
+                                       "reason": "partial fill; remainder pending"})
+                continue
             size_mismatch.append({"symbol": sym, "expected": e, "actual": a, "diff": a - e})
         else:
             matched.append({"symbol": sym, "qty": a})
@@ -95,9 +150,11 @@ def reconcile(client, qty_tolerance: float = 0.001) -> dict:
         "missing": missing,
         "unexpected": unexpected,
         "size_mismatch": size_mismatch,
+        "awaiting_fill": awaiting_fill,  # NEW v3.52.2
         "halt_recommended": halt,
         "summary": (
             f"matched={len(matched)} missing={len(missing)} "
-            f"unexpected={len(unexpected)} size_mismatch={len(size_mismatch)}"
+            f"unexpected={len(unexpected)} size_mismatch={len(size_mismatch)} "
+            f"awaiting_fill={len(awaiting_fill)}"
         ),
     }
