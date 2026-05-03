@@ -1111,179 +1111,610 @@ def view_lots():
 # ============================================================
 # View: Performance (equity vs SPY overlay)
 # ============================================================
+@st.cache_data(ttl=600, show_spinner="📊 Computing performance metrics...")
+def _cached_performance(window_days: int):
+    from trader.analytics import compute_performance
+    return compute_performance(window_days=window_days)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_rolling_sharpe(window: int, days: int):
+    from trader.analytics import compute_rolling_sharpe
+    return compute_rolling_sharpe(window=window, days=days)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_drawdown_periods(days: int):
+    from trader.analytics import compute_drawdown_periods
+    return compute_drawdown_periods(days=days)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_monthly_returns(days: int):
+    from trader.analytics import compute_monthly_returns
+    return compute_monthly_returns(days=days)
+
+
 def view_performance():
     st.title("📈 Performance")
-    st.caption("Equity (green) + SPY normalized (gray dashed) + drawdown (red). "
-               "Bloomberg GP-style overlay.")
-    snaps = query(str(DB_PATH), "SELECT * FROM daily_snapshot ORDER BY date DESC LIMIT 30")
-    if snaps.empty or len(snaps) < 2:
-        st.caption("_need ≥2 daily snapshots; sync from GitHub_")
+    st.caption("Risk-adjusted returns, drawdown analysis, and SPY-relative attribution. "
+               "All metrics annualized where applicable; cached 10 min.")
+
+    # Window selector
+    window_choices = {"30 days": 30, "60 days": 60, "90 days": 90, "180 days": 180, "1 year": 252}
+    sel = st.selectbox("Lookback window", list(window_choices.keys()), index=2)
+    window = window_choices[sel]
+
+    perf = _cached_performance(window)
+    if perf.n_obs < 2:
+        st.warning(f"Need ≥2 daily snapshots; have {perf.n_obs}. Sync from GitHub via ⚙️ Settings.")
         return
-    chart_data = snaps[["date", "equity"]].copy()
-    chart_data["date"] = pd.to_datetime(chart_data["date"])
-    chart_data = chart_data.sort_values("date").set_index("date")
-    eq = chart_data["equity"]
-    peak = eq.cummax()
-    dd_pct = (eq / peak - 1) * 100
-    spy_norm = None
-    try:
-        import yfinance as yf
-        spy_df = yf.download("SPY", start=eq.index.min().strftime("%Y-%m-%d"),
-                              end=(eq.index.max() + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
-                              progress=False, auto_adjust=True)
-        if spy_df is not None and not spy_df.empty:
-            spy_close = spy_df["Close"].dropna()
-            spy_norm = (spy_close / spy_close.iloc[0]) * float(eq.iloc[0])
-    except Exception:
-        pass
-    try:
-        import plotly.graph_objects as go
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=eq.index, y=eq.values, name="equity",
-                                  line=dict(color="#16a34a", width=2)))
-        if spy_norm is not None and not spy_norm.empty:
-            fig.add_trace(go.Scatter(x=spy_norm.index, y=spy_norm.values, name="SPY (norm)",
-                                      line=dict(color="#888888", width=1.5, dash="dash")))
-        fig.add_trace(go.Scatter(x=dd_pct.index, y=dd_pct.values, name="drawdown %",
-                                  yaxis="y2", fill="tozeroy",
-                                  line=dict(color="rgba(220,38,38,0.4)")))
-        fig.update_layout(
-            height=500, hovermode="x unified",
-            yaxis=dict(title="equity ($)", side="left"),
-            yaxis2=dict(title="drawdown (%)", side="right", overlaying="y",
-                         showgrid=False, range=[-50, 5]),
-            margin=dict(t=20, l=10, r=10, b=10),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02))
-        st.plotly_chart(fig, use_container_width=True)
-        if spy_norm is not None and not spy_norm.empty and len(eq) >= 2:
-            eq_ret = (float(eq.iloc[-1]) - float(eq.iloc[0])) / float(eq.iloc[0])
-            spy_ret = (float(spy_norm.iloc[-1]) - float(spy_norm.iloc[0])) / float(spy_norm.iloc[0])
-            ec = st.columns(4)
-            ec[0].metric("Equity total return", f"{eq_ret*100:+.2f}%")
-            ec[1].metric("SPY total return", f"{spy_ret*100:+.2f}%")
-            ec[2].metric("Excess vs SPY", f"{(eq_ret - spy_ret)*100:+.2f}%")
-            ec[3].metric("Worst DD", f"{dd_pct.min():.2f}%")
-    except ImportError:
-        st.line_chart(chart_data["equity"])
-        st.area_chart(pd.DataFrame({"drawdown_pct": dd_pct}))
 
+    # ---- HEADLINE: 4 columns, the things that matter most ----
+    st.subheader("Headline")
+    c = st.columns(4)
+    c[0].metric("Total return",
+                f"{perf.total_return*100:+.2f}%" if perf.total_return is not None else "n/a",
+                f"vs SPY {perf.excess_total_return*100:+.2f}%" if perf.excess_total_return is not None else None)
+    c[1].metric("Sharpe (annualized)",
+                f"{perf.sharpe:.2f}" if perf.sharpe is not None else "n/a",
+                "good >1.0 / great >2.0" if perf.sharpe is not None else None)
+    c[2].metric("Max drawdown",
+                f"{perf.max_drawdown*100:+.2f}%" if perf.max_drawdown is not None else "n/a",
+                f"now {perf.drawdown_now*100:+.2f}%" if perf.drawdown_now is not None else None)
+    c[3].metric("CAGR",
+                f"{perf.cagr*100:+.2f}%" if perf.cagr is not None else "n/a",
+                "annualized")
 
-# ============================================================
-# View: Attribution (Brinson)
-# ============================================================
-def view_attribution():
-    st.title("📊 Attribution")
-    st.caption("Brinson decomposition: allocation (sector tilt) + selection (within-sector picks). "
-               "Tells you WHY today's P&L moved.")
-    try:
-        from trader.brinson_attribution import compute_brinson, SECTOR_ETF_MAP
-        live = _live_portfolio()
-        if not live.positions:
-            st.info("_no positions_")
-            return
-        sec_w_p, sec_r_num, sec_r_den = {}, {}, {}
-        total_eq = sum((p.market_value or 0) for p in live.positions) or 1
-        for p in live.positions:
-            sec = p.sector or "Unknown"
-            w = (p.market_value or 0) / total_eq
-            sec_w_p[sec] = sec_w_p.get(sec, 0) + w
-            if p.day_pl_pct is not None and (p.market_value or 0) > 0:
-                sec_r_num[sec] = sec_r_num.get(sec, 0) + p.day_pl_pct * (p.market_value or 0)
-                sec_r_den[sec] = sec_r_den.get(sec, 0) + (p.market_value or 0)
-        sec_r_p = {s: (sec_r_num.get(s, 0) / sec_r_den.get(s, 1)) for s in sec_w_p}
-        n = len(SECTOR_ETF_MAP) or 1
-        sec_w_b = {s: 1.0 / n for s in SECTOR_ETF_MAP}
+    # ---- RISK / REWARD: separate row ----
+    st.subheader("Risk / reward")
+    c = st.columns(4)
+    c[0].metric("Sortino ratio",
+                f"{perf.sortino:.2f}" if perf.sortino is not None else "n/a",
+                "downside-only Sharpe")
+    c[1].metric("Calmar ratio",
+                f"{perf.calmar:.2f}" if perf.calmar is not None else "n/a",
+                "CAGR / |max DD|")
+    c[2].metric("Information ratio",
+                f"{perf.information_ratio:.2f}" if perf.information_ratio is not None else "n/a",
+                "active return / TE")
+    c[3].metric("Beta vs SPY",
+                f"{perf.beta_vs_spy:.2f}" if perf.beta_vs_spy is not None else "n/a",
+                "1.0 = market exposure")
+
+    # ---- ALPHA / VOL ----
+    c = st.columns(4)
+    c[0].metric("Alpha (Jensen, annual)",
+                f"{perf.alpha_vs_spy_annual*100:+.2f}%" if perf.alpha_vs_spy_annual is not None else "n/a",
+                "skill-adjusted return")
+    c[1].metric("Volatility (annual)",
+                f"{perf.vol_annual*100:.2f}%" if perf.vol_annual is not None else "n/a",
+                "std × √252")
+    c[2].metric("Tracking error",
+                f"{perf.tracking_error_annual*100:.2f}%" if perf.tracking_error_annual is not None else "n/a",
+                "vs SPY, annual")
+    c[3].metric("Win rate",
+                f"{perf.win_rate*100:.1f}%" if perf.win_rate is not None else "n/a",
+                f"profit factor {perf.profit_factor:.2f}" if perf.profit_factor is not None else None)
+
+    # Drawdown context
+    if perf.drawdown_now is not None and perf.drawdown_now < -0.001:
+        st.warning(f"⚠️ Currently in drawdown of **{perf.drawdown_now*100:.2f}%** "
+                   f"({perf.days_in_drawdown} days). Worst this window: **{perf.max_drawdown*100:.2f}%**.")
+
+    st.divider()
+
+    # ---- EQUITY + SPY OVERLAY (existing chart) ----
+    st.subheader("Equity vs SPY")
+    snaps = _cached_snapshots(str(DB_PATH))
+    if not snaps.empty and len(snaps) >= 2:
+        chart_data = snaps[["date", "equity"]].copy()
+        chart_data["date"] = pd.to_datetime(chart_data["date"])
+        chart_data = chart_data.sort_values("date").set_index("date")
+        eq = chart_data["equity"]
+        peak = eq.cummax()
+        dd_pct = (eq / peak - 1) * 100
+        spy_norm = None
         try:
             import yfinance as yf
-            etf_syms = list(SECTOR_ETF_MAP.values())
-            df = yf.download(" ".join(etf_syms), period="5d", progress=False,
-                              auto_adjust=True, group_by="ticker")
-            sec_r_b = {}
-            for sec, etf in SECTOR_ETF_MAP.items():
-                try:
-                    closes = df[(etf, "Close")].dropna() if (etf, "Close") in df.columns else df[etf]["Close"].dropna()
-                    if len(closes) >= 2:
-                        sec_r_b[sec] = (float(closes.iloc[-1]) - float(closes.iloc[-2])) / float(closes.iloc[-2])
-                except Exception:
-                    continue
+            spy_df = yf.download("SPY", start=eq.index.min().strftime("%Y-%m-%d"),
+                                  end=(eq.index.max() + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+                                  progress=False, auto_adjust=True)
+            if spy_df is not None and not spy_df.empty:
+                spy_close = spy_df["Close"].dropna()
+                spy_norm = (spy_close / spy_close.iloc[0]) * float(eq.iloc[0])
         except Exception:
-            sec_r_b = {}
-        rep = compute_brinson(sec_w_p, sec_r_p, sec_w_b, sec_r_b)
-        cm = st.columns(3)
-        cm[0].metric("Allocation", f"{rep.sum_allocation*100:+.3f}%")
-        cm[1].metric("Selection", f"{rep.sum_selection*100:+.3f}%")
-        cm[2].metric("Active return", f"{rep.active_return*100:+.3f}%")
-        rows = [{
-            "sector": s.sector,
-            "port_w": f"{s.portfolio_weight*100:.1f}%",
-            "bench_w": f"{s.benchmark_weight*100:.1f}%",
-            "port_ret": f"{s.portfolio_sector_return*100:+.2f}%",
-            "bench_ret": f"{s.benchmark_sector_return*100:+.2f}%",
-            "alloc_eff": f"{s.allocation_effect*100:+.3f}%",
-            "select_eff": f"{s.selection_effect*100:+.3f}%",
-        } for s in rep.by_sector]
-        st.dataframe(rows, use_container_width=True, hide_index=True)
-    except Exception as e:
-        st.warning(f"attribution unavailable: {type(e).__name__}: {e}")
+            pass
+        try:
+            import plotly.graph_objects as go
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=eq.index, y=eq.values, name="equity",
+                                      line=dict(color="#16a34a", width=2)))
+            if spy_norm is not None and not spy_norm.empty:
+                fig.add_trace(go.Scatter(x=spy_norm.index, y=spy_norm.values, name="SPY (norm)",
+                                          line=dict(color="#888888", width=1.5, dash="dash")))
+            fig.add_trace(go.Scatter(x=dd_pct.index, y=dd_pct.values, name="drawdown %",
+                                      yaxis="y2", fill="tozeroy",
+                                      line=dict(color="rgba(220,38,38,0.4)")))
+            fig.update_layout(
+                height=400, hovermode="x unified",
+                yaxis=dict(title="equity ($)", side="left"),
+                yaxis2=dict(title="drawdown (%)", side="right", overlaying="y",
+                             showgrid=False, range=[-50, 5]),
+                margin=dict(t=20, l=10, r=10, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02))
+            st.plotly_chart(fig, use_container_width=True)
+        except ImportError:
+            st.line_chart(chart_data["equity"])
 
+    # ---- ROLLING SHARPE ----
+    st.subheader("Rolling 30-day Sharpe")
+    rs = _cached_rolling_sharpe(window=30, days=window)
+    if not rs.empty:
+        try:
+            import plotly.graph_objects as go
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(x=rs["date"], y=rs["rolling_sharpe"],
+                                       name="rolling Sharpe",
+                                       line=dict(color="#3b82f6", width=2),
+                                       fill="tozeroy",
+                                       fillcolor="rgba(59,130,246,0.1)"))
+            fig2.add_hline(y=1.0, line_dash="dash", line_color="#16a34a",
+                            annotation_text="good (1.0)")
+            fig2.add_hline(y=0.0, line_dash="dot", line_color="#888")
+            fig2.update_layout(height=300, margin=dict(t=20, l=10, r=10, b=10),
+                                yaxis=dict(title="annualized Sharpe"))
+            st.plotly_chart(fig2, use_container_width=True)
+        except ImportError:
+            st.line_chart(rs.set_index("date")["rolling_sharpe"])
+    else:
+        st.caption(f"_need ≥30 days for rolling Sharpe; have {perf.n_obs}_")
 
-# ============================================================
-# View: Events
-# ============================================================
-def view_events():
-    st.title("📅 Events")
-    st.caption("FOMC + OPEX + earnings + ex-div for held names, next 30 days.")
-    try:
-        from trader.events_calendar import compute_upcoming_events
-        live = _live_portfolio()
-        symbols = [p.symbol for p in (live.positions or [])]
-        events = compute_upcoming_events(symbols, days_ahead=30)
-        if not events:
-            st.info("_no upcoming events in 30 days_")
-            return
+    # ---- DRAWDOWN PERIODS ----
+    dd_periods = _cached_drawdown_periods(days=window)
+    if dd_periods:
+        st.subheader(f"Drawdown periods ({len(dd_periods)})")
         rows = []
-        for e in events:
-            emoji = {"earnings": "📊", "ex_div": "💵", "fomc": "🏦", "opex": "🎯"}.get(e.event_type, "📌")
+        for p in dd_periods[:10]:
             rows.append({
-                "date": str(e.date), "in days": e.days_until,
-                "type": f"{emoji} {e.event_type}",
-                "symbol": e.symbol or "(portfolio-wide)",
-                "note": e.note, "confidence": e.confidence,
+                "peak": p.get("peak_date"),
+                "trough": p.get("trough_date"),
+                "recovery": p.get("recovery_date") or "ongoing",
+                "max_dd": f"{p.get('trough_dd', 0)*100:+.2f}%",
+                "days": p.get("days_in_dd", 0),
             })
         st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    # ---- MONTHLY RETURNS HEATMAP ----
+    monthly = _cached_monthly_returns(days=365)
+    if not monthly.empty and len(monthly) >= 3:
+        st.subheader("Monthly returns")
+        try:
+            import plotly.graph_objects as go
+            pivot = monthly.pivot(index="year", columns="month", values="return_pct")
+            fig3 = go.Figure(data=go.Heatmap(
+                z=pivot.values, x=pivot.columns, y=pivot.index,
+                colorscale="RdYlGn", zmid=0,
+                text=pivot.values, texttemplate="%{text:+.2f}%",
+                colorbar=dict(title="%")))
+            fig3.update_layout(height=200, margin=dict(t=20, l=10, r=10, b=10),
+                                xaxis=dict(title="month"), yaxis=dict(title="year"))
+            st.plotly_chart(fig3, use_container_width=True)
+        except ImportError:
+            st.dataframe(monthly, use_container_width=True, hide_index=True)
+
+    # ---- HOW TO READ ----
+    with st.expander("📚 How to read this — what each metric means"):
+        st.markdown("""
+- **Sharpe ratio**: return per unit of risk. Above **1.0 is good**, above **2.0 is exceptional** for retail. Our PIT-honest target is ~0.96.
+- **Sortino**: like Sharpe but only counts downside vol. Higher than Sharpe = your losses are less violent than your wins.
+- **Calmar**: CAGR / |max DD|. Measures "how much pain for the gain." >1.0 means you grow faster than your worst drawdown.
+- **Information ratio**: skill-adjusted excess return vs SPY. >0.5 is solid; >1.0 is rare.
+- **Beta vs SPY**: how much you move with the market. 1.0 = same as SPY. Our momentum strategy typically runs 1.1-1.3.
+- **Alpha (Jensen, annualized)**: return AFTER subtracting market beta exposure. The pure skill component. Annualized.
+- **Tracking error**: how different your day-to-day returns are from SPY's. Higher = bigger active risk.
+- **Win rate**: % of days that closed positive.
+- **Profit factor**: $ won / $ lost. >1.5 is good, >2.0 is great.
+- **Max drawdown**: worst peak-to-trough loss in the window. Our backtest worst was -33%.
+
+**The trade-off you care about most:** Sharpe says "is this good risk-adjusted?" Calmar says "is this good drawdown-adjusted?" If both are >1.0, you're winning the battle.
+""")
+
+
+# ============================================================
+# View: Attribution (per-position waterfall + Brinson + sector pie)
+# ============================================================
+@st.cache_data(ttl=300, show_spinner="📊 Computing attribution...")
+def _cached_brinson():
+    """Brinson decomposition with current live data + SPDR sector ETF benchmark."""
+    from trader.brinson_attribution import compute_brinson, SECTOR_ETF_MAP
+    live = _live_portfolio()
+    if not live.positions:
+        return None, None
+    sec_w_p, sec_r_num, sec_r_den = {}, {}, {}
+    total_eq = sum((p.market_value or 0) for p in live.positions) or 1
+    for p in live.positions:
+        sec = p.sector or "Unknown"
+        w = (p.market_value or 0) / total_eq
+        sec_w_p[sec] = sec_w_p.get(sec, 0) + w
+        if p.day_pl_pct is not None and (p.market_value or 0) > 0:
+            sec_r_num[sec] = sec_r_num.get(sec, 0) + p.day_pl_pct * (p.market_value or 0)
+            sec_r_den[sec] = sec_r_den.get(sec, 0) + (p.market_value or 0)
+    sec_r_p = {s: (sec_r_num.get(s, 0) / sec_r_den.get(s, 1)) for s in sec_w_p}
+    n = len(SECTOR_ETF_MAP) or 1
+    sec_w_b = {s: 1.0 / n for s in SECTOR_ETF_MAP}
+    try:
+        import yfinance as yf
+        etf_syms = list(SECTOR_ETF_MAP.values())
+        df = yf.download(" ".join(etf_syms), period="5d", progress=False,
+                          auto_adjust=True, group_by="ticker")
+        sec_r_b = {}
+        for sec, etf in SECTOR_ETF_MAP.items():
+            try:
+                closes = df[(etf, "Close")].dropna() if (etf, "Close") in df.columns else df[etf]["Close"].dropna()
+                if len(closes) >= 2:
+                    sec_r_b[sec] = (float(closes.iloc[-1]) - float(closes.iloc[-2])) / float(closes.iloc[-2])
+            except Exception:
+                continue
+    except Exception:
+        sec_r_b = {}
+    return compute_brinson(sec_w_p, sec_r_p, sec_w_b, sec_r_b), live.positions
+
+
+def view_attribution():
+    st.title("📊 Attribution — where today's P&L came from")
+    st.caption("Three layers: per-name contribution waterfall (which holdings moved you), "
+               "sector tilt vs SPY (Brinson), and sector allocation pie. "
+               "All cached 5 min.")
+
+    # ---- 1. Per-position contribution waterfall (the headline) ----
+    live = _live_portfolio()
+    if getattr(live, "error", None) or not live.positions:
+        st.warning("Cannot compute attribution — no live positions or broker fetch failed.")
+        return
+
+    from trader.analytics import position_contribution
+    contrib = position_contribution(live.positions)
+
+    if contrib:
+        st.subheader("Per-position contribution to today's P&L")
+        c = st.columns(4)
+        total_contrib = sum(r["contribution_pct"] for r in contrib)
+        positive = sum(r["contribution_pct"] for r in contrib if r["contribution_pct"] > 0)
+        negative = sum(r["contribution_pct"] for r in contrib if r["contribution_pct"] < 0)
+        c[0].metric("Total today", f"{total_contrib:+.3f}%",
+                    "sum of (weight × day return) per name")
+        c[1].metric("Positive contributors", f"{positive:+.3f}%",
+                    f"{sum(1 for r in contrib if r['contribution_pct']>0)} names")
+        c[2].metric("Negative contributors", f"{negative:+.3f}%",
+                    f"{sum(1 for r in contrib if r['contribution_pct']<0)} names")
+        if abs(total_contrib) > 0.001:
+            ratio = positive / abs(negative) if negative < 0 else float("inf")
+            c[3].metric("Win/loss ratio", f"{ratio:.2f}" if ratio != float("inf") else "∞",
+                        "today's $ won / $ lost")
+
+        # Waterfall chart
+        try:
+            import plotly.graph_objects as go
+            fig = go.Figure(go.Waterfall(
+                orientation="v",
+                x=[r["symbol"] for r in contrib],
+                y=[r["contribution_pct"] for r in contrib],
+                text=[f"{r['contribution_pct']:+.3f}%" for r in contrib],
+                connector={"line": {"color": "#666"}},
+                increasing={"marker": {"color": "#16a34a"}},
+                decreasing={"marker": {"color": "#dc2626"}},
+            ))
+            fig.update_layout(height=320, margin=dict(t=20, l=10, r=10, b=10),
+                               yaxis=dict(title="contribution to portfolio % today"))
+            st.plotly_chart(fig, use_container_width=True)
+        except ImportError:
+            pass
+
+        # Top contributors / detractors tables
+        cl, cr = st.columns(2)
+        with cl:
+            st.markdown("**🟢 Top contributors**")
+            top5 = [r for r in contrib if r["contribution_pct"] > 0][:5]
+            if top5:
+                st.dataframe([{
+                    "symbol": r["symbol"],
+                    "weight": f"{r['weight_pct']:.1f}%",
+                    "day": f"{r['day_pl_pct']:+.2f}%",
+                    "contrib": f"{r['contribution_pct']:+.3f}%",
+                } for r in top5], use_container_width=True, hide_index=True)
+            else:
+                st.caption("_no positive contributors today_")
+        with cr:
+            st.markdown("**🔴 Top detractors**")
+            bot5 = [r for r in contrib if r["contribution_pct"] < 0][-5:]
+            if bot5:
+                st.dataframe([{
+                    "symbol": r["symbol"],
+                    "weight": f"{r['weight_pct']:.1f}%",
+                    "day": f"{r['day_pl_pct']:+.2f}%",
+                    "contrib": f"{r['contribution_pct']:+.3f}%",
+                } for r in bot5], use_container_width=True, hide_index=True)
+            else:
+                st.caption("_no negative contributors today_")
+
+    st.divider()
+
+    # ---- 2. Brinson sector decomposition ----
+    st.subheader("Sector-level Brinson decomposition")
+    try:
+        rep, _ = _cached_brinson()
+        if rep is None:
+            st.info("_no Brinson — broker fetch failed_")
+        else:
+            cm = st.columns(3)
+            cm[0].metric("Allocation effect", f"{rep.sum_allocation*100:+.3f}%",
+                          "from over/underweighting sectors")
+            cm[1].metric("Selection effect", f"{rep.sum_selection*100:+.3f}%",
+                          "from picking outperformers in-sector")
+            cm[2].metric("Active vs benchmark", f"{rep.active_return*100:+.3f}%",
+                          "alloc + selection + interaction")
+            sector_rows = [{
+                "sector": s.sector,
+                "port_w": f"{s.portfolio_weight*100:.1f}%",
+                "bench_w": f"{s.benchmark_weight*100:.1f}%",
+                "port_ret": f"{s.portfolio_sector_return*100:+.2f}%",
+                "bench_ret": f"{s.benchmark_sector_return*100:+.2f}%",
+                "alloc_eff": f"{s.allocation_effect*100:+.3f}%",
+                "select_eff": f"{s.selection_effect*100:+.3f}%",
+            } for s in rep.by_sector]
+            st.dataframe(sector_rows, use_container_width=True, hide_index=True)
     except Exception as e:
-        st.warning(f"events unavailable: {type(e).__name__}: {e}")
+        st.caption(f"_Brinson failed: {type(e).__name__}_")
+
+    st.divider()
+
+    # ---- 3. Sector allocation pie ----
+    st.subheader("Sector allocation")
+    sector_w: dict = {}
+    for p in live.positions:
+        sec = p.sector or "Unknown"
+        sector_w[sec] = sector_w.get(sec, 0) + (p.weight_of_book or 0)
+    if sector_w:
+        try:
+            import plotly.graph_objects as go
+            secs = list(sector_w.keys())
+            vals = [sector_w[s] * 100 for s in secs]
+            fig_pie = go.Figure(data=[go.Pie(labels=secs, values=vals, hole=0.4,
+                                               textinfo="label+percent")])
+            fig_pie.update_layout(height=300, margin=dict(t=20, l=10, r=10, b=10))
+            st.plotly_chart(fig_pie, use_container_width=True)
+        except ImportError:
+            st.dataframe([{"sector": s, "weight": f"{sector_w[s]*100:.1f}%"}
+                           for s in sorted(sector_w, key=sector_w.get, reverse=True)],
+                          use_container_width=True, hide_index=True)
+
+    # ---- HOW TO READ ----
+    with st.expander("📚 How to read this — interpreting the numbers"):
+        st.markdown("""
+**Per-position contribution** = position weight × day return. Tells you *how many basis points* each name added/subtracted from your day. A 10% NVDA position up 2% adds **+0.20%** to your portfolio.
+
+**Allocation effect**: how much of today's active return came from being **overweight or underweight** a sector. If you have 40% in Tech and Tech ETF (XLK) was +1%, your tech tilt contributed +1% × (your weight − benchmark weight).
+
+**Selection effect**: how much came from **stock picking within sectors**. If your tech holdings returned +2% while the tech ETF returned +1%, you outperformed via name selection.
+
+**Reading the trade-off:**
+- High allocation effect + low selection = **factor exposure is winning** (you're betting on the right sector)
+- Low allocation + high selection = **stock picking is winning** (you're picking outperformers)
+- Both negative = consider whether your strategy needs adjustment, OR you're just having a normal bad day
+
+**Caveat:** benchmark sector weights are currently equal-weight placeholder. Real SPY sector weights would tighten the "active return" signal — todo for v3.57.1.
+""")
 
 
 # ============================================================
-# View: Regime overlay
+# View: Events (with portfolio exposure column + filter)
 # ============================================================
+@st.cache_data(ttl=900, show_spinner="📅 Fetching event calendar (yfinance per-symbol)...")
+def _cached_events(symbols: tuple, days_ahead: int):
+    """Cached at 15min. Symbols passed as tuple for hashability."""
+    from trader.events_calendar import compute_upcoming_events
+    return compute_upcoming_events(list(symbols), days_ahead=days_ahead)
+
+
+def view_events():
+    st.title("📅 Events — what could move your book")
+    st.caption("Calendar of FOMC + OPEX + earnings + ex-div for held names, next 30 days. "
+               "Each event tagged with portfolio % exposure (for per-name events) so you "
+               "know which dates actually matter for YOUR positions.")
+
+    live = _live_portfolio()
+    if getattr(live, "error", None):
+        st.warning(f"broker fetch failed: {live.error}")
+        return
+    symbols = tuple(p.symbol for p in (live.positions or []))
+    if not symbols:
+        st.info("_no positions to compute exposure_")
+
+    days_ahead = st.slider("Lookahead (days)", 7, 60, 30)
+    events = _cached_events(symbols, days_ahead)
+
+    if not events:
+        st.info(f"_no upcoming events in next {days_ahead} days_")
+        return
+
+    # Compute exposure
+    from trader.analytics import event_exposure
+    rows = event_exposure(events, live.positions)
+
+    # ---- Filter chips ----
+    type_options = ["all", "fomc", "earnings", "ex_div", "opex"]
+    sel_type = st.radio("Filter", type_options, horizontal=True, label_visibility="collapsed")
+    if sel_type != "all":
+        rows = [r for r in rows if sel_type in r["type"]]
+
+    # ---- Headline: this-week alert ----
+    this_week = [r for r in rows if (r.get("days_until") or 99) <= 7]
+    high_exposure = [r for r in this_week if r.get("exposure_pct", 0) > 5]
+
+    c = st.columns(4)
+    c[0].metric("Events in window", len(rows))
+    c[1].metric("This week", len(this_week))
+    c[2].metric("High-exposure (>5%)", len(high_exposure))
+    earnings_rows = [r for r in rows if "earnings" in r["type"]]
+    if earnings_rows:
+        max_exp = max(r.get("exposure_pct", 0) for r in earnings_rows)
+        max_exp_sym = next(r["symbol"] for r in earnings_rows
+                            if r.get("exposure_pct", 0) == max_exp)
+        c[3].metric("Biggest earnings exposure",
+                    f"{max_exp_sym} {max_exp:.1f}%",
+                    "single name's earnings")
+    else:
+        c[3].metric("Biggest earnings exposure", "—", "no earnings in window")
+
+    st.divider()
+
+    # ---- Calendar table ----
+    display_rows = []
+    for r in rows:
+        emoji = {"earnings": "📊", "ex_div": "💵", "fomc": "🏦", "opex": "🎯"}.get(r["type"], "📌")
+        days = r.get("days_until", "?")
+        warn = "⚠️ " if r.get("exposure_pct", 0) > 5 else ""
+        display_rows.append({
+            "date": r["date"],
+            "in days": days,
+            "type": f"{emoji} {r['type']}",
+            "symbol": r["symbol"],
+            "exposure": f"{warn}{r['exposure_pct']:.1f}%" if r["exposure_pct"] else "—",
+            "note": r["note"],
+        })
+    st.dataframe(display_rows, use_container_width=True, hide_index=True)
+
+    # ---- Per-event highlight cards for the most impactful ----
+    if high_exposure:
+        st.subheader("⚠️ High-exposure events this week")
+        for r in high_exposure[:3]:
+            with st.container(border=True):
+                st.markdown(f"**{r['symbol']}** {r['type']} on **{r['date']}** "
+                            f"({r['days_until']} days) — **{r['exposure_pct']:.1f}%** of book")
+                st.caption(r['note'])
+
+    # ---- HOW TO READ ----
+    with st.expander("📚 How to read this — what each event means for your portfolio"):
+        st.markdown("""
+- **🏦 FOMC**: Federal Reserve rate decision. Whole portfolio reacts to surprise hawkish/dovish stance. Pre-FOMC drift is one of our shadow-tested anomalies. Implied vol typically rises into the meeting and crushes after.
+
+- **🎯 OPEX**: monthly options expiration (third Friday). Heavy hedging-flow days. SPY tends to be range-bound that morning, can break out after 4 PM. Rarely triggers a rebalance for monthly strategies but can spike vol.
+
+- **📊 Earnings**: per-name event. **Look at the exposure column.** A 1% position in NVDA earnings is rounding error; a 10% position is a real binary risk. The momentum strategy doesn't trade earnings directly — but post-earnings drift (PEAD) is on our V4 sleeve roadmap (`docs/V4_PARADIGM_SHIFT.md`).
+
+- **💵 Ex-div**: ex-dividend date. Stock drops by ~the dividend amount that morning. Affects total-return tracking. Not actionable for our strategy.
+
+**The single thing to watch:** which events have **>5% portfolio exposure**. Those are the events that move your book by >0.5% on a 10% earnings surprise. Anything <2% exposure isn't worth your attention.
+
+**Caveat:** earnings dates from yfinance can be stale or wrong by a day. Confirm critical dates via the company's IR page before acting.
+""")
+
+
+# ============================================================
+# View: Regime overlay (with historical context + per-regime stats)
+# ============================================================
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_regime_history():
+    from trader.analytics import regime_history_summary
+    return regime_history_summary()
+
+
 def view_regime():
-    st.title("🌡️ Regime overlay")
-    st.caption("Live HMM + macro + GARCH composite. Disabled by default — "
-               "computed for observability, not applied to LIVE allocation.")
+    st.title("🌡️ Regime overlay — what market we're in")
+    st.caption("Three signals composed into one gross-exposure multiplier: "
+               "HMM (regime classification) × macro stress × GARCH vol forecast. "
+               "Currently DISABLED for LIVE; computed for observability.")
     if st.button("🔄 Recompute now"):
         st.cache_data.clear()
+        st.rerun()
+
     sig = _overlay_signal()
     if sig is None:
         st.error("could not compute overlay")
         return
+
+    # ---- HEADLINE: current regime + final multiplier ----
+    regime_label = (sig.hmm_regime or "?").upper()
+    regime_emoji = {"BULL": "🟢", "BEAR": "🔴", "TRANSITION": "🟡"}.get(regime_label, "⚪")
+
+    if regime_label == "BEAR":
+        st.error(f"## {regime_emoji} **{regime_label}** regime")
+    elif regime_label == "TRANSITION":
+        st.warning(f"## {regime_emoji} **{regime_label}** regime")
+    else:
+        st.success(f"## {regime_emoji} **{regime_label}** regime")
+
+    # ---- 4-column overlay decomposition ----
     c = st.columns(4)
-    c[0].metric("HMM regime", sig.hmm_regime, f"posterior {sig.hmm_posterior:.2%}")
-    c[0].caption(f"sub-mult: {sig.hmm_mult:.2f}")
+    c[0].metric("HMM regime", regime_label,
+                f"posterior {sig.hmm_posterior*100:.1f}%")
+    c[0].caption(f"sub-mult: **{sig.hmm_mult:.2f}×**")
     macro_state = ("inv+wide" if sig.macro_curve_inverted and sig.macro_credit_widening
                    else "inv" if sig.macro_curve_inverted
                    else "wide" if sig.macro_credit_widening else "ok")
-    c[1].metric("Macro", macro_state)
-    c[1].caption(f"sub-mult: {sig.macro_mult:.2f}")
-    c[2].metric("GARCH vol fc",
-                f"{sig.garch_vol_forecast_annual*100:.1f}%" if sig.garch_vol_forecast_annual else "n/a",
-                "target 15%")
-    c[2].caption(f"sub-mult: {sig.garch_mult:.2f}")
-    c[3].metric("Final mult", f"{sig.final_mult:.2f}",
-                "DISABLED" if not sig.enabled else "ENABLED")
-    st.code(sig.rationale, language=None)
-    with st.expander("Raw signal"):
+    c[1].metric("Macro stress", macro_state.upper())
+    c[1].caption(f"sub-mult: **{sig.macro_mult:.2f}×**")
+    vol_str = f"{sig.garch_vol_forecast_annual*100:.1f}%" if sig.garch_vol_forecast_annual else "n/a"
+    c[2].metric("GARCH vol forecast", vol_str, "target 15%")
+    c[2].caption(f"sub-mult: **{sig.garch_mult:.2f}×**")
+    c[3].metric("Final multiplier", f"{sig.final_mult:.2f}×",
+                "🟢 ENABLED" if sig.enabled else "⚪ DISABLED")
+    c[3].caption("=hmm × macro × garch, clamped [0,1.2]")
+
+    if not sig.enabled:
+        st.info("ℹ️ The overlay is **DISABLED**. Set `REGIME_OVERLAY_ENABLED=true` "
+                "in the dashboard env to apply it to LIVE allocation. Right now "
+                f"it would scale your gross exposure to **{sig.final_mult*100:.0f}%** of normal.")
+
+    st.divider()
+
+    # ---- HISTORICAL REGIME STATS ----
+    st.subheader("📊 What happens in each regime (PIT-validated history)")
+    st.caption("Per-regime backtest stats from our 5-regime stress test on the PIT universe. "
+               "These are honest, deflated numbers — not in-sample fantasy.")
+    history = _cached_regime_history()
+    per_regime = history.get("per_regime", {})
+
+    # Highlight the current regime's stats
+    regimes_order = ["bull", "transition", "bear"]
+    cols = st.columns(len(regimes_order))
+    for i, key in enumerate(regimes_order):
+        d = per_regime.get(key, {})
+        is_current = (key == sig.hmm_regime)
+        emoji = {"bull": "🟢", "transition": "🟡", "bear": "🔴"}[key]
+        with cols[i]:
+            label = f"**{emoji} {key.upper()}**" + (" ← you are here" if is_current else "")
+            st.markdown(label)
+            st.metric("Sharpe (PIT)", f"{d.get('sharpe_pit', 0):.2f}")
+            st.metric("CAGR (PIT)", f"{d.get('cagr_pit', 0)*100:+.1f}%")
+            st.metric("Worst DD", f"{d.get('max_dd_pit', 0)*100:+.1f}%")
+            st.caption(f"~{d.get('frequency_pct', 0)}% of historical days")
+            st.caption(f"_{d.get('comment', '')}_")
+
+    st.divider()
+
+    # ---- WHAT THE OVERLAY WOULD DO ----
+    st.subheader("🧭 What the overlay would do if enabled")
+    if sig.hmm_regime == "bull":
+        st.success("In BULL: gross exposure would be scaled to ~115%× (slight boost). "
+                   "Strategy is in its element — momentum is persistent in trending bulls.")
+    elif sig.hmm_regime == "transition":
+        st.warning("In TRANSITION: gross exposure would be scaled to ~85%× (mild cut). "
+                   "Choppy regime — momentum signal is noisier; pre-emptive size reduction.")
+    elif sig.hmm_regime == "bear":
+        st.error("In BEAR: gross exposure would be scaled to ~30%× (significant cut, NOT zero). "
+                 "Per v3.5 lesson: full-cash exits miss V-shape recoveries. "
+                 "30% retention preserves re-entry optionality.")
+    if sig.macro_curve_inverted:
+        st.warning("⚠️ Yield curve inverted ≥60d → additional 0.85× macro multiplier")
+    if sig.macro_credit_widening:
+        st.warning("⚠️ HYG/LQD ratio dropped >2σ in 20d (credit stress) → additional 0.70× macro multiplier")
+    if sig.garch_vol_forecast_annual and sig.garch_vol_forecast_annual > 0.20:
+        st.warning(f"⚠️ GARCH vol forecast {sig.garch_vol_forecast_annual*100:.1f}% (>20%) → vol-target multiplier <1")
+
+    # ---- RAW DEBUG ----
+    with st.expander("Raw signal (debug)"):
         st.json({
             "enabled": sig.enabled, "final_mult": sig.final_mult,
             "hmm": {"mult": sig.hmm_mult, "regime": sig.hmm_regime,
@@ -1293,28 +1724,152 @@ def view_regime():
             "garch": {"mult": sig.garch_mult,
                       "vol_forecast_annual": sig.garch_vol_forecast_annual,
                       "error": sig.garch_error},
+            "hmm_cache_age_days": history.get("days_in_regime"),
         })
 
+    # ---- HOW TO READ ----
+    with st.expander("📚 How to read this — what each signal means"):
+        st.markdown("""
+**HMM (Hidden Markov Model)**: classifies the SPY return distribution into 3 latent states. Trained on 504 days of history (~2 years). Each state has a typical mean return and vol; the current state is inferred via Bayesian posterior.
+- **Bull** (~55% historical frequency): high mean, moderate vol. Momentum strategy thrives.
+- **Transition** (~30%): low mean, elevated vol. Choppy. Strategy still works but Sharpe drops to ~0.7.
+- **Bear** (~15%): negative mean, high vol. Strategy LOSES. Overlay would cut size 70%.
+
+**Macro stress**: two leading indicators of equity stress:
+- **Yield curve inversion** (10y − 2y < 0 for 60+ days): every US recession since 1955 was preceded by this. Lead time 6-18 months.
+- **Credit spread widening** (HYG/LQD ratio drops >2σ): faster-moving signal; HY spreads typically widen 1-2 weeks before SPY rolls over.
+
+**GARCH vol forecast**: forward-looking 1-day vol estimate. Vol clustering means high-vol days predict more high-vol days. Vol-target sizing scales gross exposure inversely with forecast vol — so if vol doubles, position sizes halve.
+
+**Final multiplier**: `hmm × macro × garch`, clamped to [0, 1.2]. Applied to gross exposure when LIVE. Currently DISABLED — you'd flip this on by setting `REGIME_OVERLAY_ENABLED=true` after testing in shadow mode.
+
+**The decision this informs:** "Should I be running full size right now, or pre-emptively cut?" The overlay is the rule-based answer. If multiple signals fire bearish simultaneously, the overlay tells you to cut without you having to second-guess.
+""")
+
 
 # ============================================================
-# View: Intraday risk
+# View: Intraday risk (VaR + concentration + stress scenarios)
 # ============================================================
+@st.cache_data(ttl=300, show_spinner="⚡ Computing risk metrics...")
+def _cached_risk_metrics():
+    """Combine PerformanceMetrics' beta/vol with current positions for risk."""
+    from trader.analytics import compute_performance, compute_risk
+    perf = compute_performance(window_days=90)
+    live = _live_portfolio()
+    if not live or not live.positions or not live.equity:
+        return None, None
+    risk = compute_risk(
+        positions=live.positions, equity=live.equity,
+        beta_vs_spy=perf.beta_vs_spy, vol_annual=perf.vol_annual,
+    )
+    return risk, live
+
+
 def view_intraday():
-    st.title("⚡ Intraday risk")
-    st.caption("Defensive intraday DD monitor. Updated every 30 min during market hours.")
+    st.title("⚡ Intraday risk — what's the worst that could happen today?")
+    st.caption("Forward-looking risk metrics: VaR, CVaR, position concentration, "
+               "stress scenarios. Plus the intraday-watch log of monitor events.")
+
+    risk, live = _cached_risk_metrics()
+
+    # ---- HEADLINE: TODAY'S RISK ----
+    if risk is None or live is None:
+        st.warning("Cannot compute risk — broker fetch failed or no positions.")
+    else:
+        eq = live.equity or 0
+        st.subheader("Today's risk envelope")
+        c = st.columns(4)
+        c[0].metric("Equity at risk", f"${eq:,.0f}")
+        c[1].metric("1-day VaR (95%)",
+                    f"${risk.var_95_parametric:,.0f}" if risk.var_95_parametric else "n/a",
+                    f"{risk.var_95_parametric/eq*100:.2f}% of book" if (risk.var_95_parametric and eq) else None)
+        c[2].metric("1-day VaR (99%)",
+                    f"${risk.var_99_parametric:,.0f}" if risk.var_99_parametric else "n/a",
+                    f"{risk.var_99_parametric/eq*100:.2f}% of book" if (risk.var_99_parametric and eq) else None)
+        c[3].metric("Expected shortfall (95%)",
+                    f"${risk.cvar_95:,.0f}" if risk.cvar_95 else "n/a",
+                    "avg loss in worst 5%")
+
+        st.divider()
+
+        # ---- CONCENTRATION ----
+        st.subheader("Concentration")
+        c = st.columns(4)
+        c[0].metric("HHI", f"{risk.concentration_hhi:.4f}" if risk.concentration_hhi else "n/a",
+                    "0=infinite diversification, 1=single name")
+        c[1].metric("Top-5 weight",
+                    f"{risk.top_5_weight*100:.1f}%" if risk.top_5_weight else "n/a",
+                    "5 biggest positions combined")
+        c[2].metric("Largest position",
+                    f"{risk.largest_position_symbol} {risk.largest_position_pct*100:.1f}%" if risk.largest_position_symbol else "n/a",
+                    "single-name limit: 16%")
+        c[3].metric("Largest sector",
+                    f"{risk.sector_max_name} {risk.sector_max_weight*100:.1f}%" if risk.sector_max_name else "n/a",
+                    "sector limit: 35%")
+
+        # Concentration warnings
+        if risk.largest_position_pct and risk.largest_position_pct > 0.16:
+            st.error(f"⚠️ {risk.largest_position_symbol} is {risk.largest_position_pct*100:.1f}% — over 16% single-name cap")
+        if risk.sector_max_weight and risk.sector_max_weight > 0.35:
+            st.error(f"⚠️ {risk.sector_max_name} sector is {risk.sector_max_weight*100:.1f}% — over 35% cap")
+        if risk.top_5_weight and risk.top_5_weight > 0.60:
+            st.warning(f"⚠️ Top-5 names = {risk.top_5_weight*100:.1f}% of book — high concentration")
+
+        st.divider()
+
+        # ---- STRESS SCENARIOS ----
+        st.subheader("Stress scenarios (assumes portfolio beta-scales with SPY)")
+        c = st.columns(3)
+        c[0].metric("If SPY −5% tomorrow",
+                    f"${risk.stress_spy_minus_5:,.0f}" if risk.stress_spy_minus_5 else "n/a",
+                    f"{risk.stress_spy_minus_5/eq*100:.2f}% of book" if (risk.stress_spy_minus_5 and eq) else None)
+        c[1].metric("If SPY −10%",
+                    f"${risk.stress_spy_minus_10:,.0f}" if risk.stress_spy_minus_10 else "n/a",
+                    f"{risk.stress_spy_minus_10/eq*100:.2f}% of book" if (risk.stress_spy_minus_10 and eq) else None)
+        c[2].metric("If SPY −20% (crisis)",
+                    f"${risk.stress_spy_minus_20:,.0f}" if risk.stress_spy_minus_20 else "n/a",
+                    f"{risk.stress_spy_minus_20/eq*100:.2f}% of book" if (risk.stress_spy_minus_20 and eq) else None)
+
+    st.divider()
+
+    # ---- INTRADAY MONITOR LOG ----
+    st.subheader("Intraday monitor log (every 30 min during market hours)")
     intraday = read_state_file(str(ROOT / "data" / "intraday_risk_log.json"))
     if isinstance(intraday, list) and intraday:
-        df = pd.DataFrame(intraday[-200:]).iloc[::-1].reset_index(drop=True)
-        st.dataframe(df, use_container_width=True, hide_index=True)
         recent = [e for e in intraday[-50:] if e.get("equity_now")]
         if recent:
             actions = pd.Series([e.get("action", "ok") for e in recent]).value_counts()
-            st.markdown("**Action breakdown (last 50 checks)**")
-            st.dataframe(actions.reset_index().rename(
-                columns={"index": "action", 0: "count"}),
-                use_container_width=True, hide_index=True)
+            ac = st.columns(min(len(actions), 4))
+            for i, (action, count) in enumerate(actions.items()):
+                ac[i % len(ac)].metric(action, int(count))
+        df = pd.DataFrame(intraday[-200:]).iloc[::-1].reset_index(drop=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
     else:
-        st.caption("_no intraday log yet_")
+        st.caption("_no intraday log yet — workflow runs every 30 min during market hours_")
+
+    # ---- HOW TO READ ----
+    with st.expander("📚 How to read this — interpreting risk numbers"):
+        st.markdown("""
+**VaR (Value at Risk)**: "with 95% confidence, you won't lose more than $X tomorrow." Parametric — assumes returns are normally distributed (which they aren't, but it's a useful first approximation). Computed as: equity × daily_vol × 1.645 (for 95%).
+
+**CVaR / Expected Shortfall**: "if you DO have a 95th-percentile bad day, the average loss is $Y." Always larger than VaR. This is the metric professional risk managers actually use because it captures tail behavior better.
+
+**HHI (Herfindahl index)**: sum of squared weights. 1.0 = single name, ~0.067 = 15 equally-weighted names. Below 0.10 = well-diversified, above 0.20 = concentrated. Our cap-heavy momentum book typically runs ~0.08-0.12.
+
+**Stress scenarios**: linear beta-scaling. If SPY −10% and your beta is 1.2, you'd lose ~12% of book. **This is a floor estimate** — in real crashes, beta tends to spike (correlations go to 1) and momentum names get hit harder.
+
+**The decisions this informs:**
+- **VaR/CVaR**: am I sized for what I can stomach? If 95% VaR > 5% of equity, you might be overlevered.
+- **Concentration**: is one name capable of nuking my book? If largest position × max-realistic-loss > 5% of equity, you have name-specific risk.
+- **Stress scenarios**: in a real correction, what's my expected drawdown? Compare to your behavioral pre-commit threshold (usually 25-33%).
+
+**The escalation ladder (already wired into v3.46 risk_manager):**
+- Day P&L < −6% → **48h FREEZE** (no new positions)
+- Equity vs deployment anchor < −25% → **30-day FREEZE**
+- Equity vs deployment anchor < −33% → **LIQUIDATION GATE** (requires written post-mortem to clear)
+
+This view shows where we are relative to those thresholds.
+""")
 
 
 # ============================================================
