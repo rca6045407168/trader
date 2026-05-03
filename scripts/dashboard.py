@@ -370,31 +370,51 @@ with st.sidebar:
         st.rerun()
     st.write("")
 
-    # v3.56.0: chat threads list (newest first, max 20 visible)
+    # v3.56.0: chat threads list (newest first, max 50 visible)
     # v3.56.2: cached at 30s so the sidebar doesn't disk-scan on every rerun
+    # v3.56.5: ALWAYS show the section (even when empty) — Claude-style.
+    #          Empty state explains how to start the first chat.
     @st.cache_data(ttl=30, show_spinner=False)
     def _cached_thread_list():
         try:
             from trader.copilot_storage import list_threads
             return [(t.id, t.title, t.created_at, t.updated_at)
-                    for t in list_threads(limit=20)]
+                    for t in list_threads(limit=50)]
         except Exception:
             return []
     try:
         threads_data = _cached_thread_list()
-        # Reconstruct lightweight thread objects (we only need id/title for display)
         from collections import namedtuple
         _T = namedtuple("_T", ["id", "title", "created_at", "updated_at"])
         threads = [_T(*x) for x in threads_data]
-        if threads:
-            st.caption("— CHATS —")
-            for t in threads:
-                is_active_thread = (st.session_state.get("current_thread_id") == t.id)
-                btype = "primary" if is_active_thread else "secondary"
-                # Truncate title for sidebar width
-                disp_title = t.title if len(t.title) <= 32 else t.title[:30] + "…"
-                if st.button(disp_title, key=f"thread_{t.id}",
-                             use_container_width=True, type=btype):
+        # ALWAYS show the section header — even when empty
+        st.caption(f"💬 RECENTS ({len(threads)})")
+        if not threads:
+            st.caption("_no chats yet — type below to start_")
+        for t in threads:
+            is_active_thread = (st.session_state.get("current_thread_id") == t.id)
+            btype = "primary" if is_active_thread else "secondary"
+            # Format relative time
+            try:
+                from datetime import datetime
+                ts = datetime.fromisoformat(t.updated_at)
+                age_sec = (datetime.utcnow() - ts).total_seconds()
+                if age_sec < 60:
+                    age = f"{int(age_sec)}s"
+                elif age_sec < 3600:
+                    age = f"{int(age_sec // 60)}m"
+                elif age_sec < 86400:
+                    age = f"{int(age_sec // 3600)}h"
+                else:
+                    age = f"{int(age_sec // 86400)}d"
+            except Exception:
+                age = ""
+            # Truncate title for sidebar width
+            disp_title = t.title if len(t.title) <= 28 else t.title[:26] + "…"
+            label = f"{disp_title}"
+            if st.button(label, key=f"thread_{t.id}",
+                         use_container_width=True, type=btype,
+                         help=f"{t.title}  ·  {age} ago"):
                     # Save current first if dirty
                     try:
                         from trader.copilot_storage import save_thread, ChatThread
@@ -773,6 +793,32 @@ def view_chat():
         st.session_state.copilot_messages.append({
             "role": "user", "display_text": user_input, "content": user_input,
         })
+        # v3.56.5: persist the thread IMMEDIATELY on first user message so
+        # even if the assistant API errors, the chat appears in the recents
+        # list and the user can resume from another session.
+        try:
+            from trader.copilot_storage import save_thread, ChatThread, new_thread as _new
+            cur_id = st.session_state.get("current_thread_id")
+            if not cur_id:
+                _t = _new()
+                cur_id = _t.id
+                st.session_state.current_thread_id = _t.id
+                st.session_state.current_thread_created_at = _t.created_at
+            cur = ChatThread(
+                id=cur_id,
+                title=st.session_state.get("current_thread_title", "(new chat)"),
+                created_at=st.session_state.get("current_thread_created_at", ""),
+                updated_at="",
+                messages=st.session_state.copilot_messages,
+            )
+            save_thread(cur)
+            st.session_state.current_thread_title = cur.title
+            try:
+                _cached_thread_list.clear()
+            except Exception:
+                pass
+        except Exception:
+            pass
         with chat_box:
             with st.chat_message("user"):
                 st.markdown(user_input)
