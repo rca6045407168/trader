@@ -522,8 +522,12 @@ with st.sidebar:
         ("🌡️ Regime overlay", "regime"),
         ("⚡ Intraday risk", "intraday"),
         ("— RESEARCH —", None),
+        ("👁️ Watchlist", "watchlist"),
         ("🗂️ Grid", "grid"),
         ("🔎 Screener", "screener"),
+        ("👁️ Shadow signals", "shadow_signals"),
+        ("⚡ Slippage", "slippage"),
+        ("🔔 Alerts", "alerts"),
         ("👥 Shadow variants", "shadows"),
         ("🔍 Sleeve health", "sleeve_health"),
         ("📜 Postmortems", "postmortems"),
@@ -1184,6 +1188,24 @@ def view_live_positions():
             "total_%": f"{p.unrealized_pl_pct*100:+.2f}%" if p.unrealized_pl_pct is not None else "",
         } for p in live.positions]
         st.dataframe(rows, use_container_width=True, hide_index=True)
+
+        # v3.58.2 — per-symbol drill-down + linked-symbol shortcut
+        st.caption("🔍 Drill into a symbol:")
+        sym_pick = st.selectbox(
+            "Symbol",
+            options=[""] + [p.symbol for p in live.positions],
+            label_visibility="collapsed",
+            key="live_drill_pick",
+        )
+        bcols = st.columns(2)
+        if bcols[0].button("🔍 Open detail", use_container_width=True,
+                           disabled=not sym_pick, key="live_drill_open"):
+            st.session_state.symbol_drill_down = sym_pick
+            st.rerun()
+        if bcols[1].button("🔗 Set as linked symbol", use_container_width=True,
+                           disabled=not sym_pick, key="live_drill_link"):
+            st.session_state.linked_symbol = sym_pick
+            st.rerun()
     else:
         st.info("_no open positions_")
 
@@ -2909,6 +2931,676 @@ def view_screener():
 
 
 # ============================================================
+# v3.58.2 — Pro-trader cockpit additions
+# ============================================================
+
+# ----- #4 Alert audit log ---------------------------------------------------
+def view_alerts():
+    st.title("🔔 Alerts — every state change in chronological order")
+    st.caption(
+        "Single feed of every meaningful event the system has emitted: "
+        "freezes, breaker checks, kill-switch trips, earnings trims, "
+        "halts, slippage outliers. Replaces hunting through stdout + Slack."
+    )
+
+    # Pull from the journal: runs (status), orders (errors), decisions
+    # (final), postmortems, plus the v3.58 slippage_log we just started
+    # writing.
+    rows = []
+    db = str(DB_PATH)
+
+    # 1) Run-level events
+    try:
+        runs = query(db,
+                     "SELECT run_id, started_at, completed_at, status, notes "
+                     "FROM runs ORDER BY started_at DESC LIMIT 200")
+        for _, r in runs.iterrows():
+            sev = "info" if r.get("status") == "ok" else "warn"
+            rows.append({
+                "ts": r.get("started_at"), "type": "run", "severity": sev,
+                "summary": f"run {r.get('run_id', '?')[:8]} → {r.get('status')}",
+                "detail": str(r.get("notes") or "")[:300],
+            })
+    except Exception:
+        pass
+
+    # 2) Order errors / status anomalies
+    try:
+        ords = query(db,
+                     "SELECT ts, ticker, side, notional, status, error "
+                     "FROM orders WHERE status != 'submitted' "
+                     "ORDER BY ts DESC LIMIT 200")
+        for _, r in ords.iterrows():
+            rows.append({
+                "ts": r.get("ts"), "type": "order", "severity": "warn",
+                "summary": f"{r.get('side')} {r.get('ticker')} → {r.get('status')}",
+                "detail": str(r.get("error") or "")[:300],
+            })
+    except Exception:
+        pass
+
+    # 3) Postmortems
+    try:
+        pms = query(db,
+                    "SELECT date, pnl_pct, summary, proposed_tweak "
+                    "FROM postmortems ORDER BY date DESC LIMIT 50")
+        for _, r in pms.iterrows():
+            sev = "warn" if (r.get("pnl_pct") or 0) < -0.01 else "info"
+            rows.append({
+                "ts": r.get("date"), "type": "postmortem", "severity": sev,
+                "summary": f"PM {r.get('date')}  P&L {(r.get('pnl_pct') or 0)*100:+.2f}%",
+                "detail": str(r.get("summary") or "")[:300],
+            })
+    except Exception:
+        pass
+
+    # 4) v3.58 slippage outliers (>30bps)
+    try:
+        sl = query(db,
+                   "SELECT ts, symbol, side, slippage_bps, notional, status "
+                   "FROM slippage_log WHERE slippage_bps IS NOT NULL "
+                   "AND ABS(slippage_bps) > 30 ORDER BY ts DESC LIMIT 100")
+        for _, r in sl.iterrows():
+            rows.append({
+                "ts": r.get("ts"), "type": "slippage", "severity": "warn",
+                "summary": (f"slippage outlier {r.get('symbol')} {r.get('side')} "
+                            f"{r.get('slippage_bps'):.1f}bps"),
+                "detail": f"notional ${r.get('notional', 0):,.0f}",
+            })
+    except Exception:
+        pass
+
+    # 5) Freeze state file (read direct — not in journal)
+    try:
+        freeze = _check_freeze_state()
+        if freeze:
+            for k, v in freeze.items():
+                rows.append({
+                    "ts": v if isinstance(v, str) else "",
+                    "type": "freeze", "severity": "error",
+                    "summary": f"FREEZE active: {k}",
+                    "detail": f"until: {v}",
+                })
+    except Exception:
+        pass
+
+    if not rows:
+        st.info("_no events yet — system is quiet_")
+        return
+
+    rows.sort(key=lambda r: str(r.get("ts") or ""), reverse=True)
+
+    # Filters
+    fcols = st.columns([1, 1, 2])
+    sev_pick = fcols[0].selectbox("Severity",
+                                   ["all", "error", "warn", "info"], index=0)
+    type_opts = ["all"] + sorted({r["type"] for r in rows})
+    type_pick = fcols[1].selectbox("Type", type_opts, index=0)
+    n = fcols[2].slider("Show last N", 10, 500, 100, step=10)
+
+    filtered = [r for r in rows
+                if (sev_pick == "all" or r["severity"] == sev_pick)
+                and (type_pick == "all" or r["type"] == type_pick)][:n]
+
+    # Counters
+    cc = st.columns(4)
+    cc[0].metric("Total events", len(rows))
+    cc[1].metric("Errors", sum(1 for r in rows if r["severity"] == "error"))
+    cc[2].metric("Warnings", sum(1 for r in rows if r["severity"] == "warn"))
+    cc[3].metric("Showing", len(filtered))
+
+    SEV_EMOJI = {"error": "🔴", "warn": "🟡", "info": "🟢"}
+    for r in filtered:
+        emoji = SEV_EMOJI.get(r["severity"], "⚪")
+        with st.expander(f"{emoji} **{r['ts']}** · `{r['type']}` · {r['summary']}",
+                         expanded=False):
+            st.caption(r.get("detail") or "_no detail_")
+
+
+def _check_freeze_state() -> dict:
+    """Read the freeze state file used by risk_manager."""
+    try:
+        from trader.risk_manager import _load_freeze_state
+        return _load_freeze_state() or {}
+    except Exception:
+        return {}
+
+
+# ----- #2 Slippage execution dashboard -------------------------------------
+def view_slippage():
+    st.title("⚡ Slippage — execution quality dashboard")
+    st.caption(
+        "Every order writes a row to `slippage_log` (decision_mid + notional). "
+        "Once reconcile fills in fill_price, slippage_bps is computed. "
+        "30d rolling avg + per-symbol breakdown + worst fills surface here."
+    )
+
+    db = str(DB_PATH)
+    try:
+        df = query(db,
+                   "SELECT ts, symbol, side, decision_mid, notional, "
+                   "fill_price, slippage_bps, status "
+                   "FROM slippage_log ORDER BY ts DESC LIMIT 1000")
+    except Exception as e:
+        st.warning(
+            f"slippage_log table not yet populated. Will fill once you've "
+            f"placed your first order under v3.58.1+. ({e})"
+        )
+        return
+
+    if df.empty:
+        st.info("_no slippage rows yet — first order under v3.58.1 will start the log_")
+        return
+
+    # Summary metrics
+    closed = df.dropna(subset=["slippage_bps"])
+    cc = st.columns(4)
+    cc[0].metric("Total fills tracked", len(closed))
+    cc[1].metric(
+        "30d avg slippage",
+        f"{closed.head(60)['slippage_bps'].mean():.1f} bps" if len(closed) else "n/a",
+        "lower = better fills",
+    )
+    cc[2].metric(
+        "Worst fill (30d)",
+        f"{closed.head(60)['slippage_bps'].max():.1f} bps" if len(closed) else "n/a",
+    )
+    cc[3].metric(
+        "Total notional traded",
+        f"${df['notional'].sum():,.0f}",
+    )
+
+    if not closed.empty:
+        # Trend chart
+        try:
+            import plotly.graph_objects as go
+            closed_chart = closed.copy()
+            closed_chart["ts"] = pd.to_datetime(closed_chart["ts"])
+            closed_chart = closed_chart.sort_values("ts")
+            closed_chart["rolling_30"] = closed_chart["slippage_bps"].rolling(30, min_periods=5).mean()
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=closed_chart["ts"], y=closed_chart["slippage_bps"],
+                mode="markers", name="per-fill bps",
+                marker=dict(size=5, opacity=0.5),
+            ))
+            fig.add_trace(go.Scatter(
+                x=closed_chart["ts"], y=closed_chart["rolling_30"],
+                mode="lines", name="rolling 30 fills",
+                line=dict(width=2),
+            ))
+            fig.update_layout(
+                height=320, hovermode="x unified",
+                yaxis=dict(title="slippage (bps)"),
+                xaxis=dict(title=""), showlegend=True,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception:
+            pass
+
+    # Per-symbol breakdown
+    st.subheader("Per-symbol slippage")
+    if not closed.empty:
+        per_sym = closed.groupby("symbol").agg(
+            n_fills=("symbol", "count"),
+            avg_bps=("slippage_bps", "mean"),
+            worst_bps=("slippage_bps", "max"),
+            total_notional=("notional", "sum"),
+        ).reset_index().sort_values("avg_bps", ascending=False)
+        st.dataframe(per_sym, use_container_width=True, hide_index=True)
+    else:
+        st.caption("_awaiting fills with reconciled prices_")
+
+    # Recent fills
+    st.subheader("Recent fills (raw)")
+    st.dataframe(df.head(50), use_container_width=True, hide_index=True)
+
+
+# ----- #1 Shadow signal panel ----------------------------------------------
+def view_shadow_signals():
+    st.title("👁️ Shadow signals — what the SHADOW modules say RIGHT NOW")
+    st.caption(
+        "For every v3.58 module currently in SHADOW, this view runs it "
+        "against your LIVE state and shows what it WOULD do. Read the "
+        "outputs, decide whether to promote any to LIVE."
+    )
+
+    try:
+        from trader.v358_world_class import (
+            TrailingStop, SectorNeutralizer, RiskParitySizer, NetCostModel,
+            EarningsRule, DrawdownCircuitBreaker, TaxLotManager, TwapSlicer,
+            LowVolSleeve, SlippageTracker,
+        )
+        from trader.copilot import dispatch_tool
+    except Exception as e:
+        st.error(f"could not import v358 modules: {e}")
+        return
+
+    # Live portfolio (the input every shadow needs)
+    with st.spinner("Loading live state..."):
+        ports = dispatch_tool("get_portfolio_status", {})
+    if ports.get("error"):
+        st.error(f"could not load portfolio: {ports['error']}")
+        return
+    positions = ports.get("positions", []) or []
+
+    # ---- TrailingStop ----
+    st.subheader("📉 TrailingStop — would any position fire today?")
+    ts_obj = TrailingStop()
+    st.caption(f"_status: **{ts_obj.status()}** · threshold {ts_obj.pct*100:.0f}% from peak close_")
+    if not positions:
+        st.caption("_no positions_")
+    else:
+        # Approximation: use unrealized_pl_pct as a proxy for "from entry."
+        # The pure peak-since-entry needs intraday history we don't track yet.
+        ts_rows = []
+        for p in positions:
+            unr = (p.get("unrealized_pl_pct") or 0) / 100  # came in as %
+            day = (p.get("day_pl_pct") or 0) / 100
+            would_fire = unr <= -ts_obj.pct
+            ts_rows.append({
+                "symbol": p.get("symbol"),
+                "unrealized_%": f"{unr*100:+.1f}%",
+                "day_%": f"{day*100:+.2f}%",
+                "would_fire": "🔴 YES" if would_fire else "🟢 no",
+            })
+        st.dataframe(ts_rows, use_container_width=True, hide_index=True)
+        n_fire = sum(1 for r in ts_rows if "YES" in r["would_fire"])
+        if n_fire:
+            st.warning(f"**{n_fire} positions** would trip the trailing stop if it were LIVE.")
+        else:
+            st.success("No positions are currently in the danger zone.")
+
+    st.divider()
+
+    # ---- SectorNeutralizer ----
+    st.subheader("🏭 SectorNeutralizer — current sector concentration vs cap")
+    sn = SectorNeutralizer()
+    st.caption(f"_status: **{sn.status()}** · cap {sn.max_sector_pct*100:.0f}% per sector_")
+    if positions:
+        sec_totals: dict[str, float] = {}
+        for p in positions:
+            sec = p.get("sector") or "Unknown"
+            sec_totals[sec] = sec_totals.get(sec, 0) + (p.get("weight_pct") or 0)
+        sec_rows = sorted(
+            [{"sector": s, "weight_%": f"{w:.1f}%",
+              "over_cap": "🔴 YES" if w / 100 > sn.max_sector_pct else "🟢 no"}
+             for s, w in sec_totals.items()],
+            key=lambda r: float(r["weight_%"].rstrip("%")), reverse=True,
+        )
+        st.dataframe(sec_rows, use_container_width=True, hide_index=True)
+        over = [r for r in sec_rows if "YES" in r["over_cap"]]
+        if over:
+            st.warning(f"**{len(over)} sector(s)** over the {sn.max_sector_pct*100:.0f}% cap. "
+                       "Promoting SectorNeutralizer to LIVE would redistribute.")
+
+    st.divider()
+
+    # ---- DrawdownCircuitBreaker ----
+    st.subheader("🚨 DrawdownCircuitBreaker — peak-to-current state")
+    cb = DrawdownCircuitBreaker()
+    st.caption(f"_status: **{cb.status()}** · threshold {cb.pct_from_peak*100:.0f}% from all-time peak_")
+    try:
+        snaps = query(str(DB_PATH),
+                      "SELECT date, equity FROM daily_snapshot "
+                      "ORDER BY date DESC LIMIT 10000")
+        if not snaps.empty and ports.get("equity"):
+            peak = float(snaps["equity"].max())
+            cur = float(ports["equity"])
+            dd = (cur / peak - 1) * 100 if peak > 0 else 0
+            tripped = cb.is_tripped(peak_equity=peak, current_equity=cur)
+            cdc = st.columns(3)
+            cdc[0].metric("All-time peak equity", f"${peak:,.0f}")
+            cdc[1].metric("Current equity", f"${cur:,.0f}", f"{dd:+.2f}% from peak")
+            cdc[2].metric("Status", "🔴 TRIPPED" if tripped else "🟢 ok")
+            if tripped and cb.status() == "LIVE":
+                st.error("Circuit breaker is **LIVE and TRIPPED** — risk_manager is halting new orders.")
+        else:
+            st.caption("_no snapshot history yet_")
+    except Exception as e:
+        st.caption(f"_breaker check failed: {e}_")
+
+    st.divider()
+
+    # ---- EarningsRule ----
+    st.subheader("📅 EarningsRule — would any position trim today?")
+    er = EarningsRule()
+    st.caption(f"_status: **{er.status()}** · trim T-{er.days_before} day to "
+               f"{er.trim_to_pct_of_target*100:.0f}% of target_")
+    try:
+        from trader.events_calendar import compute_upcoming_events
+        symbols = [p.get("symbol") for p in positions if p.get("symbol")]
+        events = compute_upcoming_events(symbols, days_ahead=er.days_before + 1) if symbols else []
+        from datetime import datetime as _dt
+        today = _dt.utcnow()
+        rows_er = []
+        for ev in events:
+            if ev.event_type == "earnings" and ev.symbol:
+                edt = _dt.combine(ev.date, _dt.min.time())
+                rows_er.append({
+                    "symbol": ev.symbol,
+                    "earnings_date": ev.date.isoformat(),
+                    "days_until": ev.days_until,
+                    "would_trim": "🟡 YES" if er.needs_trim(today, edt) else "🟢 no",
+                })
+        if rows_er:
+            st.dataframe(rows_er, use_container_width=True, hide_index=True)
+            n_trim = sum(1 for r in rows_er if "YES" in r["would_trim"])
+            if n_trim:
+                st.warning(f"**{n_trim} positions** in the trim window. "
+                           f"On the next rebalance (LIVE), targets cut to "
+                           f"{er.trim_to_pct_of_target*100:.0f}%.")
+        else:
+            st.caption("_no earnings within window_")
+    except Exception as e:
+        st.caption(f"_earnings lookup failed: {e}_")
+
+    st.divider()
+
+    # ---- RiskParitySizer ----
+    st.subheader("⚖️ RiskParitySizer — equal-weight vs inverse-vol weights")
+    rp = RiskParitySizer()
+    st.caption(f"_status: **{rp.status()}**_")
+    if positions and len(positions) >= 2:
+        # Approx vol per name from day_pl_pct stdev — too thin for real vol;
+        # we use absolute day_pl_pct as a proxy, which is fine for a SHADOW
+        # comparison. Real wire-up would use 60d return history.
+        proxy_vols = {p.get("symbol"): max(abs(p.get("day_pl_pct") or 0) / 100, 0.005)
+                      for p in positions if p.get("symbol")}
+        rp_weights = rp.weights(proxy_vols)
+        eq_weight = 1.0 / len(positions)
+        rp_rows = []
+        for p in positions:
+            sym = p.get("symbol")
+            if not sym:
+                continue
+            cur_w = (p.get("weight_pct") or 0) / 100
+            target_w = rp_weights.get(sym, 0)
+            rp_rows.append({
+                "symbol": sym,
+                "current_weight": f"{cur_w*100:.1f}%",
+                "equal_weight": f"{eq_weight*100:.1f}%",
+                "risk_parity_weight": f"{target_w*100:.1f}%",
+                "delta_to_RP": f"{(target_w-cur_w)*100:+.1f}pp",
+            })
+        st.dataframe(rp_rows, use_container_width=True, hide_index=True)
+        st.caption("_proxy vol = abs(day_pl_pct); LIVE wiring would use 60d history._")
+
+    st.divider()
+
+    # ---- NetCostModel ----
+    st.subheader("💵 NetCostModel — gross vs after-cost")
+    nc = NetCostModel()
+    st.caption(f"_status: **{nc.status()}**_  ·  detailed view in **Performance** tab.")
+    drag_bps = nc.annual_drag_bps()
+    st.metric("Annual cost drag", f"{drag_bps:.1f} bps",
+              f"{nc.spread_bps:.1f}bp/side × {nc.monthly_turnover_pct*100:.0f}% × 12mo")
+
+    st.divider()
+
+    # ---- LowVolSleeve (preview only — needs price history to actually run) ----
+    st.subheader("📊 LowVolSleeve — second sleeve preview")
+    lv = LowVolSleeve()
+    st.caption(f"_status: **{lv.status()}** · would hold {lv.n_holdings} lowest-vol "
+               f"names over {lv.lookback_days} trading days._")
+    st.caption(
+        "💡 _Live preview requires a {lv}-day return panel on your full universe; "
+        "the dashboard doesn't keep that resident. Run via Manual Triggers → "
+        "'Compute LowVolSleeve shadow' to see today's pick set._".format(lv=lv.lookback_days)
+    )
+
+
+# ----- #5 Watchlist --------------------------------------------------------
+def view_watchlist():
+    st.title("👁️ Watchlist — what you're not holding but tracking")
+    st.caption(
+        "Bottom-15 momentum (your shorts if long/short went LIVE), next-strongest "
+        "5 outside your top-15, and any user-pinned symbols. The 30 names "
+        "around your book."
+    )
+
+    # Pinned symbols persist via session_state + a journal-side table
+    # (lightweight: keep in session for now, persist via copilot_memory if needed)
+    if "pinned_watch" not in st.session_state:
+        st.session_state.pinned_watch = []
+
+    # Add/remove pinned
+    cols = st.columns([3, 1])
+    add_sym = cols[0].text_input("📌 Pin a symbol",
+                                  placeholder="AAPL",
+                                  key="watch_pin_input").upper().strip()
+    if cols[1].button("Pin", use_container_width=True):
+        if add_sym and add_sym not in st.session_state.pinned_watch:
+            st.session_state.pinned_watch.append(add_sym)
+            st.rerun()
+
+    if st.session_state.pinned_watch:
+        st.caption("**Pinned:** " + " · ".join(
+            f"`{s}`" for s in st.session_state.pinned_watch))
+        if st.button(f"✖ Clear all pinned ({len(st.session_state.pinned_watch)})",
+                     key="watch_clear_pinned"):
+            st.session_state.pinned_watch = []
+            st.rerun()
+
+    st.divider()
+
+    # Try to compute live ranking. Heavy operation — cached 10 min.
+    with st.spinner("Ranking universe by momentum (cached 10 min)..."):
+        ranked = _cached_full_ranking()
+
+    if not ranked:
+        st.warning("Could not rank universe — broker or yfinance unavailable.")
+        return
+
+    # Live held set
+    try:
+        from trader.copilot import dispatch_tool
+        ports = dispatch_tool("get_portfolio_status", {})
+        held = {p.get("symbol") for p in (ports.get("positions") or []) if p.get("symbol")}
+    except Exception:
+        held = set()
+
+    # Identify cohorts
+    top15 = ranked[:15]
+    next5 = [r for r in ranked[15:30] if r["symbol"] not in held][:5]
+    bottom15 = ranked[-15:]
+    pinned = [r for r in ranked if r["symbol"] in st.session_state.pinned_watch]
+
+    st.subheader(f"⭐ Top-15 momentum (your LIVE picks — {sum(1 for r in top15 if r['symbol'] in held)}/{len(top15)} held)")
+    _render_watchlist_table(top15, held, st.session_state.pinned_watch)
+
+    st.subheader("🔜 Next-5 outside top-15")
+    if next5:
+        _render_watchlist_table(next5, held, st.session_state.pinned_watch)
+    else:
+        st.caption("_no candidates_")
+
+    st.subheader("⬇️ Bottom-15 momentum (would-be shorts)")
+    _render_watchlist_table(bottom15, held, st.session_state.pinned_watch)
+
+    if pinned:
+        st.subheader("📌 User-pinned")
+        _render_watchlist_table(pinned, held, st.session_state.pinned_watch)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_full_ranking() -> list[dict]:
+    """Rank the LIVE universe by momentum. Returns highest first."""
+    try:
+        from trader.universe import DEFAULT_LIQUID_50
+        from trader.strategy import rank_momentum
+        # Get a much larger top_n so we have a full ranked list
+        candidates = rank_momentum(DEFAULT_LIQUID_50, top_n=len(DEFAULT_LIQUID_50))
+        return [{"symbol": c.ticker,
+                 "score": c.score,
+                 "atr_pct": c.atr_pct,
+                 "rationale": c.rationale}
+                for c in candidates]
+    except Exception:
+        return []
+
+
+def _render_watchlist_table(rows: list[dict], held: set, pinned: list[str]):
+    if not rows:
+        return
+    out = []
+    for r in rows:
+        sym = r["symbol"]
+        marks = []
+        if sym in held: marks.append("✅")
+        if sym in pinned: marks.append("📌")
+        out.append({
+            "symbol": sym,
+            "marks": " ".join(marks),
+            "momentum_score": f"{r['score']:.4f}",
+            "ATR_%": f"{(r.get('atr_pct') or 0)*100:.2f}%",
+        })
+    st.dataframe(out, use_container_width=True, hide_index=True)
+
+
+# ----- #3 Per-symbol drill-down modal --------------------------------------
+@st.dialog("🔍 Symbol detail")
+def _symbol_detail_modal(symbol: str):
+    """Per-symbol drill-down: recent decisions, lots, events, slippage, news."""
+    st.subheader(f"📊 {symbol}")
+    db = str(DB_PATH)
+
+    # Live position info
+    try:
+        from trader.copilot import dispatch_tool
+        ports = dispatch_tool("get_portfolio_status", {})
+        pos = next((p for p in (ports.get("positions") or [])
+                    if str(p.get("symbol", "")).upper() == symbol.upper()), None)
+        if pos:
+            st.markdown(f"**LIVE position** · "
+                        f"weight {(pos.get('weight_pct') or 0):.1f}% · "
+                        f"day {(pos.get('day_pl_pct') or 0):+.2f}% · "
+                        f"unrealized {(pos.get('unrealized_pl_pct') or 0):+.2f}% · "
+                        f"sector {pos.get('sector', '?')}")
+        else:
+            st.caption("_not currently held_")
+    except Exception:
+        pass
+
+    tabs = st.tabs(["🎯 Decisions", "📦 Lots", "📅 Events",
+                    "⚡ Slippage", "📈 Chart"])
+
+    with tabs[0]:
+        try:
+            d = query(db,
+                      "SELECT ts, action, style, score, rationale_json, final "
+                      "FROM decisions WHERE ticker = ? "
+                      "ORDER BY ts DESC LIMIT 50",
+                      params=(symbol,))
+            if not d.empty:
+                st.dataframe(d, use_container_width=True, hide_index=True)
+            else:
+                st.caption("_no decisions in journal_")
+        except Exception as e:
+            st.caption(f"_query failed: {e}_")
+
+    with tabs[1]:
+        try:
+            lots_open = query(db,
+                              "SELECT id, sleeve, opened_at, qty, open_price "
+                              "FROM position_lots WHERE symbol = ? AND closed_at IS NULL",
+                              params=(symbol,))
+            lots_closed = query(db,
+                                "SELECT sleeve, opened_at, closed_at, qty, "
+                                "open_price, close_price, realized_pnl "
+                                "FROM position_lots WHERE symbol = ? AND closed_at IS NOT NULL "
+                                "ORDER BY closed_at DESC LIMIT 20",
+                                params=(symbol,))
+            st.markdown("**Open lots:**")
+            if not lots_open.empty:
+                st.dataframe(lots_open, use_container_width=True, hide_index=True)
+            else:
+                st.caption("_none_")
+            st.markdown("**Closed lots (last 20):**")
+            if not lots_closed.empty:
+                st.dataframe(lots_closed, use_container_width=True, hide_index=True)
+            else:
+                st.caption("_none_")
+        except Exception as e:
+            st.caption(f"_query failed: {e}_")
+
+    with tabs[2]:
+        try:
+            from trader.events_calendar import compute_upcoming_events
+            events = compute_upcoming_events([symbol], days_ahead=90)
+            evs = [e for e in events if e.symbol == symbol]
+            if evs:
+                rows = [{"date": e.date.isoformat(), "type": e.event_type,
+                         "days_until": e.days_until, "note": e.note}
+                        for e in evs]
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+            else:
+                st.caption("_no upcoming events_")
+        except Exception as e:
+            st.caption(f"_events failed: {e}_")
+
+    with tabs[3]:
+        try:
+            sl = query(db,
+                       "SELECT ts, side, decision_mid, fill_price, slippage_bps, notional "
+                       "FROM slippage_log WHERE symbol = ? ORDER BY ts DESC LIMIT 50",
+                       params=(symbol,))
+            if not sl.empty:
+                st.dataframe(sl, use_container_width=True, hide_index=True)
+            else:
+                st.caption("_no slippage history (table is new in v3.58.1)_")
+        except Exception as e:
+            st.caption(f"_slippage query failed: {e}_")
+
+    with tabs[4]:
+        try:
+            from trader.data import fetch_history
+            import plotly.graph_objects as go
+            from datetime import timedelta as _td, datetime as _dt
+            start = (_dt.today() - _td(days=400)).strftime("%Y-%m-%d")
+            hist = fetch_history([symbol], start=start)
+            if symbol in hist.columns:
+                series = hist[symbol].dropna()
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=series.index, y=series.values, mode="lines",
+                    name=symbol, line=dict(width=1.5),
+                ))
+                # Overlay decision entry markers
+                d = query(db,
+                          "SELECT ts, action FROM decisions "
+                          "WHERE ticker = ? AND action IN ('BUY','SELL') "
+                          "ORDER BY ts DESC LIMIT 30",
+                          params=(symbol,))
+                if not d.empty:
+                    for _, r in d.iterrows():
+                        try:
+                            t = pd.to_datetime(r["ts"])
+                            fig.add_vline(x=t, line_dash="dot",
+                                          line_color=("green" if r["action"] == "BUY" else "red"),
+                                          opacity=0.3)
+                        except Exception:
+                            pass
+                fig.update_layout(height=400, hovermode="x unified",
+                                  showlegend=False, margin=dict(l=10,r=10,t=20,b=10))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.caption("_no price history available_")
+        except Exception as e:
+            st.caption(f"_chart failed: {e}_")
+
+
+def _maybe_open_symbol_modal():
+    """Helper: if session_state.symbol_drill_down is set, open the modal."""
+    sym = st.session_state.pop("symbol_drill_down", None)
+    if sym:
+        try:
+            _symbol_detail_modal(sym)
+        except Exception as e:
+            st.error(f"modal failed: {e}")
+
+
+# ============================================================
 # View: World-class gaps (v3.58.0) — surfaces every item from the
 # "if you were a world-class trader, what's still missing" review.
 # ============================================================
@@ -3019,8 +3711,12 @@ VIEW_DISPATCH = {
     "events": view_events,
     "regime": view_regime,
     "intraday": view_intraday,
+    "watchlist": view_watchlist,
     "grid": view_grid,
     "screener": view_screener,
+    "shadow_signals": view_shadow_signals,
+    "slippage": view_slippage,
+    "alerts": view_alerts,
     "shadows": view_shadows,
     "sleeve_health": view_sleeve_health,
     "postmortems": view_postmortems,
@@ -3033,6 +3729,9 @@ VIEW_DISPATCH = {
 active = st.session_state.active_view
 view_fn = VIEW_DISPATCH.get(active, view_chat)
 view_fn()
+
+# v3.58.2 — open per-symbol modal if any view set the trigger this run.
+_maybe_open_symbol_modal()
 
 # ============================================================
 # Auto-refresh (off by default in v3.55; user must enable in Settings)
