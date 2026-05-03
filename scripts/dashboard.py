@@ -42,6 +42,29 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# v3.57.1 (Phase 4): hotkey vocabulary — pro-trader feel.
+# Cmd+K opens command bar (focuses the cmd_bar selectbox).
+# Alt+H opens an alert with the hotkey reference.
+# (True per-key tab jumps would need a Streamlit components.v1 round-trip,
+# which can re-trigger reruns mid-stream and break chat. Keep it simple.)
+st.markdown("""
+<script>
+window.addEventListener('keydown', function(e) {
+  // Cmd+K / Ctrl+K → focus the command bar selectbox
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    const cb = window.parent.document.querySelector('div[data-testid="stSelectbox"] input');
+    if (cb) cb.focus();
+  }
+  // Alt+H → hotkey help
+  if (e.altKey && e.key === 'h') {
+    e.preventDefault();
+    alert('⌨️ Hotkeys:\\n  Cmd/Ctrl+K   command bar\\n  Alt+H        this help\\n  Esc          close menus\\n\\nNav: click sidebar items.\\nWorkflows: pick from command bar.');
+  }
+});
+</script>
+""", unsafe_allow_html=True)
+
 # ============================================================
 # v3.55.1: Sleek dark aesthetic via CSS injection
 # ============================================================
@@ -491,6 +514,8 @@ with st.sidebar:
         ("🌡️ Regime overlay", "regime"),
         ("⚡ Intraday risk", "intraday"),
         ("— RESEARCH —", None),
+        ("🗂️ Grid", "grid"),
+        ("🔎 Screener", "screener"),
         ("👥 Shadow variants", "shadows"),
         ("🔍 Sleeve health", "sleeve_health"),
         ("📜 Postmortems", "postmortems"),
@@ -785,12 +810,113 @@ def _headline_metrics():
 
 
 # ============================================================
+# Phase 1 (v3.57.1) — citation pills + side-panel artifacts
+# ============================================================
+def _tier_emoji(tier: str) -> str:
+    return {"read_only": "📖", "sim": "🧪", "live": "🚨"}.get(tier, "🔧")
+
+
+def _render_citation_pills(tool_log: list[dict]):
+    """Render a row of [1][2][3] citation pills for the just-completed tool calls.
+
+    Hebbia/Perplexity pattern: every claim from a tool result gets a numbered
+    pill that scrolls the user to the artifact below.
+    """
+    if not tool_log:
+        return
+    pills = []
+    for i, tc in enumerate(tool_log, start=1):
+        emoji = _tier_emoji(tc.get("tier", "read_only"))
+        name = tc.get("name", "?")
+        pills.append(f"`[{i}]` {emoji} {name}")
+    st.markdown("**Sources:** " + " · ".join(pills))
+
+
+def _render_tool_artifact(idx: int, tc: dict):
+    """Render one tool call as an inline artifact card.
+
+    For tabular results we use st.dataframe; for everything else we fall back
+    to st.json. Mimics the Claude/ChatGPT canvas-style side panel within the
+    existing chat container (Streamlit has no real right-side panel).
+    """
+    name = tc.get("name", "?")
+    tier = tc.get("tier", "read_only")
+    st.markdown(f"**[{idx}] {_tier_emoji(tier)} `{name}`** _(tier: {tier})_")
+    args = tc.get("input", {})
+    if args:
+        st.caption(f"args: `{args}`")
+    result = tc.get("result", {})
+    if isinstance(result, dict):
+        # Promote tabular fields to dataframe view
+        for key in ("rows", "positions", "decisions", "events", "lots",
+                    "postmortems", "shadow_decisions", "orders"):
+            if key in result and isinstance(result[key], list) and result[key]:
+                st.caption(f"{key} ({len(result[key])} rows):")
+                try:
+                    st.dataframe(result[key], use_container_width=True,
+                                 hide_index=True)
+                except Exception:
+                    st.json(result[key], expanded=False)
+                # Show the rest of the dict (without the big list) as JSON
+                remainder = {k: v for k, v in result.items() if k != key}
+                if remainder:
+                    st.caption("metadata:")
+                    st.json(remainder, expanded=False)
+                return
+    st.json(result, expanded=False)
+
+
+# ============================================================
 # View: Chat (primary, default)
 # ============================================================
 def view_chat():
     st.title("🤖 Copilot")
-    st.caption("Ask anything about your portfolio, decisions, regime, performance. "
-               "The Copilot has 10 tools and uses them autonomously.")
+
+    # v3.57.1 (Phase 4): command bar above chat — Cmd+K-style typeahead
+    # backed by saved workflows + suggested prompts.
+    try:
+        from trader.copilot_memory import list_workflows as _list_workflows
+        _wfs = _list_workflows()
+    except Exception:
+        _wfs = []
+    cmd_options = [""] + [f"⚡ {w['name']}" for w in _wfs] + [
+        "💡 Why am I up/down today?",
+        "💡 What's coming up this week?",
+        "💡 Show best/worst positions",
+        "💡 What did the post-mortem flag?",
+        "💡 Run pre-rebalance check",
+    ]
+    cmd_pick = st.selectbox(
+        "⌘K  Command bar — pick a workflow or suggested prompt",
+        options=cmd_options,
+        index=0,
+        key="cmd_bar",
+        label_visibility="collapsed",
+    )
+    if cmd_pick:
+        if cmd_pick.startswith("⚡ "):
+            wf_name = cmd_pick[2:]
+            wf = next((w for w in _wfs if w["name"] == wf_name), None)
+            if wf and wf.get("prompts"):
+                st.session_state["_pending_user_input"] = "\n\n".join(wf["prompts"])
+        elif cmd_pick.startswith("💡 "):
+            st.session_state["_pending_user_input"] = cmd_pick[2:]
+        # Reset selectbox so the same pick can fire again
+        st.session_state.cmd_bar = ""
+
+    # v3.57.1 (Phase 3): Plan Mode toggle. When ON, sim/live tools are stubbed
+    # so the model describes the intended action without executing it.
+    pm_col1, pm_col2 = st.columns([3, 1])
+    with pm_col2:
+        plan_mode = st.toggle("🧭 Plan mode", value=False,
+                              help="Sim/live tools stubbed — model describes intent only.")
+    with pm_col1:
+        if plan_mode:
+            st.caption("🧭 **Plan mode ON** — read-only tools run; sim/live tools "
+                       "are stubbed.")
+        else:
+            st.caption("Ask anything about your portfolio. 10 tools, used autonomously.")
+    st.session_state["plan_mode"] = plan_mode
 
     # Compact briefing as opening callout
     brief = _morning_briefing()
@@ -823,12 +949,10 @@ def view_chat():
                 with st.chat_message("assistant"):
                     st.markdown(msg.get("display_text", ""))
                     if msg.get("tool_calls"):
+                        _render_citation_pills(msg["tool_calls"])
                         with st.expander(f"🔧 {len(msg['tool_calls'])} tool call(s)", expanded=False):
-                            for tc in msg["tool_calls"]:
-                                st.markdown(f"**{tc['name']}**")
-                                st.json(tc.get("input", {}), expanded=False)
-                                st.caption("result:")
-                                st.json(tc.get("result", {}), expanded=False)
+                            for i, tc in enumerate(msg["tool_calls"], start=1):
+                                _render_tool_artifact(i, tc)
 
     # Input below the box
     typed_input = st.chat_input("Ask the copilot...")
@@ -879,16 +1003,21 @@ def view_chat():
                 acc = ""
                 tool_log = []
                 try:
-                    from trader.copilot import stream_response
-                    for ev in stream_response(api_messages):
+                    from trader.copilot import stream_response, tier_of
+                    pm = bool(st.session_state.get("plan_mode", False))
+                    for ev in stream_response(api_messages, plan_mode=pm):
                         if ev["type"] == "text_delta":
                             acc += ev["text"]
                             text_ph.markdown(acc + "▌")
                         elif ev["type"] == "tool_use_start":
                             tool_log.append({"name": ev["name"],
                                               "input": ev.get("input", {}),
-                                              "result": None})
+                                              "result": None,
+                                              "tier": tier_of(ev["name"])})
                             tool_ph.caption(f"🔧 calling `{ev['name']}`...")
+                        elif ev["type"] == "plan_blocked":
+                            tool_ph.caption(
+                                f"🧭 plan mode blocked `{ev['name']}` ({ev['tier']})")
                         elif ev["type"] == "tool_result":
                             if tool_log and tool_log[-1]["name"] == ev["name"]:
                                 tool_log[-1]["result"] = ev["result"]
@@ -931,12 +1060,10 @@ def view_chat():
                             except Exception:
                                 pass
                             if tool_log:
+                                _render_citation_pills(tool_log)
                                 with st.expander(f"🔧 {len(tool_log)} tool call(s)", expanded=False):
-                                    for tc in tool_log:
-                                        st.markdown(f"**{tc['name']}**")
-                                        st.json(tc.get("input", {}), expanded=False)
-                                        st.caption("result:")
-                                        st.json(tc.get("result", {}), expanded=False)
+                                    for i, tc in enumerate(tool_log, start=1):
+                                        _render_tool_artifact(i, tc)
                             break
                         elif ev["type"] == "error":
                             text_ph.error(f"Copilot error: {ev['error']}")
@@ -2119,12 +2246,87 @@ def view_settings():
         st.cache_data.clear()
         st.success("caches cleared")
 
+    st.divider()
+
+    # v3.57.1: Density mode + Copilot memory + workflow editor
+    st.subheader("🎨 Density mode")
+    st.caption("Compact = Bloomberg-style tighter padding + smaller fonts. "
+               "Comfortable = current default.")
+    if "density_mode" not in st.session_state:
+        st.session_state.density_mode = "comfortable"
+    new_density = st.radio("Density",
+                            ["comfortable", "compact"],
+                            index=0 if st.session_state.density_mode == "comfortable" else 1,
+                            horizontal=True, label_visibility="collapsed")
+    if new_density != st.session_state.density_mode:
+        st.session_state.density_mode = new_density
+        st.rerun()
+
+    st.divider()
+
+    st.subheader("🧠 Copilot memory")
+    st.caption("Long-form preferences loaded into every Copilot system prompt. "
+               "Edit freely. Saved to data/copilot_memory.md.")
+    try:
+        from trader.copilot_memory import read_memory, write_memory, reset_memory_to_default
+        current_memory = read_memory()
+        edited = st.text_area("Memory (Markdown)", value=current_memory, height=300,
+                                key="memory_editor")
+        c1, c2 = st.columns(2)
+        if c1.button("💾 Save memory"):
+            if write_memory(edited):
+                st.success("memory saved — next Copilot turn will load it")
+            else:
+                st.error("save failed")
+        if c2.button("🔄 Reset to default"):
+            reset_memory_to_default()
+            st.success("memory reset to default")
+            st.rerun()
+    except Exception as e:
+        st.warning(f"memory editor unavailable: {type(e).__name__}: {e}")
+
+    st.divider()
+
+    st.subheader("⚡ Saved workflows")
+    st.caption("Named multi-prompt sequences for one-click invocation in Chat. "
+               "Saved to data/copilot_workflows.json.")
+    try:
+        from trader.copilot_memory import list_workflows, save_workflows, delete_workflow
+        workflows = list_workflows()
+        for i, wf in enumerate(workflows):
+            with st.expander(f"{wf.get('name', '(unnamed)')}"):
+                st.text_area(f"Prompts (one per line)",
+                              value="\n".join(wf.get("prompts", [])),
+                              height=80, key=f"wf_prompts_{i}",
+                              disabled=True)
+                if st.button("🗑️ Delete", key=f"wf_delete_{i}"):
+                    delete_workflow(wf["name"])
+                    st.rerun()
+
+        with st.expander("➕ Add new workflow"):
+            new_name = st.text_input("Workflow name", key="new_wf_name")
+            new_prompts = st.text_area("Prompts (one per line)", key="new_wf_prompts",
+                                         height=100)
+            if st.button("Save workflow"):
+                prompts_list = [p.strip() for p in new_prompts.split("\n") if p.strip()]
+                if new_name and prompts_list:
+                    workflows.append({"name": new_name, "prompts": prompts_list})
+                    if save_workflows(workflows):
+                        st.success(f"saved workflow '{new_name}'")
+                        st.rerun()
+    except Exception as e:
+        st.warning(f"workflows unavailable: {type(e).__name__}: {e}")
+
+    st.divider()
+
     st.subheader("System info")
     st.json({
-        "version": "v3.55.0",
+        "version": "v3.57.1",
         "journal_path": st.session_state.db_path,
         "data_dir": str(ROOT / "data"),
         "reports_dir": str(ROOT / "data" / "reports"),
+        "memory_file": str(ROOT / "data" / "copilot_memory.md"),
+        "workflows_file": str(ROOT / "data" / "copilot_workflows.json"),
         "reference_docs": [
             "docs/AI_NATIVE_REFACTOR_DESIGN.md",
             "docs/V4_PARADIGM_SHIFT.md",
@@ -2133,6 +2335,178 @@ def view_settings():
             "docs/BEHAVIORAL_PRECOMMIT.md",
         ],
     }, expanded=False)
+
+
+# ============================================================
+# View: Grid (Hebbia Matrix-style multi-asset query)  — v3.57.1 (Phase 5)
+# ============================================================
+def _grid_default_questions() -> list[str]:
+    return [
+        "day_pnl_pct",
+        "total_unrealized_pnl_pct",
+        "weight_pct",
+        "sector",
+    ]
+
+
+def _grid_value_for(symbol: str, question: str, ports: dict) -> str:
+    """Look up one cell value from the live portfolio. Heuristic mapping —
+    the columns the user picks must match keys in the position dict, otherwise
+    we mark the cell with a '?' so they know it didn't resolve."""
+    pos_list = ports.get("positions", []) or []
+    pos = next((p for p in pos_list if str(p.get("symbol", "")).upper() == symbol.upper()), None)
+    if not pos:
+        return "—"
+    val = pos.get(question)
+    if val is None:
+        return "?"
+    if isinstance(val, float):
+        return f"{val:.2f}"
+    return str(val)
+
+
+def view_grid():
+    st.title("🗂️ Grid — multi-asset query (Hebbia Matrix-style)")
+    st.caption(
+        "Rows = each held position. Columns = user-defined questions. "
+        "Each cell is auto-filled by the relevant Copilot tool. "
+        "Pattern: \"run this question across my entire watchlist.\""
+    )
+
+    # Load live portfolio symbols
+    try:
+        from trader.copilot import dispatch_tool
+        with st.spinner("Loading live positions..."):
+            ports = dispatch_tool("get_portfolio_status", {})
+        if "error" in ports:
+            st.error(f"Could not load portfolio: {ports['error']}")
+            return
+        positions = ports.get("positions", []) or []
+        if not positions:
+            st.info("No live positions yet. Wait for the next run to fill the grid.")
+            return
+        symbols = [str(p.get("symbol", "")) for p in positions if p.get("symbol")]
+    except Exception as e:
+        st.error(f"{type(e).__name__}: {e}")
+        return
+
+    # Editable column list — user adds questions like "sector" / "weight_pct"
+    if "grid_questions" not in st.session_state:
+        st.session_state.grid_questions = _grid_default_questions()
+    questions = st.session_state.grid_questions
+
+    cols = st.columns([3, 1])
+    with cols[0]:
+        new_q = st.text_input(
+            "Add a column (a key from get_portfolio_status positions, e.g. "
+            "`sector`, `weight_pct`, `day_pnl_pct`, `total_unrealized_pnl_pct`)",
+            key="grid_new_q",
+        )
+    with cols[1]:
+        st.write("")
+        st.write("")
+        if st.button("➕ Add", use_container_width=True, key="grid_add_q"):
+            if new_q and new_q not in questions:
+                questions.append(new_q)
+                st.session_state.grid_questions = questions
+                st.rerun()
+
+    if questions:
+        chip_cols = st.columns(len(questions))
+        for i, q in enumerate(questions):
+            with chip_cols[i]:
+                if st.button(f"✖ {q}", key=f"grid_rm_{i}", use_container_width=True):
+                    questions.pop(i)
+                    st.session_state.grid_questions = questions
+                    st.rerun()
+
+    # Build the grid
+    rows = []
+    for sym in symbols:
+        row = {"symbol": sym}
+        for q in questions:
+            row[q] = _grid_value_for(sym, q, ports)
+        rows.append(row)
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    st.caption(
+        "💡 Tip: open the **Chat** view and ask the Copilot to "
+        "_'fill the grid with day_pnl, sector, and earnings_in_7d for every holding'_ "
+        "to get richer columns from any of the 10 tools."
+    )
+
+
+# ============================================================
+# View: NL Screener (Hebbia Matrix-style command bar)
+# ============================================================
+def view_screener():
+    st.title("🔍 Screener — natural-language queries")
+    st.caption("Type a question in plain English. The Copilot translates it into "
+               "a SQL query against your journal + tools, and renders a deterministic "
+               "table. No chat back-and-forth — just structured output.")
+
+    st.markdown("**Example queries:**")
+    examples = [
+        "Show all decisions where score > 0.8 in the last 30 days",
+        "List my closed positions with realized PnL > 0",
+        "Show the top 10 momentum picks from yesterday's run by score",
+        "Which sectors had the most rebalance trades this week?",
+    ]
+    for e in examples:
+        if st.button(e, key=f"screener_ex_{hash(e)}", use_container_width=True):
+            st.session_state["screener_query"] = e
+
+    query_input = st.text_area("Your query",
+                                value=st.session_state.get("screener_query", ""),
+                                height=80,
+                                placeholder="e.g. Show all closed positions with realized PnL > $100")
+    if st.button("🔎 Run screener", type="primary"):
+        if query_input.strip():
+            try:
+                from trader.copilot import dispatch_tool, translate_nl_to_sql
+                q = query_input.strip()
+                # If raw SQL, run it directly. Otherwise translate via Claude.
+                if q.upper().startswith("SELECT"):
+                    sql = q
+                    explanation = "_raw SQL — no translation_"
+                else:
+                    with st.spinner("Translating natural language to SQL..."):
+                        tr = translate_nl_to_sql(q)
+                    if "error" in tr:
+                        st.error(f"NL→SQL: {tr['error']}")
+                        st.stop()
+                    sql = tr["sql"]
+                    explanation = tr.get("explanation", "")
+
+                with st.expander("📝 Generated SQL", expanded=True):
+                    st.code(sql, language="sql")
+                    if explanation:
+                        st.caption(explanation)
+
+                with st.spinner("Running query..."):
+                    result = dispatch_tool("query_journal",
+                                           {"sql": sql, "limit": 500})
+                if "error" in result:
+                    st.error(f"SQL error: {result['error']}")
+                else:
+                    st.success(f"{result.get('n_rows', 0)} rows")
+                    st.dataframe(result.get("rows", []),
+                                  use_container_width=True, hide_index=True)
+            except Exception as e:
+                st.error(f"{type(e).__name__}: {e}")
+
+    with st.expander("📋 Journal schema reference"):
+        st.markdown("""
+**Tables:**
+- **decisions**: `id, ts, ticker, action, style, score, rationale_json, final`
+- **orders**: `id, ts, ticker, side, notional, alpaca_order_id, status, error`
+- **daily_snapshot**: `date, equity, cash, positions_json`
+- **position_lots**: `id, symbol, sleeve, opened_at, qty, open_price, closed_at, close_price, realized_pnl`
+- **runs**: `run_id, started_at, completed_at, status, notes`
+- **postmortems**: `id, date, pnl_pct, summary, proposed_tweak`
+- **variants**: `variant_id, name, version, status, description`
+- **shadow_decisions**: `id, variant_id, ts, targets_json, rationale`
+""")
 
 
 # ============================================================
@@ -2149,6 +2523,8 @@ VIEW_DISPATCH = {
     "events": view_events,
     "regime": view_regime,
     "intraday": view_intraday,
+    "grid": view_grid,
+    "screener": view_screener,
     "shadows": view_shadows,
     "sleeve_health": view_sleeve_health,
     "postmortems": view_postmortems,

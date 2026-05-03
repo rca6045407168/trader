@@ -422,6 +422,28 @@ _TOOL_DISPATCH = {
 }
 
 
+# v3.57.1 (Phase 3): Tool tiers — Cursor/Replit-style sandboxing.
+# Today every tool is read_only. compute_scenario is pure-math what-if (sim).
+# When chat-driven trade approval lands, place_order/modify_variant become "live".
+TOOL_TIERS: dict[str, str] = {
+    "get_portfolio_status": "read_only",
+    "get_regime_state": "read_only",
+    "get_recent_decisions": "read_only",
+    "get_attribution_today": "read_only",
+    "get_sleeve_health": "read_only",
+    "get_upcoming_events": "read_only",
+    "query_journal": "read_only",
+    "get_postmortem_history": "read_only",
+    "compute_scenario": "sim",
+    "summarize_period": "read_only",
+}
+
+
+def tier_of(tool_name: str) -> str:
+    """Returns 'read_only' / 'sim' / 'live' / 'unknown'."""
+    return TOOL_TIERS.get(tool_name, "unknown")
+
+
 def dispatch_tool(name: str, args: dict) -> Any:
     """Execute one tool call and return its JSON-serializable result.
     Returns {"error": "..."} on unknown name or dispatch failure.
@@ -439,8 +461,85 @@ def dispatch_tool(name: str, args: dict) -> Any:
 # Conversation loop with streaming + tool use
 # ============================================================
 
+def translate_nl_to_sql(question: str) -> dict:
+    """v3.57.1 (Phase 8 — NL screener): translate plain-English to a SELECT.
+
+    Returns {"sql": "...", "explanation": "..."} on success or {"error": "..."}.
+    Uses Claude as a one-shot SQL translator with the journal schema baked in.
+    SELECT-only. Caller must still run via tool_query_journal which enforces
+    the read-only mode at the SQLite layer.
+    """
+    if not ANTHROPIC_API_KEY:
+        return {"error": "ANTHROPIC_API_KEY not set"}
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        return {"error": "anthropic SDK not installed"}
+
+    schema_brief = (
+        "Tables (all SELECT-only):\n"
+        "- decisions(id, ts, ticker, action, style, score, rationale_json, final)\n"
+        "- orders(id, ts, ticker, side, notional, alpaca_order_id, status, error)\n"
+        "- daily_snapshot(date, equity, cash, positions_json)\n"
+        "- position_lots(id, symbol, sleeve, opened_at, qty, open_price, "
+        "closed_at, close_price, realized_pnl)\n"
+        "- runs(run_id, started_at, completed_at, status, notes)\n"
+        "- postmortems(id, date, pnl_pct, summary, proposed_tweak)\n"
+        "- variants(variant_id, name, version, status, description)\n"
+        "- shadow_decisions(id, variant_id, ts, targets_json, rationale)\n"
+        "Date columns are ISO strings. Use SQLite syntax. SELECT only."
+    )
+    sys = (
+        "You translate natural-language analytics questions into a single SQLite "
+        "SELECT statement against the trader journal. Output ONLY a JSON object "
+        '{"sql": "SELECT ...", "explanation": "<one sentence>"}. No prose, no '
+        "markdown. SELECT-only. If the question cannot be answered from the "
+        'schema, return {"error": "<one sentence why>"} instead.\n\n'
+        + schema_brief
+    )
+    try:
+        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        resp = client.messages.create(
+            model=MODEL,
+            max_tokens=1024,
+            system=sys,
+            messages=[{"role": "user", "content": question}],
+        )
+        text = "".join(
+            getattr(b, "text", "") for b in resp.content
+            if getattr(b, "type", None) == "text"
+        ).strip()
+        # Strip optional code fences
+        if text.startswith("```"):
+            text = text.strip("`").lstrip("json").strip()
+        parsed = json.loads(text)
+        if "error" in parsed:
+            return {"error": parsed["error"]}
+        sql = parsed.get("sql", "").strip()
+        if not sql.upper().startswith("SELECT"):
+            return {"error": "translator produced non-SELECT output"}
+        return {"sql": sql, "explanation": parsed.get("explanation", "")}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+def _build_system_prompt() -> str:
+    """v3.57.1: append user-editable memory file to the base system prompt.
+    Cross-session preferences persist via data/copilot_memory.md."""
+    base = SYSTEM_PROMPT
+    try:
+        from .copilot_memory import read_memory
+        memory = read_memory()
+        if memory and memory.strip():
+            base = base + "\n\n=== USER MEMORY (from data/copilot_memory.md) ===\n" + memory
+    except Exception:
+        pass
+    return base
+
+
 def stream_response(messages: list[dict],
-                     max_tool_iterations: int = 8):
+                     max_tool_iterations: int = 8,
+                     plan_mode: bool = False):
     """Generator yielding events from one chat turn.
 
     Each event is a dict with one of:
@@ -449,9 +548,17 @@ def stream_response(messages: list[dict],
       {"type": "tool_result", "name": "...", "result": {...}}
       {"type": "complete", "messages": [...]}     — final messages list
       {"type": "error", "error": "..."}
+      {"type": "plan_blocked", "name": "...", "tier": "..."} — emitted when
+        plan_mode=True and the model tried to call a sim/live tool. The tool
+        is NOT executed; instead a stub result is fed back to the model so it
+        can describe the plan in natural language.
 
     Caller (the dashboard) renders these in real-time. Conversation history
     survives in the returned messages list.
+
+    plan_mode (Phase 3): when True, sim/live-tier tools are stubbed with a
+    "would call X with args Y" placeholder. read_only tools still run so the
+    plan stays grounded in real numbers. Default False = full execute mode.
     """
     if not ANTHROPIC_API_KEY:
         yield {"type": "error", "error": "ANTHROPIC_API_KEY not set"}
@@ -472,7 +579,7 @@ def stream_response(messages: list[dict],
             with client.messages.stream(
                 model=MODEL,
                 max_tokens=4096,
-                system=SYSTEM_PROMPT,
+                system=_build_system_prompt(),
                 tools=TOOLS,
                 messages=messages,
             ) as stream:
@@ -512,7 +619,22 @@ def stream_response(messages: list[dict],
         tool_results = []
         for tu in tool_use_blocks:
             yield {"type": "tool_use_start", "name": tu.name, "input": tu.input}
-            result = dispatch_tool(tu.name, dict(tu.input or {}))
+            tier = tier_of(tu.name)
+            if plan_mode and tier in ("sim", "live"):
+                yield {"type": "plan_blocked", "name": tu.name, "tier": tier}
+                result = {
+                    "plan_mode": True,
+                    "tier": tier,
+                    "would_call": tu.name,
+                    "with_args": dict(tu.input or {}),
+                    "note": (
+                        "Plan mode: this tool was NOT executed. Describe the "
+                        "intended action and what would change. The user must "
+                        "exit plan mode and re-ask to actually run it."
+                    ),
+                }
+            else:
+                result = dispatch_tool(tu.name, dict(tu.input or {}))
             yield {"type": "tool_result", "name": tu.name, "result": result}
             tool_results.append({
                 "type": "tool_result",
