@@ -48,21 +48,47 @@ st.set_page_config(
 st.markdown("""
 <style>
   /* Hide Streamlit chrome */
-  /* v3.56.2: stop fighting Streamlit's header — just hide the
-     hamburger menu, footer, and Streamlit-cloud deploy banner.
-     Header stays in its default state so the sidebar collapse/expand
-     toggle ALWAYS works (Streamlit moves that button between header
-     and a standalone position when sidebar is collapsed; our previous
-     whitelist couldn't catch all positions). */
+  /* v3.56.3: previous v3.55.x/v3.56.2 attempts to selectively show the
+     sidebar toggle were unreliable — Streamlit's collapsed-sidebar
+     control rendered in different positions across DOM updates and
+     was sometimes invisible against the dark background. Final fix:
+     hide the collapse button ENTIRELY so the user can't collapse the
+     sidebar and get stuck. The sidebar is always visible, period. */
   #MainMenu, footer { visibility: hidden !important; height: 0 !important; }
   header[data-testid="stHeader"] {
     background: transparent !important;
   }
-  /* Only hide Streamlit-cloud's deploy button, not the entire header */
+  /* Hide deploy + toolbar */
   [data-testid="stToolbarActions"],
   button[kind="deploy"],
   [data-testid="stStatusWidget"] {
     display: none !important;
+  }
+  /* Hide the sidebar collapse button — sidebar always open */
+  [data-testid="stSidebarCollapseButton"],
+  [data-testid="stSidebarCollapsedControl"],
+  [data-testid="collapsedControl"],
+  button[aria-label*="collapse" i],
+  button[aria-label*="Close sidebar" i],
+  button[aria-label*="hide" i] {
+    display: none !important;
+  }
+  /* Force the sidebar visible regardless of session-state collapse */
+  section[data-testid="stSidebar"] {
+    transform: translateX(0) !important;
+    visibility: visible !important;
+    min-width: 280px !important;
+    width: 280px !important;
+    margin-left: 0 !important;
+  }
+  section[data-testid="stSidebar"][aria-expanded="false"] {
+    transform: translateX(0) !important;
+    margin-left: 0 !important;
+    width: 280px !important;
+  }
+  /* Adjust main content padding so it doesn't go under a phantom collapsed sidebar */
+  .main, [data-testid="stAppViewContainer"] > section.main {
+    margin-left: 0 !important;
   }
   div[data-testid="stToolbar"] { display: none; }
   div[data-testid="stDecoration"] { display: none; }
