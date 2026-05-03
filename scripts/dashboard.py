@@ -514,20 +514,156 @@ def _live_portfolio():
         return E()
 
 
-@st.cache_data(ttl=300)
-def _morning_briefing():
+# v3.56.4: disk-backed briefing cache so cold-start (container restart,
+# fresh browser load, after-hours wake-up) doesn't have to wait for
+# HMM + macro + GARCH. We write the briefing to data/briefing_cache.json
+# with a timestamp; if the file is < 300s old, return it instantly.
+# Otherwise recompute + persist.
+_BRIEFING_CACHE_FILE = ROOT / "data" / "briefing_cache.json"
+_BRIEFING_TTL_SEC = 300
+
+
+def _read_disk_briefing():
+    """Try to load briefing from disk. Returns dict or None."""
+    if not _BRIEFING_CACHE_FILE.exists():
+        return None
     try:
-        from trader.copilot_briefing import compute_briefing
-        return compute_briefing()
+        data = json.loads(_BRIEFING_CACHE_FILE.read_text())
+        ts = datetime.fromisoformat(data.get("_cached_at", "1970-01-01"))
+        age = (datetime.utcnow() - ts).total_seconds()
+        if age > _BRIEFING_TTL_SEC:
+            return None
+        # Reconstruct the MorningBriefing dataclass
+        from trader.copilot_briefing import MorningBriefing
+        b = data.get("briefing", {})
+        return MorningBriefing(
+            timestamp=b.get("timestamp", ""),
+            headline=b.get("headline", ""),
+            equity_now=b.get("equity_now"),
+            day_pl_pct=b.get("day_pl_pct"),
+            spy_today_pct=b.get("spy_today_pct"),
+            excess_today_pct=b.get("excess_today_pct"),
+            regime=b.get("regime", ""),
+            regime_overlay_mult=b.get("regime_overlay_mult"),
+            regime_enabled=b.get("regime_enabled", False),
+            freeze_active=b.get("freeze_active", False),
+            freeze_reason=b.get("freeze_reason", ""),
+            upcoming_events_next7d=b.get("upcoming_events_next7d", []),
+            yesterday_pm_summary=b.get("yesterday_pm_summary", ""),
+            notable_facts=b.get("notable_facts", []),
+            raw_data=b.get("raw_data", {}),
+        )
     except Exception:
         return None
 
 
-@st.cache_data(ttl=300)
+def _write_disk_briefing(brief):
+    """Persist briefing to disk with timestamp."""
+    try:
+        _BRIEFING_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        b_dict = {
+            "timestamp": brief.timestamp,
+            "headline": brief.headline,
+            "equity_now": brief.equity_now,
+            "day_pl_pct": brief.day_pl_pct,
+            "spy_today_pct": brief.spy_today_pct,
+            "excess_today_pct": brief.excess_today_pct,
+            "regime": brief.regime,
+            "regime_overlay_mult": brief.regime_overlay_mult,
+            "regime_enabled": brief.regime_enabled,
+            "freeze_active": brief.freeze_active,
+            "freeze_reason": brief.freeze_reason,
+            "upcoming_events_next7d": brief.upcoming_events_next7d,
+            "yesterday_pm_summary": brief.yesterday_pm_summary,
+            "notable_facts": brief.notable_facts,
+            "raw_data": brief.raw_data,
+        }
+        _BRIEFING_CACHE_FILE.write_text(json.dumps({
+            "_cached_at": datetime.utcnow().isoformat(),
+            "briefing": b_dict,
+        }, indent=2, default=str))
+    except Exception:
+        pass
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _morning_briefing():
+    """Get the morning briefing. Tries disk cache first (instant), else
+    recomputes via compute_briefing() (~3-8s on cold start) and persists
+    to disk for the next session.
+    """
+    disk_cached = _read_disk_briefing()
+    if disk_cached is not None:
+        return disk_cached
+    try:
+        from trader.copilot_briefing import compute_briefing
+        brief = compute_briefing()
+        if brief is not None:
+            _write_disk_briefing(brief)
+        return brief
+    except Exception:
+        return None
+
+
+_OVERLAY_CACHE_FILE = ROOT / "data" / "overlay_cache.json"
+
+
+def _read_disk_overlay():
+    if not _OVERLAY_CACHE_FILE.exists():
+        return None
+    try:
+        data = json.loads(_OVERLAY_CACHE_FILE.read_text())
+        ts = datetime.fromisoformat(data.get("_cached_at", "1970-01-01"))
+        if (datetime.utcnow() - ts).total_seconds() > 300:
+            return None
+        # Build a lightweight obj that matches OverlaySignal's interface
+        class O:
+            pass
+        o = O()
+        for k, v in data.get("overlay", {}).items():
+            setattr(o, k, v)
+        return o
+    except Exception:
+        return None
+
+
+def _write_disk_overlay(sig):
+    try:
+        _OVERLAY_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _OVERLAY_CACHE_FILE.write_text(json.dumps({
+            "_cached_at": datetime.utcnow().isoformat(),
+            "overlay": {
+                "enabled": sig.enabled,
+                "final_mult": sig.final_mult,
+                "rationale": sig.rationale,
+                "hmm_mult": sig.hmm_mult,
+                "hmm_regime": sig.hmm_regime,
+                "hmm_posterior": sig.hmm_posterior,
+                "hmm_error": sig.hmm_error,
+                "macro_mult": sig.macro_mult,
+                "macro_curve_inverted": sig.macro_curve_inverted,
+                "macro_credit_widening": sig.macro_credit_widening,
+                "macro_error": sig.macro_error,
+                "garch_mult": sig.garch_mult,
+                "garch_vol_forecast_annual": sig.garch_vol_forecast_annual,
+                "garch_error": sig.garch_error,
+            },
+        }, indent=2, default=str))
+    except Exception:
+        pass
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def _overlay_signal():
+    disk = _read_disk_overlay()
+    if disk is not None:
+        return disk
     try:
         from trader.regime_overlay import compute_overlay
-        return compute_overlay()
+        sig = compute_overlay()
+        if sig is not None:
+            _write_disk_overlay(sig)
+        return sig
     except Exception:
         return None
 
