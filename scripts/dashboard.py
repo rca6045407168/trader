@@ -396,9 +396,21 @@ with st.sidebar:
         if active_thread:
             st.caption("💬 ACTIVE")
             disp = active_thread.title if len(active_thread.title) <= 28 else active_thread.title[:26] + "…"
-            st.button(disp, key=f"active_thread_{active_thread.id}",
-                       use_container_width=True, type="primary",
-                       disabled=True, help=active_thread.title)
+            # v3.56.8: ACTIVE button is now clickable — jumps to chat view
+            # AND reloads the full thread from disk. Previously it was
+            # disabled (just a label) which was confusing UX.
+            if st.button(disp, key=f"active_thread_{active_thread.id}",
+                         use_container_width=True, type="primary",
+                         help=f"{active_thread.title}  ·  click to open in chat"):
+                try:
+                    from trader.copilot_storage import load_thread
+                    full = load_thread(active_thread.id)
+                    if full:
+                        st.session_state.copilot_messages = list(full.messages)
+                except Exception:
+                    pass
+                st.session_state.active_view = "chat"
+                st.rerun()
         # Default expansion: open if few chats, closed if many
         default_open = len(threads) <= 8 and not active_thread
         with st.expander(f"💬 RECENTS ({len(threads)})",
@@ -443,11 +455,22 @@ with st.sidebar:
                             save_thread(cur)
                     except Exception:
                         pass
-                    # Load the clicked thread
+                    # v3.56.8 FIX: load the FULL thread from disk because
+                    # the cached namedtuple `t` only has id/title/timestamps
+                    # (no messages — to keep the sidebar list cache cheap).
+                    # Previously this set copilot_messages=list(t.messages)
+                    # which raised AttributeError silently, leaving the
+                    # conversation empty when the user clicked a thread.
+                    try:
+                        from trader.copilot_storage import load_thread
+                        full = load_thread(t.id)
+                        loaded_messages = list(full.messages) if full else []
+                    except Exception:
+                        loaded_messages = []
                     st.session_state.current_thread_id = t.id
                     st.session_state.current_thread_title = t.title
                     st.session_state.current_thread_created_at = t.created_at
-                    st.session_state.copilot_messages = list(t.messages)
+                    st.session_state.copilot_messages = loaded_messages
                     st.session_state.active_view = "chat"
                     st.rerun()
     except Exception:
