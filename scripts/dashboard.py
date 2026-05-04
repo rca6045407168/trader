@@ -370,7 +370,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.55.0 · chat-first AI dashboard")
+    st.caption("v3.62.0 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -510,52 +510,77 @@ with st.sidebar:
     # v3.56.7: removed standalone "🤖 Chat" nav item — redundant with the
     # "💬 New chat" CTA above and the RECENTS list which both route to the
     # chat view. User: 'i think you don't need chat, recent is good enough'.
-    NAV = [
-        ("— VIEWS —", None),
-        ("🏠 Overview", "overview"),
-        ("💼 Live positions", "live_positions"),
-        ("🎯 Decisions", "decisions"),
-        ("📦 Position lots", "lots"),
-        ("📈 Performance", "performance"),
-        ("📊 Attribution", "attribution"),
-        ("📅 Events", "events"),
-        ("🌡️ Regime overlay", "regime"),
-        ("⚡ Intraday risk", "intraday"),
-        ("— RESEARCH —", None),
-        ("🧪 Strategy Lab", "strategy_lab"),
-        ("📰 News", "news"),
-        ("💰 P&L readiness", "pnl_readiness"),
-        ("🎯 V5 sleeves", "v5_sleeves"),
-        ("🧪 Validation", "validation"),
-        ("🧪 Stress test", "stress_test"),
-        ("👁️ Watchlist", "watchlist"),
-        ("🗂️ Grid", "grid"),
-        ("🔎 Screener", "screener"),
-        ("👁️ Shadow signals", "shadow_signals"),
-        ("⚡ Slippage", "slippage"),
-        ("🔔 Alerts", "alerts"),
-        ("👥 Shadow variants", "shadows"),
-        ("🔍 Sleeve health", "sleeve_health"),
-        ("📜 Postmortems", "postmortems"),
-        ("📄 Reports", "reports"),
-        ("— SYSTEM —", None),
-        ("🔧 Manual triggers", "manual"),
-        ("🛑 Manual override", "manual_override"),
-        ("🧰 World-class gaps", "world_class"),
-        ("⚙️ Settings", "settings"),
+    # v3.62.0: nav reorg. Task-oriented top groups, each collapsible.
+    # Reduces 27+ flat items to 5 always-visible top-level entries +
+    # collapsible sub-sections that hide ~20 deeper tools by default.
+    # The user-task framing: "what am I doing?" → which group.
+    NAV_GROUPS = [
+        # ALWAYS-VISIBLE TOP TIER (5 items, no expander needed)
+        ("__top__", None, [
+            ("🏠 Overview", "overview"),     # daily morning dashboard
+            ("📈 Performance", "performance"), # how am I doing
+            ("🧪 Strategy Lab", "strategy_lab"), # the centerpiece — every strategy + verdict
+            ("🔔 Alerts", "alerts"),            # what broke
+            ("💰 P&L readiness", "pnl_readiness"),  # what to flip
+        ]),
+        # GROUPED — collapsed by default
+        ("📊 Portfolio", None, [
+            ("💼 Live positions", "live_positions"),
+            ("🎯 Decisions", "decisions"),
+            ("📦 Position lots", "lots"),
+            ("📊 Attribution", "attribution"),
+        ]),
+        ("📰 Discovery", None, [
+            ("📰 News", "news"),
+            ("📅 Events", "events"),
+            ("👁️ Watchlist", "watchlist"),
+            ("🔎 Screener", "screener"),
+            ("🗂️ Grid", "grid"),
+        ]),
+        ("🔬 Research", None, [
+            ("🌡️ Regime overlay", "regime"),
+            ("⚡ Intraday risk", "intraday"),
+            ("🎯 V5 sleeves", "v5_sleeves"),
+            ("🧪 Validation", "validation"),
+            ("🧪 Stress test", "stress_test"),
+            ("👁️ Shadow signals", "shadow_signals"),
+            ("👥 Shadow variants", "shadows"),
+            ("🩺 Sleeve health", "sleeve_health"),
+            ("⚡ Slippage", "slippage"),
+            ("📜 Postmortems", "postmortems"),
+            ("📄 Reports", "reports"),
+            ("🧰 World-class gaps", "world_class"),
+        ]),
+        ("⚙️ System", None, [
+            ("🔧 Manual triggers", "manual"),
+            ("🛑 Manual override", "manual_override"),
+            ("⚙️ Settings", "settings"),
+        ]),
     ]
-    for label, key in NAV:
-        if key is None:
-            st.caption(label)
-            continue
+
+    def _render_nav_button(label: str, key: str):
         is_active = st.session_state.active_view == key
-        # Highlight active item with a distinct button type
         btype = "primary" if is_active else "secondary"
         if st.button(label, key=f"nav_{key}",
                      use_container_width=True,
-                     type=btype if is_active else "secondary"):
+                     type=btype):
             st.session_state.active_view = key
             st.rerun()
+
+    # Render groups. Top tier = bare buttons. Collapsibles = expanders.
+    for group_label, _placeholder, items in NAV_GROUPS:
+        if group_label == "__top__":
+            for label, key in items:
+                _render_nav_button(label, key)
+            st.divider()
+        else:
+            # Auto-expand if the user is currently inside one of this
+            # group's tabs, so they don't lose orientation
+            keys_in_group = {key for _, key in items}
+            in_group = st.session_state.active_view in keys_in_group
+            with st.expander(group_label, expanded=in_group):
+                for label, key in items:
+                    _render_nav_button(label, key)
 
     st.divider()
 
@@ -600,14 +625,24 @@ DB_PATH = Path(st.session_state.db_path)
 
 
 @st.cache_data(ttl=10)
-def query(path_str: str, sql: str, params: tuple = ()) -> pd.DataFrame:
+def query(path_str: str, sql: str, params: tuple = (),
+            silent: bool = False) -> pd.DataFrame:
+    """v3.62.0: silent flag suppresses st.error display. Use silent=True
+    when caller is gracefully handling missing-table / empty-table cases
+    (e.g., querying slippage_log before any orders have been placed)."""
     if not Path(path_str).exists():
         return pd.DataFrame()
     try:
         with sqlite3.connect(f"file:{path_str}?mode=ro", uri=True) as c:
             return pd.read_sql_query(sql, c, params=params)
     except Exception as e:
-        st.error(f"query failed: {e}")
+        msg = str(e)
+        # Always silent for "no such table" — these are expected for
+        # tables that get created lazily (slippage_log on first order)
+        if "no such table" in msg.lower():
+            return pd.DataFrame()
+        if not silent:
+            st.error(f"query failed: {e}")
         return pd.DataFrame()
 
 
@@ -919,7 +954,10 @@ def view_chat():
         _wfs = _list_workflows()
     except Exception:
         _wfs = []
-    cmd_options = [""] + [f"⚡ {w['name']}" for w in _wfs] + [
+    # v3.62.0: placeholder option text replaces the previous empty
+    # string — user couldn't see what the box was for.
+    PLACEHOLDER = "⌘K  pick a workflow or suggested prompt..."
+    cmd_options = [PLACEHOLDER] + [f"⚡ {w['name']}" for w in _wfs] + [
         "💡 Why am I up/down today?",
         "💡 What's coming up this week?",
         "💡 Show best/worst positions",
@@ -927,12 +965,15 @@ def view_chat():
         "💡 Run pre-rebalance check",
     ]
     cmd_pick = st.selectbox(
-        "⌘K  Command bar — pick a workflow or suggested prompt",
+        "Command bar",
         options=cmd_options,
         index=0,
         key="cmd_bar",
         label_visibility="collapsed",
     )
+    # Treat placeholder as empty
+    if cmd_pick == PLACEHOLDER:
+        cmd_pick = ""
     # v3.59.0 fix: Streamlit forbids writing to a widget's key after it
     # instantiates. Track last_cmd_pick separately to detect the change
     # and only fire ONCE per new selection. Re-selecting the same option

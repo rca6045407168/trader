@@ -50,9 +50,14 @@ class MorningBriefing:
                 eq_str += f" · excess vs SPY {self.excess_today_pct*100:+.2f}%"
             bits.append(eq_str + "\n")
         if self.regime:
-            mult_str = f" (overlay {self.regime_overlay_mult:.2f}×)" if self.regime_overlay_mult else ""
-            mult_str += " [DISABLED]" if not self.regime_enabled else ""
-            bits.append(f"⚡ Regime: **{self.regime.upper()}**{mult_str}\n")
+            # v3.62.0: don't show "overlay 0.94× [DISABLED]" — confusing.
+            # If overlay is disabled, just show the regime label.
+            if self.regime_enabled and self.regime_overlay_mult is not None:
+                bits.append(f"⚡ Regime: **{self.regime.upper()}** "
+                            f"(overlay {self.regime_overlay_mult:.2f}× LIVE)\n")
+            else:
+                bits.append(f"⚡ Regime: **{self.regime.upper()}** "
+                            f"_(overlay computed but not enforcing)_\n")
         if self.freeze_active:
             bits.append(f"🚨 **FREEZE ACTIVE**: {self.freeze_reason}\n")
         if self.upcoming_events_next7d:

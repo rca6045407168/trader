@@ -28,7 +28,8 @@ def test_briefing_with_data_includes_metrics():
     assert "+0.67%" in md  # day P&L
     assert "+0.39%" in md  # excess
     assert "TRANSITION" in md
-    assert "DISABLED" in md
+    # v3.62.0: replaced "[DISABLED]" with friendlier wording
+    assert "not enforcing" in md
 
 
 def test_briefing_freeze_renders_alert():
