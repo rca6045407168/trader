@@ -137,55 +137,64 @@ def test_dashboard_version_bumped_to_v3_65_1():
 
 
 def test_dashboard_has_market_session_helper():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "def _market_session" in text
-    assert "from trader.market_session import market_session_now" in text
+    """v3.67.0+: helper body lives in trader/dashboard_ui.py;
+    dashboard.py keeps an alias `_market_session`."""
+    base = Path(__file__).resolve().parent.parent
+    db_text = (base / "scripts" / "dashboard.py").read_text()
+    ui_text = (base / "src" / "trader" / "dashboard_ui.py").read_text()
+    # Alias is in dashboard.py
+    assert "_market_session" in db_text
+    # Real definition + the underlying import are in dashboard_ui.py
+    assert "def market_session(" in ui_text
+    assert ("from trader.market_session import market_session_now"
+            in ui_text)
+
+
+def _ui_text():
+    """v3.67.0+: rendering helpers live in trader/dashboard_ui.py."""
+    base = Path(__file__).resolve().parent.parent
+    return (base / "src" / "trader" / "dashboard_ui.py").read_text()
 
 
 def test_price_headline_branches_on_session():
     """Price headline must branch on session.is_open (skip day delta
-    when market is closed). v3.66.0+: variable was renamed to `sess`."""
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    headline_idx = text.index("def _render_price_headline")
+    when market is closed). v3.67.0+: helper moved to dashboard_ui.py
+    as render_price_headline."""
+    text = _ui_text()
+    needle = "def render_price_headline"
+    assert needle in text
+    headline_idx = text.index(needle)
     next_def_idx = text.index("\ndef ", headline_idx + 1)
     body = text[headline_idx:next_def_idx]
-    # Either old name (`session.is_open`) or refactored name (`sess.is_open`)
-    assert ("session.is_open" in body) or ("sess.is_open" in body)
+    assert "sess.is_open" in body
     assert "Markets closed" in body
 
 
 def test_live_positions_relabels_day_pl_when_closed():
-    """view_live_positions must show 'Last session ({date})' instead of
-    'Day P&L' when market is closed. v3.66.0+: the OPEN-vs-CLOSED branch
-    moved into the shared _render_day_pl_card helper, so the view now
-    just delegates to it."""
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
+    """v3.67.0+: the OPEN-vs-CLOSED relabel branch lives in
+    render_day_pl_card (dashboard_ui.py); view_live_positions delegates
+    to it via the _render_day_pl_card alias."""
+    base = Path(__file__).resolve().parent.parent
+    text = (base / "scripts" / "dashboard.py").read_text()
     view_idx = text.index("def view_live_positions")
     next_def_idx = text.index("\ndef ", view_idx + 1)
     body = text[view_idx:next_def_idx]
-    # Either inlined the branch (pre-v3.66.0) or delegates to the helper
-    delegates_to_helper = "_render_day_pl_card" in body
-    inlined_branch = "Last session" in body and "session.is_open" in body
-    assert delegates_to_helper or inlined_branch, \
-        "view_live_positions must either inline the closed-market relabel " \
-        "or call _render_day_pl_card"
-    # Either way, the helper itself must contain the relabel (catches
-    # the case where the helper got broken)
-    helper_idx = text.index("def _render_day_pl_card")
-    helper_next = text.index("\ndef ", helper_idx + 1)
-    helper_body = text[helper_idx:helper_next]
+    assert "_render_day_pl_card" in body
+    # Helper itself must contain the relabel — catches a broken helper
+    ui_text = _ui_text()
+    helper_idx = ui_text.index("def render_day_pl_card")
+    helper_next = ui_text.index("\ndef ", helper_idx + 1)
+    helper_body = ui_text[helper_idx:helper_next]
     assert "Last session" in helper_body
     assert "is_open" in helper_body
 
 
 def test_market_ribbon_shows_closed_badge():
-    """Market ribbon must show MARKET OPEN or CLOSED · last close badge."""
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    ribbon_idx = text.index("def _render_market_ribbon")
+    """v3.67.0+: ribbon helper lives in dashboard_ui.py."""
+    text = _ui_text()
+    needle = "def render_market_ribbon"
+    assert needle in text
+    ribbon_idx = text.index(needle)
     next_def_idx = text.index("\ndef ", ribbon_idx + 1)
     body = text[ribbon_idx:next_def_idx]
     assert "MARKET OPEN" in body

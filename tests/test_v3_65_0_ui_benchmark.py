@@ -42,38 +42,50 @@ def test_dashboard_version_bumped_to_v3_65_0():
         "sidebar must show some v3.6x.y version label"
 
 
+def _all_dashboard_text():
+    """Read dashboard.py + dashboard_ui.py + dashboard_data.py.
+    Robust to v3.67.0+ helper extraction."""
+    base = Path(__file__).resolve().parent.parent
+    parts = []
+    for p in (base / "scripts" / "dashboard.py",
+              base / "src" / "trader" / "dashboard_ui.py",
+              base / "src" / "trader" / "dashboard_data.py"):
+        if p.exists():
+            parts.append(p.read_text())
+    return "\n".join(parts)
+
+
 def test_dashboard_has_market_ribbon():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "def _render_market_ribbon" in text
-    assert "_ribbon_market_snapshot" in text
-    # Ribbon must call into the module before view dispatch
+    text = _all_dashboard_text()
+    # v3.67.0+: helper renamed to render_market_ribbon (no underscore
+    # prefix, lives in dashboard_ui.py); dashboard.py keeps an alias.
+    assert ("def _render_market_ribbon" in text
+            or "def render_market_ribbon" in text)
+    assert "ribbon_market_snapshot" in text
+    # Ribbon must be invoked from dashboard before view dispatch
     assert "_render_market_ribbon()" in text
 
 
 def test_dashboard_has_price_headline():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "def _render_price_headline" in text
-    # Price headline must be on Overview
+    text = _all_dashboard_text()
+    assert ("def _render_price_headline" in text
+            or "def render_price_headline" in text)
     assert "_render_price_headline()" in text
 
 
 def test_dashboard_has_ask_hank_fab():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "def _render_floating_hank_fab" in text
+    text = _all_dashboard_text()
+    assert ("def _render_floating_hank_fab" in text
+            or "def render_floating_hank_fab" in text)
     assert "Ask HANK" in text
-    # FAB must route to chat view
     assert 'st.session_state.active_view = "chat"' in text
 
 
 def test_dashboard_has_timeframe_chips_helper():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
+    text = _all_dashboard_text()
     assert "TIMEFRAME_CHIPS" in text
-    assert "def _render_timeframe_chips" in text
-    # All 9 standard chip labels (Yahoo/Nasdaq/CNBC/TipRanks set)
+    assert ("def _render_timeframe_chips" in text
+            or "def render_timeframe_chips" in text)
     for label in ('"1D"', '"5D"', '"1M"', '"3M"', '"6M"',
                    '"YTD"', '"1Y"', '"5Y"', '"ALL"'):
         assert label in text
@@ -94,15 +106,9 @@ def test_performance_view_uses_chips_not_selectbox():
 # Behavior — chip helper translates labels to trading days
 # ============================================================
 def test_timeframe_chips_label_to_days():
-    """Verify the chip helper exposes the expected days mapping."""
-    import sys
-    p = Path(__file__).resolve().parent.parent / "scripts"
-    sys.path.insert(0, str(p))
-    # Read the constant directly from the file (importing dashboard.py
-    # would instantiate Streamlit). Parse the TIMEFRAME_CHIPS literal.
-    text = (Path(__file__).resolve().parent.parent /
-            "scripts" / "dashboard.py").read_text()
-    # Sanity: 1D=1, 1M=21, 3M=63, 1Y=252, 5Y=1260
+    """Verify the chip helper exposes the expected days mapping.
+    v3.67.0+: TIMEFRAME_CHIPS literal lives in dashboard_ui.py."""
+    text = _all_dashboard_text()
     assert '("1D", 1)' in text
     assert '("1M", 21)' in text
     assert '("3M", 63)' in text
@@ -114,18 +120,15 @@ def test_timeframe_chips_label_to_days():
 # Ribbon snapshot helper degrades gracefully
 # ============================================================
 def test_ribbon_snapshot_returns_dict_on_failure(monkeypatch):
-    """If yfinance fails (no network), _ribbon_market_snapshot returns an
-    empty dict, not raise. The ribbon HTML is built around .get() so empty
-    is safe."""
-    # Strip the streamlit cache so we actually re-execute the body
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-    # We can't import dashboard at module level (instantiates Streamlit),
-    # so we just verify the function body uses .get() defensively.
-    text = (Path(__file__).resolve().parent.parent /
-            "scripts" / "dashboard.py").read_text()
-    # Body must catch top-level Exception and return {}
-    snap_idx = text.index("def _ribbon_market_snapshot")
+    """If yfinance fails (no network), the ribbon snapshot returns an
+    empty dict, not raise. v3.67.0+: helper lives in dashboard_ui.py
+    as ribbon_market_snapshot (no underscore prefix)."""
+    base = Path(__file__).resolve().parent.parent
+    text = (base / "src" / "trader" / "dashboard_ui.py").read_text()
+    # Find the function body
+    needle = "def ribbon_market_snapshot"
+    assert needle in text
+    snap_idx = text.index(needle)
     next_def_idx = text.index("\ndef ", snap_idx + 1)
     snap_body = text[snap_idx:next_def_idx]
     assert "except Exception" in snap_body

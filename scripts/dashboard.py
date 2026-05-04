@@ -1,4 +1,15 @@
-"""Live local dashboard for the trader (v3.66.0).
+"""Live local dashboard for the trader (v3.67.0).
+
+v3.67.0 — File split. dashboard.py grew past 5,600 lines; pure helpers
+now live in:
+  - trader/dashboard_ui.py   (rendering helpers — ribbon, headline,
+                               FAB, chips, day-P&L card, citations)
+  - trader/dashboard_data.py (data layer — query, read_state_file,
+                               live_portfolio, cached_snapshots)
+
+dashboard.py keeps view functions, sidebar, and dispatch — those are
+deeply entangled with their own logic and don't benefit from extraction.
+The new modules are independently importable + unit-testable.
 
 v3.66.0 — Single-source-of-truth refactor. Resolves the v3.65.x bug
 class where journal_snapshot + briefing_cache + live_broker +
@@ -405,7 +416,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.66.0 · chat-first AI dashboard")
+    st.caption("v3.67.0 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -659,52 +670,14 @@ with st.sidebar:
 DB_PATH = Path(st.session_state.db_path)
 
 
-@st.cache_data(ttl=10)
-def query(path_str: str, sql: str, params: tuple = (),
-            silent: bool = False) -> pd.DataFrame:
-    """v3.62.0: silent flag suppresses st.error display. Use silent=True
-    when caller is gracefully handling missing-table / empty-table cases
-    (e.g., querying slippage_log before any orders have been placed)."""
-    if not Path(path_str).exists():
-        return pd.DataFrame()
-    try:
-        with sqlite3.connect(f"file:{path_str}?mode=ro", uri=True) as c:
-            return pd.read_sql_query(sql, c, params=params)
-    except Exception as e:
-        msg = str(e)
-        # Always silent for "no such table" — these are expected for
-        # tables that get created lazily (slippage_log on first order)
-        if "no such table" in msg.lower():
-            return pd.DataFrame()
-        if not silent:
-            st.error(f"query failed: {e}")
-        return pd.DataFrame()
+# v3.67.0: data helpers extracted to trader.dashboard_data so they can
+# be unit-tested without instantiating Streamlit. Thin re-exports below
+# preserve the call-site names the views were written against.
+from trader import dashboard_data as _data  # noqa: E402
 
-
-@st.cache_data(ttl=10)
-def read_state_file(path_str: str) -> dict:
-    p = Path(path_str)
-    if not p.exists():
-        return {}
-    try:
-        return json.loads(p.read_text())
-    except Exception:
-        return {}
-
-
-@st.cache_data(ttl=60, show_spinner="📡 Fetching live positions from broker...")
-def _live_portfolio():
-    try:
-        from trader.positions_live import fetch_live_portfolio
-        return fetch_live_portfolio()
-    except Exception as e:
-        class E:
-            error = f"{type(e).__name__}: {e}"
-            equity = None; cash = None; buying_power = None
-            total_unrealized_pl = 0; total_day_pl_dollar = 0; total_day_pl_pct = None
-            positions = []
-            timestamp = datetime.utcnow().isoformat()
-        return E()
+query = _data.query
+read_state_file = _data.read_state_file
+_live_portfolio = _data.live_portfolio
 
 
 # v3.56.4: disk-backed briefing cache so cold-start (container restart,
@@ -868,9 +841,7 @@ def _overlay_signal():
         return None
 
 
-@st.cache_data(ttl=30, show_spinner=False)
-def _cached_snapshots(db_path: str):
-    return query(db_path, "SELECT * FROM daily_snapshot ORDER BY date DESC LIMIT 30")
+_cached_snapshots = _data.cached_snapshots
 
 
 def _headline_metrics():
@@ -920,429 +891,50 @@ def _headline_metrics():
 
 
 # ============================================================
-# v3.65.0 (UI_BENCHMARK pass) — sticky market ribbon + price headline
-#                              + floating Ask-HANK pill
-# Patterns lifted from Yahoo / Nasdaq / CNBC / TipRanks. See
-# docs/UI_BENCHMARK.md for the full study.
+# UI helpers — v3.67.0 SPLIT
+#
+# Most rendering helpers (sticky ribbon, price headline, FAB,
+# timeframe chips, day-P&L card, equity state, citation pills, tool
+# artifacts) now live in trader/dashboard_ui.py so they can be
+# unit-tested without instantiating Streamlit. The thin wrappers below
+# preserve the underscore-prefixed names that views call so the view
+# bodies didn't have to be rewritten in the same commit.
 # ============================================================
-@st.cache_data(ttl=120, show_spinner=False)
-def _ribbon_market_snapshot() -> dict:
-    """Pull SPY / QQQ / VIX last-2-day closes once every 2 min for the
-    sticky ribbon. Returns {} on any failure (offline, rate limit) so the
-    ribbon degrades gracefully to '—'."""
-    out: dict = {}
-    try:
-        import yfinance as yf
-        tickers = yf.download(
-            ["SPY", "QQQ", "^VIX"], period="5d", progress=False,
-            auto_adjust=True, threads=False,
-        )
-        if tickers is None or tickers.empty:
-            return out
-        closes = tickers["Close"] if "Close" in tickers.columns.get_level_values(0) else tickers
-        for sym, key in (("SPY", "spy"), ("QQQ", "qqq"), ("^VIX", "vix")):
-            try:
-                col = closes[sym].dropna()
-                if len(col) >= 2:
-                    last = float(col.iloc[-1])
-                    prev = float(col.iloc[-2])
-                    out[key] = {"last": last,
-                                 "pct": (last - prev) / prev if prev else None}
-            except Exception:
-                continue
-    except Exception:
-        return out
-    return out
+from trader import dashboard_ui as _ui  # noqa: E402
 
+_BRIEFING_CACHE_FILE_PATH = ROOT / "data" / "briefing_cache.json"
 
-def _market_session():
-    """Wrapper around trader.market_session.market_session_now so views
-    can branch on OPEN vs CLOSED_* without importing the module each
-    time. Returns SessionState.
-
-    v3.66.0: loud-fail on import error (caption a warning + return a
-    safe-CLOSED fallback so the user knows session detection is broken).
-    The previous synthetic-OPEN fallback would have lied to the UI,
-    re-enabling the v3.65.x phantom-day-P&L behavior we just fixed."""
-    try:
-        from trader.market_session import market_session_now
-        return market_session_now()
-    except Exception as e:
-        st.warning(f"⚠️ market session detection failed ({type(e).__name__}: {e}) "
-                    "— treating as CLOSED to avoid showing misleading day P&L. "
-                    "Day deltas will be hidden until this is fixed.")
-        from datetime import datetime as _dt
-        from collections import namedtuple
-        Fake = namedtuple("Fake", ["label", "is_open", "last_trading_day",
-                                    "next_trading_day", "et_now", "reason"])
-        today = _dt.utcnow().date()
-        return Fake("CLOSED_OVERNIGHT", False, today, today, _dt.utcnow(),
-                     "session helper errored")
-
-
-@st.cache_data(ttl=30, show_spinner=False)
-def _equity_state_cached():
-    """Cached EquityState. 30s TTL is short enough that during RTH the
-    user always sees a fresh broker mark, and long enough that a single
-    page load doesn't fan out into 10 broker calls.
-
-    Source priority is live_broker → journal_snapshot → briefing_cache
-    (handled inside get_equity_state). Returned as a dict so Streamlit
-    can hash it for caching; views call _get_equity_state() to get the
-    typed object back."""
-    try:
-        from trader.equity_state import get_equity_state
-        s = get_equity_state(
-            journal_db=DB_PATH,
-            briefing_cache=ROOT / "data" / "briefing_cache.json",
-        )
-        # Serialize to dict so Streamlit's cache layer can hash it.
-        # The session field is a frozen dataclass — Streamlit handles it.
-        return s
-    except Exception as e:
-        return {"_error": f"{type(e).__name__}: {e}"}
+_market_session = _ui.market_session
+_render_day_pl_card = _ui.render_day_pl_card
+_render_floating_hank_fab = _ui.render_floating_hank_fab
+_render_timeframe_chips = _ui.render_timeframe_chips
+_tier_emoji = _ui.tier_emoji
+_render_citation_pills = _ui.render_citation_pills
+_render_tool_artifact = _ui.render_tool_artifact
+_ribbon_market_snapshot = _ui.ribbon_market_snapshot
+TIMEFRAME_CHIPS = _ui.TIMEFRAME_CHIPS
 
 
 def _get_equity_state():
-    """Public accessor used by every view. Returns EquityState (or a
-    stand-in 'none' state if the cached helper errored)."""
-    s = _equity_state_cached()
-    if isinstance(s, dict) and "_error" in s:
-        # Build a minimal stand-in so callers can render gracefully
-        from trader.equity_state import EquityState
-        from trader.market_session import market_session_now
-        sess = market_session_now()
-        return EquityState(
-            equity_now=None, cash=None, n_positions=0,
-            today_pl_dollar=None, today_pl_pct=None,
-            last_session_pl_dollar=None, last_session_pl_pct=None,
-            last_session_date=sess.last_trading_day.isoformat(),
-            source="none", source_age_seconds=0.0, session=sess,
-            error=s["_error"],
-        )
-    return s
+    """Pass dashboard's DB_PATH + briefing cache into the shared helper."""
+    return _ui.get_equity_state(str(DB_PATH), str(_BRIEFING_CACHE_FILE_PATH))
 
 
-def _render_day_pl_card(col, state):
-    """Render one Streamlit column as a session-aware day-P&L metric.
-
-    Pre-v3.66.0 this branch was inlined in view_live_positions and
-    view_performance with subtle copy-paste drift. Centralized here:
-    every consumer gets identical labels, tooltips, and stale-data
-    handling.
-
-    `col` = a Streamlit column object (or st itself for full-width).
-    `state` = an EquityState from _get_equity_state()."""
-    sess = state.session
-    if state.equity_now is None:
-        col.metric("Day P&L", "n/a", help="No equity source reachable.")
-        return
-    if sess.is_open:
-        if state.today_pl_dollar is None:
-            col.metric("Day P&L", "computing…")
-            return
-        col.metric(
-            "Day P&L",
-            f"${state.today_pl_dollar:+,.0f}",
-            f"{state.today_pl_pct*100:+.2f}%" if state.today_pl_pct is not None else None,
-        )
-    else:
-        # Markets closed — relabel so the user knows what they're looking at
-        last_str = sess.last_trading_day.strftime("%a %b %-d")
-        if state.last_session_pl_dollar is None:
-            col.metric(f"Last session ({last_str})", "n/a")
-            return
-        col.metric(
-            f"Last session ({last_str})",
-            f"${state.last_session_pl_dollar:+,.0f}",
-            f"{state.last_session_pl_pct*100:+.2f}%"
-            if state.last_session_pl_pct is not None else None,
-            help=("Markets closed — this is the most recent trading "
-                  "session's move, not 'today'. See sticky ribbon for "
-                  "session state."),
-        )
+def _equity_state_cached():
+    """Backwards-compat alias used by tests. Real cache lives inside
+    _ui.equity_state_cached."""
+    return _ui.equity_state_cached(str(DB_PATH), str(_BRIEFING_CACHE_FILE_PATH))
 
 
 def _render_market_ribbon():
-    """Thin, always-on horizontal market ribbon — SPY / QQQ / VIX +
-    regime overlay multiplier + market-session badge. Renders at the top
-    of EVERY non-chat view so the user keeps market context while
-    scrolling through Strategy Lab / Performance / etc.
-
-    Pattern: Yahoo Finance's persistent market-stats rail. v3.65.1 adds
-    a session badge so the user knows whether the SPY/QQQ/VIX numbers
-    are from a live session or a stale Friday close.
-    """
-    snap = _ribbon_market_snapshot()
-    overlay = _overlay_signal()
-    session = _market_session()
-
-    parts: list[str] = []
-
-    # Session badge ALWAYS first so the user sees it before reading numbers
-    if session.is_open:
-        parts.append('<span style="background:#052e16;color:#4ade80;'
-                      'padding:2px 8px;border-radius:4px;font-weight:600">'
-                      '● MARKET OPEN</span>')
-    else:
-        last_str = session.last_trading_day.strftime("%a %b %-d")
-        parts.append(f'<span style="background:#1e293b;color:#94a3b8;'
-                      f'padding:2px 8px;border-radius:4px;font-weight:600">'
-                      f'○ CLOSED · last close {last_str}</span>')
-
-    def _fmt(symbol: str, key: str, dec: int = 2) -> str:
-        v = snap.get(key)
-        if not v or v.get("last") is None:
-            return f'<span style="color:#888">{symbol} —</span>'
-        last = v["last"]
-        pct = v.get("pct")
-        if pct is None:
-            return (f'<span style="color:#cbd5e1">{symbol} '
-                    f'{last:,.{dec}f}</span>')
-        color = "#16a34a" if pct >= 0 else "#dc2626"
-        sign = "▲" if pct >= 0 else "▼"
-        return (f'<span style="color:#cbd5e1">{symbol} '
-                f'<b style="font-family:JetBrains Mono,monospace">'
-                f'{last:,.{dec}f}</b> '
-                f'<span style="color:{color}">{sign} {abs(pct)*100:.2f}%'
-                f'</span></span>')
-
-    parts.append(_fmt("SPY", "spy"))
-    parts.append(_fmt("QQQ", "qqq"))
-    parts.append(_fmt("VIX", "vix"))
-
-    if overlay is not None and overlay.hmm_regime:
-        regime = overlay.hmm_regime.upper()
-        emoji = {"BULL": "🟢", "BEAR": "🔴", "TRANSITION": "🟡"}.get(regime, "⚪")
-        suffix = "" if overlay.enabled else " (off)"
-        parts.append(
-            f'<span style="color:#cbd5e1">{emoji} {regime} '
-            f'<span style="color:#94a3b8">overlay {overlay.final_mult:.2f}×'
-            f'{suffix}</span></span>')
-    else:
-        parts.append('<span style="color:#888">⚪ regime —</span>')
-
-    sep = '<span style="color:#475569;margin:0 14px">·</span>'
-    html = (
-        '<div style="background:#0f172a;border:1px solid #1e293b;'
-        'border-radius:6px;padding:8px 14px;margin-bottom:14px;'
-        'font-size:13px;line-height:1.4;'
-        'display:flex;flex-wrap:wrap;align-items:center">'
-        + sep.join(parts) +
-        '</div>'
-    )
-    st.markdown(html, unsafe_allow_html=True)
+    """Pass the disk-cached overlay signal into the shared ribbon
+    helper (overlay reading stays in dashboard.py because it depends on
+    a disk cache initialized at module load)."""
+    _ui.render_market_ribbon(overlay=_overlay_signal())
 
 
 def _render_price_headline():
-    """Big-block price headline — Nasdaq/CNBC pattern. Renders the equity
-    NOW + day P&L $/% in a 48px+ font with a green/red background tint
-    so the dominant number is unambiguous.
-
-    v3.66.0: now reads from the canonical EquityState (was reading
-    daily_snapshot directly + duplicating session logic). Color audit
-    per UI_BENCHMARK pattern #7: dark-green/dark-red background only
-    when there's a real day delta to show; neutral charcoal otherwise.
-    Provenance line below shows source + age so the user knows whether
-    they're looking at a 5-second-old broker mark or a 2-day-old
-    journal snapshot."""
-    state = _get_equity_state()
-    if state.equity_now is None:
-        st.caption(
-            f"_no equity source reachable_ "
-            f"({state.error or 'broker, journal, briefing all empty'})"
-        )
-        return
-
-    eq_now = state.equity_now
-    sess = state.session
-
-    # Decide whether to show a day delta. Only when market is OPEN do we
-    # show a colored ▲/▼ — otherwise we render a neutral "Markets closed"
-    # badge. (Pattern #7 in UI_BENCHMARK: green/red is reserved for
-    # active P&L direction.)
-    if sess.is_open and state.today_pl_dollar is not None:
-        if state.today_pl_pct >= 0:
-            bg, fg = "#052e16", "#bbf7d0"
-            arrow_color = "#4ade80"
-            arrow = "▲"
-        else:
-            bg, fg = "#450a0a", "#fecaca"
-            arrow_color = "#f87171"
-            arrow = "▼"
-        delta_html = (
-            f'<span style="color:{arrow_color};font-size:24px;'
-            f'margin-left:18px">{arrow} '
-            f'${state.today_pl_dollar:+,.0f} '
-            f'({state.today_pl_pct*100:+.2f}%)</span>')
-    else:
-        bg, fg = "#1e293b", "#e2e8f0"
-        last_str = sess.last_trading_day.strftime("%a %b %-d, %Y")
-        delta_html = (
-            f'<span style="color:#94a3b8;font-size:14px;margin-left:18px;'
-            f'font-style:italic">Markets closed · last session '
-            f'{last_str}</span>')
-
-    # Provenance line: source + age. v3.66.0 gives the user a way to
-    # answer "where did this number come from?" without grep-ing the
-    # codebase.
-    age = state.source_age_seconds
-    if age < 60:
-        age_str = f"{int(age)}s ago"
-    elif age < 3600:
-        age_str = f"{int(age/60)}m ago"
-    else:
-        age_str = f"{int(age/3600)}h ago"
-    stale_color = "#fbbf24" if state.is_stale else "#64748b"
-    src_html = (
-        f'<div style="color:{stale_color};font-size:10px;'
-        f'margin-top:6px;font-family:JetBrains Mono,monospace">'
-        f'src: {state.source} · {age_str}</div>'
-    )
-
-    html = (
-        f'<div style="background:{bg};border-radius:10px;'
-        f'padding:18px 26px;margin-bottom:16px">'
-        f'<div style="color:#94a3b8;font-size:11px;text-transform:uppercase;'
-        f'letter-spacing:0.08em">Equity</div>'
-        f'<div style="margin-top:4px">'
-        f'<span style="color:{fg};font-size:48px;font-weight:700;'
-        f'font-family:JetBrains Mono,monospace">${eq_now:,.0f}</span>'
-        f'{delta_html}'
-        f'</div>'
-        f'{src_html}'
-        f'</div>'
-    )
-    st.markdown(html, unsafe_allow_html=True)
-
-
-def _render_floating_hank_fab():
-    """Bottom-right floating 'Ask HANK' pill on every non-chat view.
-
-    Pattern: TipRanks 'Ask Samuel AI' floating button. Click → routes to
-    the chat view (no JS round-trip; we use a Streamlit button styled to
-    pin to the viewport corner via CSS).
-    """
-    # Inject the CSS (idempotent — last definition wins; cheap)
-    st.markdown("""
-    <style>
-      div[data-testid="column"]:has(button[kind="secondary"][data-testid="baseButton-secondary"].fab-hank) {
-        position: fixed; right: 24px; bottom: 24px; z-index: 9999;
-      }
-      /* Generic fallback: the parent container of the FAB row gets pinned */
-      .hank-fab-row { position: fixed !important; right: 24px;
-                       bottom: 24px; z-index: 9999;
-                       background: transparent !important; }
-      /* v3.66.0: flat brand-blue (#2563eb) per UI_BENCHMARK pattern
-         #7 — green/red reserved for P&L direction; everything else
-         uses one neutral brand color + grays */
-      .hank-fab-row .stButton > button {
-        background: #2563eb;
-        color: white !important; border: none; border-radius: 999px;
-        padding: 12px 20px; font-weight: 600; font-size: 14px;
-        box-shadow: 0 4px 14px rgba(37,99,235,.35);
-      }
-      .hank-fab-row .stButton > button:hover {
-        background: #1d4ed8;
-      }
-    </style>
-    """, unsafe_allow_html=True)
-    st.markdown('<div class="hank-fab-row">', unsafe_allow_html=True)
-    if st.button("🧠 Ask HANK", key="fab_ask_hank",
-                  help="Open the HANK chat (you can also press Cmd+K)"):
-        st.session_state.active_view = "chat"
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-# Industry-standard timeframe chips — Yahoo / Nasdaq / CNBC / TipRanks
-# all use this exact set. Order matches their conventions.
-TIMEFRAME_CHIPS = [
-    ("1D", 1), ("5D", 5), ("1M", 21), ("3M", 63),
-    ("6M", 126), ("YTD", "ytd"), ("1Y", 252), ("5Y", 1260), ("ALL", "all"),
-]
-
-
-def _render_timeframe_chips(state_key: str, default_label: str = "3M") -> int:
-    """Horizontal row of timeframe chip buttons. Returns the chosen
-    window in trading days. Stores selection in session_state[state_key]."""
-    if state_key not in st.session_state:
-        st.session_state[state_key] = default_label
-    cols = st.columns(len(TIMEFRAME_CHIPS))
-    for col, (label, _) in zip(cols, TIMEFRAME_CHIPS):
-        is_active = st.session_state[state_key] == label
-        btype = "primary" if is_active else "secondary"
-        if col.button(label, key=f"tf_{state_key}_{label}",
-                       use_container_width=True, type=btype):
-            st.session_state[state_key] = label
-            st.rerun()
-    label = st.session_state[state_key]
-    val = dict(TIMEFRAME_CHIPS)[label]
-    if val == "ytd":
-        from datetime import datetime as _dt
-        today = _dt.utcnow().date()
-        days_since_jan1 = (today - today.replace(month=1, day=1)).days
-        return max(int(days_since_jan1 * 252 / 365), 5)
-    if val == "all":
-        return 1260 * 5  # ~25y; backtest helpers cap to available data
-    return int(val)
-
-
-# ============================================================
-# Phase 1 (v3.57.1) — citation pills + side-panel artifacts
-# ============================================================
-def _tier_emoji(tier: str) -> str:
-    return {"read_only": "📖", "sim": "🧪", "live": "🚨"}.get(tier, "🔧")
-
-
-def _render_citation_pills(tool_log: list[dict]):
-    """Render a row of [1][2][3] citation pills for the just-completed tool calls.
-
-    Hebbia/Perplexity pattern: every claim from a tool result gets a numbered
-    pill that scrolls the user to the artifact below.
-    """
-    if not tool_log:
-        return
-    pills = []
-    for i, tc in enumerate(tool_log, start=1):
-        emoji = _tier_emoji(tc.get("tier", "read_only"))
-        name = tc.get("name", "?")
-        pills.append(f"`[{i}]` {emoji} {name}")
-    st.markdown("**Sources:** " + " · ".join(pills))
-
-
-def _render_tool_artifact(idx: int, tc: dict):
-    """Render one tool call as an inline artifact card.
-
-    For tabular results we use st.dataframe; for everything else we fall back
-    to st.json. Mimics the Claude/ChatGPT canvas-style side panel within the
-    existing chat container (Streamlit has no real right-side panel).
-    """
-    name = tc.get("name", "?")
-    tier = tc.get("tier", "read_only")
-    st.markdown(f"**[{idx}] {_tier_emoji(tier)} `{name}`** _(tier: {tier})_")
-    args = tc.get("input", {})
-    if args:
-        st.caption(f"args: `{args}`")
-    result = tc.get("result", {})
-    if isinstance(result, dict):
-        # Promote tabular fields to dataframe view
-        for key in ("rows", "positions", "decisions", "events", "lots",
-                    "postmortems", "shadow_decisions", "orders"):
-            if key in result and isinstance(result[key], list) and result[key]:
-                st.caption(f"{key} ({len(result[key])} rows):")
-                try:
-                    st.dataframe(result[key], use_container_width=True,
-                                 hide_index=True)
-                except Exception:
-                    st.json(result[key], expanded=False)
-                # Show the rest of the dict (without the big list) as JSON
-                remainder = {k: v for k, v in result.items() if k != key}
-                if remainder:
-                    st.caption("metadata:")
-                    st.json(remainder, expanded=False)
-                return
-    st.json(result, expanded=False)
+    _ui.render_price_headline(_get_equity_state())
 
 
 # ============================================================

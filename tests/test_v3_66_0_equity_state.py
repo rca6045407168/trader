@@ -189,70 +189,71 @@ def test_dashboard_version_v3_66_0():
 
 
 def test_dashboard_imports_get_equity_state():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "from trader.equity_state import get_equity_state" in text
-    assert "def _get_equity_state" in text
-    assert "_equity_state_cached" in text
+    """Dashboard must wire the canonical EquityState helper through.
+    v3.67.0+: the actual import lives in trader/dashboard_ui.py;
+    dashboard.py just re-exports `_get_equity_state` and
+    `_equity_state_cached` aliases."""
+    base = Path(__file__).resolve().parent.parent
+    db_text = (base / "scripts" / "dashboard.py").read_text()
+    ui_text = (base / "src" / "trader" / "dashboard_ui.py").read_text()
+    # Either dashboard.py or dashboard_ui.py imports get_equity_state
+    assert ("from trader.equity_state import get_equity_state"
+            in (db_text + ui_text))
+    # Dashboard preserves the underscore-prefixed accessor names views call
+    assert "def _get_equity_state" in db_text
+    assert "_equity_state_cached" in db_text
+
+
+def _ui_text():
+    """v3.67.0+: render helpers in trader/dashboard_ui.py."""
+    base = Path(__file__).resolve().parent.parent
+    return (base / "src" / "trader" / "dashboard_ui.py").read_text()
 
 
 def test_dashboard_has_day_pl_helper():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "def _render_day_pl_card" in text
+    text = _ui_text()
+    assert "def render_day_pl_card" in text
 
 
 def test_dashboard_views_consume_equity_state():
-    """Both view_live_positions and view_performance fallback must call
-    _render_day_pl_card with _get_equity_state(), not inline the logic."""
+    """view_live_positions must call _render_day_pl_card with the
+    canonical EquityState (not inline the logic)."""
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()
-    # view_live_positions
     lp_idx = text.index("def view_live_positions")
     next_def_idx = text.index("\ndef ", lp_idx + 1)
     lp_body = text[lp_idx:next_def_idx]
     assert "_render_day_pl_card" in lp_body
     assert "_get_equity_state" in lp_body
-    # The previous inline branch must be gone
-    assert 'session.is_open' not in lp_body or 'Last session' not in lp_body
-    # ...actually the inline 'Last session' literal should be gone
+    # The inline relabel branch must be gone from the view body
     assert "Last session (" not in lp_body
 
 
 def test_market_session_now_loud_fails():
-    """v3.66.0: when the underlying market_session module raises, the
-    dashboard wrapper must call st.warning (loud-fail) instead of
-    silently returning a synthetic OPEN."""
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    sess_idx = text.index("def _market_session(")
+    """v3.67.0+: market_session() helper lives in dashboard_ui.py.
+    Loud-fails (st.warning) on errors instead of synthetic-OPEN."""
+    text = _ui_text()
+    sess_idx = text.index("def market_session(")
     next_def_idx = text.index("\ndef ", sess_idx + 1)
     body = text[sess_idx:next_def_idx]
     assert "st.warning" in body
-    # The fake fallback must now be CLOSED, not OPEN
     assert '"CLOSED_OVERNIGHT"' in body
-    # The previous synthetic-OPEN must be gone
     assert '"OPEN", True,' not in body
 
 
 def test_color_audit_fab_uses_flat_blue():
-    """v3.66.0 color audit: FAB no longer uses the purple gradient
-    (pattern #7: green/red for direction only, brand color for everything
-    else)."""
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    # The old purple gradient must be gone
+    """Color audit: FAB no longer uses the purple gradient. Lives in
+    dashboard_ui.py as of v3.67.0."""
+    text = _ui_text()
     assert "linear-gradient(135deg,#2563eb,#7c3aed)" not in text
-    # Flat brand-blue should be present
     assert "background: #2563eb;" in text
 
 
 def test_price_headline_shows_provenance():
-    """v3.66.0: price headline includes a 'src: ... · Xs ago' line so
-    the user can see which source produced the equity number."""
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    head_idx = text.index("def _render_price_headline")
+    """Price headline includes 'src: ... · Xs ago' so the user knows
+    the equity source. Lives in dashboard_ui.py."""
+    text = _ui_text()
+    head_idx = text.index("def render_price_headline")
     next_def_idx = text.index("\ndef ", head_idx + 1)
     body = text[head_idx:next_def_idx]
     assert "src:" in body

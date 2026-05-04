@@ -109,18 +109,20 @@ def test_briefing_no_disabled_overlay_format():
 # ============================================================
 def test_query_helper_silent_on_missing_table():
     """The query helper must NOT call st.error() for 'no such table'
-    errors — those are expected for tables that get created lazily."""
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    # The new logic
+    errors — those are expected for tables that get created lazily.
+    v3.67.0+: helper now lives in trader/dashboard_data.py."""
+    base = Path(__file__).resolve().parent.parent
+    text = (base / "src" / "trader" / "dashboard_data.py").read_text()
     assert 'no such table' in text.lower()
-    # Must mention silently swallowing for missing tables
     assert "silent" in text
 
 
 def test_query_helper_signature_has_silent_flag():
-    """Public API change: silent flag added."""
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    # The new signature
-    assert "def query(path_str: str, sql: str, params: tuple = (),\n            silent: bool = False)" in text
+    """Public API change: silent flag added.
+    v3.67.0+: helper now lives in trader/dashboard_data.py."""
+    base = Path(__file__).resolve().parent.parent
+    text = (base / "src" / "trader" / "dashboard_data.py").read_text()
+    # Either the original wrap (4 spaces of indent) or the new module
+    # version (4 spaces) — accept either form by checking the key tokens.
+    assert "def query(path_str: str, sql: str, params: tuple = ()" in text
+    assert "silent: bool = False" in text
