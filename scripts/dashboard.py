@@ -1,4 +1,19 @@
-"""Live local dashboard for the trader (v3.68.0).
+"""Live local dashboard for the trader (v3.68.1).
+
+v3.68.1 — Auto-fire the earnings reactor via launchd. Mac launchd job
+at infra/launchd/com.trader.earnings-reactor.plist fires weekdays 17:05
+ET (post-close), every 4h via StartInterval (sleep-resilient), and on
+laptop wake. Idempotent: over-firing costs zero Claude tokens because
+the reactor's UNIQUE constraint on (symbol, accession) makes re-runs
+free when no new 8-Ks have landed.
+
+  - infra/launchd/com.trader.earnings-reactor.plist (version-controlled
+    in the repo so plist edits land via git)
+  - scripts/install_launchd_earnings.sh (idempotent; --uninstall flag)
+  - docs/AUTOMATION.md describing the 3-layer automation model
+
+Verified end-to-end on first install: 13 8-Ks archived for our LIVE
+positions, 1 material flag (INTC $6.5B debt raise → BEARISH).
 
 v3.68.0 — Earnings reactor + persistent filings archive. Mirrors the
 Sand Grove / FT pattern (LLMQuant 2026-05-04 article): AI compresses
@@ -455,7 +470,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.68.0 · chat-first AI dashboard")
+    st.caption("v3.68.1 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top

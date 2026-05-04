@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  v3.68.1 — Auto-fire the earnings reactor.
+
+  Pattern (per /Users/richardchen/.claude/projects/.../MEMORY.md note on
+  sleep-resilience): pair StartCalendarInterval with RunAtLoad + StartInterval
+  so missed fires while laptop is asleep get caught up on wake. The reactor
+  is idempotent at the accession-key level, so over-firing is harmless and
+  cheap (zero Claude tokens spent if no new 8-Ks).
+
+  Cadence:
+    - Weekdays at 17:05 ET (= post-close): catches every earnings 8-K filed
+      during the trading session
+    - Every 4 hours via StartInterval: catches new 8-Ks filed mid-day +
+      catches up after sleep
+    - On load + on wake: belt and suspenders
+
+  Logs go to ~/Library/Logs/trader-earnings-reactor.log per the memory rule
+  ("log to ~/Library/Logs not /tmp" from OpenClaw safety + privacy first).
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trader.earnings-reactor</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /Users/richardchen/trader &amp;&amp; set -a &amp;&amp; [ -f .env ] &amp;&amp; source .env; set +a; exec .venv/bin/python scripts/earnings_reactor.py</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+  </array>
+
+  <!-- Sleep-resilience: 4h fallback. Reactor is idempotent so over-firing
+       costs ~0¢ when no new 8-Ks have been filed since the last run. -->
+  <key>StartInterval</key>
+  <integer>14400</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/richardchen/Library/Logs/trader-earnings-reactor.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/richardchen/Library/Logs/trader-earnings-reactor.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/richardchen</string>
+    <key>PATH</key><string>/Users/richardchen/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/richardchen/trader</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
