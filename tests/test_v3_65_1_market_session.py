@@ -128,8 +128,12 @@ def test_last_trading_day_skips_weekend_and_holiday():
 def test_dashboard_version_bumped_to_v3_65_1():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()
+    # The v3.65.1 release tag must still appear in changelog comments;
+    # sidebar caption may have moved to a later patch.
     assert "v3.65.1" in text
-    assert 'st.caption("v3.65.1' in text
+    import re
+    assert re.search(r'st\.caption\("v3\.6\d\.\d', text), \
+        "sidebar must show some v3.6x.y version label"
 
 
 def test_dashboard_has_market_session_helper():
@@ -141,27 +145,40 @@ def test_dashboard_has_market_session_helper():
 
 def test_price_headline_branches_on_session():
     """Price headline must branch on session.is_open (skip day delta
-    when market is closed)."""
+    when market is closed). v3.66.0+: variable was renamed to `sess`."""
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()
-    # _render_price_headline body must reference session state
     headline_idx = text.index("def _render_price_headline")
     next_def_idx = text.index("\ndef ", headline_idx + 1)
     body = text[headline_idx:next_def_idx]
-    assert "session.is_open" in body
+    # Either old name (`session.is_open`) or refactored name (`sess.is_open`)
+    assert ("session.is_open" in body) or ("sess.is_open" in body)
     assert "Markets closed" in body
 
 
 def test_live_positions_relabels_day_pl_when_closed():
     """view_live_positions must show 'Last session ({date})' instead of
-    'Day P&L' when market is closed."""
+    'Day P&L' when market is closed. v3.66.0+: the OPEN-vs-CLOSED branch
+    moved into the shared _render_day_pl_card helper, so the view now
+    just delegates to it."""
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()
     view_idx = text.index("def view_live_positions")
     next_def_idx = text.index("\ndef ", view_idx + 1)
     body = text[view_idx:next_def_idx]
-    assert "session.is_open" in body
-    assert "Last session" in body
+    # Either inlined the branch (pre-v3.66.0) or delegates to the helper
+    delegates_to_helper = "_render_day_pl_card" in body
+    inlined_branch = "Last session" in body and "session.is_open" in body
+    assert delegates_to_helper or inlined_branch, \
+        "view_live_positions must either inline the closed-market relabel " \
+        "or call _render_day_pl_card"
+    # Either way, the helper itself must contain the relabel (catches
+    # the case where the helper got broken)
+    helper_idx = text.index("def _render_day_pl_card")
+    helper_next = text.index("\ndef ", helper_idx + 1)
+    helper_body = text[helper_idx:helper_next]
+    assert "Last session" in helper_body
+    assert "is_open" in helper_body
 
 
 def test_market_ribbon_shows_closed_badge():

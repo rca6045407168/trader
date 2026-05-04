@@ -1,4 +1,21 @@
-"""Live local dashboard for the trader (v3.65.1).
+"""Live local dashboard for the trader (v3.66.0).
+
+v3.66.0 — Single-source-of-truth refactor. Resolves the v3.65.x bug
+class where journal_snapshot + briefing_cache + live_broker +
+_cached_snapshots all returned different "equity" values, leading to
+"why does my account show $107K here and $106K there?" confusion.
+
+  - New trader/equity_state.py — get_equity_state() returns one
+    EquityState dataclass with equity_now, today_pl_*, last_session_pl_*,
+    source, source_age_seconds, session. Every view consumes it.
+  - DRY: new _render_day_pl_card(state) helper replaces the duplicated
+    session-aware label branch (was in 2 views; will grow to N if not
+    consolidated).
+  - Color audit per UI_BENCHMARK pattern #7: reserve green/red for P&L
+    direction only. FAB gradient → flat blue. Headline-block colors
+    softened. Status chips use neutral gray with a colored border.
+  - _market_session() now loud-fails (st.warning) instead of silently
+    pretending the market is open when the underlying module errors.
 
 v3.65.1 — Market-session awareness. Alpaca's `account.equity` keeps
 ticking on extended-hours / weekend marks while `account.last_equity`
@@ -388,7 +405,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.65.1 · chat-first AI dashboard")
+    st.caption("v3.66.0 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -940,19 +957,110 @@ def _ribbon_market_snapshot() -> dict:
 
 def _market_session():
     """Wrapper around trader.market_session.market_session_now so views
-    can branch on OPEN vs CLOSED_* without importing the module each time.
-    Returns SessionState. Falls back to a synthetic OPEN if the helper
-    fails (defensive — we never want session detection to crash a view)."""
+    can branch on OPEN vs CLOSED_* without importing the module each
+    time. Returns SessionState.
+
+    v3.66.0: loud-fail on import error (caption a warning + return a
+    safe-CLOSED fallback so the user knows session detection is broken).
+    The previous synthetic-OPEN fallback would have lied to the UI,
+    re-enabling the v3.65.x phantom-day-P&L behavior we just fixed."""
     try:
         from trader.market_session import market_session_now
         return market_session_now()
-    except Exception:
+    except Exception as e:
+        st.warning(f"⚠️ market session detection failed ({type(e).__name__}: {e}) "
+                    "— treating as CLOSED to avoid showing misleading day P&L. "
+                    "Day deltas will be hidden until this is fixed.")
         from datetime import datetime as _dt
         from collections import namedtuple
         Fake = namedtuple("Fake", ["label", "is_open", "last_trading_day",
                                     "next_trading_day", "et_now", "reason"])
         today = _dt.utcnow().date()
-        return Fake("OPEN", True, today, today, _dt.utcnow(), "session helper failed")
+        return Fake("CLOSED_OVERNIGHT", False, today, today, _dt.utcnow(),
+                     "session helper errored")
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _equity_state_cached():
+    """Cached EquityState. 30s TTL is short enough that during RTH the
+    user always sees a fresh broker mark, and long enough that a single
+    page load doesn't fan out into 10 broker calls.
+
+    Source priority is live_broker → journal_snapshot → briefing_cache
+    (handled inside get_equity_state). Returned as a dict so Streamlit
+    can hash it for caching; views call _get_equity_state() to get the
+    typed object back."""
+    try:
+        from trader.equity_state import get_equity_state
+        s = get_equity_state(
+            journal_db=DB_PATH,
+            briefing_cache=ROOT / "data" / "briefing_cache.json",
+        )
+        # Serialize to dict so Streamlit's cache layer can hash it.
+        # The session field is a frozen dataclass — Streamlit handles it.
+        return s
+    except Exception as e:
+        return {"_error": f"{type(e).__name__}: {e}"}
+
+
+def _get_equity_state():
+    """Public accessor used by every view. Returns EquityState (or a
+    stand-in 'none' state if the cached helper errored)."""
+    s = _equity_state_cached()
+    if isinstance(s, dict) and "_error" in s:
+        # Build a minimal stand-in so callers can render gracefully
+        from trader.equity_state import EquityState
+        from trader.market_session import market_session_now
+        sess = market_session_now()
+        return EquityState(
+            equity_now=None, cash=None, n_positions=0,
+            today_pl_dollar=None, today_pl_pct=None,
+            last_session_pl_dollar=None, last_session_pl_pct=None,
+            last_session_date=sess.last_trading_day.isoformat(),
+            source="none", source_age_seconds=0.0, session=sess,
+            error=s["_error"],
+        )
+    return s
+
+
+def _render_day_pl_card(col, state):
+    """Render one Streamlit column as a session-aware day-P&L metric.
+
+    Pre-v3.66.0 this branch was inlined in view_live_positions and
+    view_performance with subtle copy-paste drift. Centralized here:
+    every consumer gets identical labels, tooltips, and stale-data
+    handling.
+
+    `col` = a Streamlit column object (or st itself for full-width).
+    `state` = an EquityState from _get_equity_state()."""
+    sess = state.session
+    if state.equity_now is None:
+        col.metric("Day P&L", "n/a", help="No equity source reachable.")
+        return
+    if sess.is_open:
+        if state.today_pl_dollar is None:
+            col.metric("Day P&L", "computing…")
+            return
+        col.metric(
+            "Day P&L",
+            f"${state.today_pl_dollar:+,.0f}",
+            f"{state.today_pl_pct*100:+.2f}%" if state.today_pl_pct is not None else None,
+        )
+    else:
+        # Markets closed — relabel so the user knows what they're looking at
+        last_str = sess.last_trading_day.strftime("%a %b %-d")
+        if state.last_session_pl_dollar is None:
+            col.metric(f"Last session ({last_str})", "n/a")
+            return
+        col.metric(
+            f"Last session ({last_str})",
+            f"${state.last_session_pl_dollar:+,.0f}",
+            f"{state.last_session_pl_pct*100:+.2f}%"
+            if state.last_session_pl_pct is not None else None,
+            help=("Markets closed — this is the most recent trading "
+                  "session's move, not 'today'. See sticky ribbon for "
+                  "session state."),
+        )
 
 
 def _render_market_ribbon():
@@ -1031,74 +1139,79 @@ def _render_price_headline():
     NOW + day P&L $/% in a 48px+ font with a green/red background tint
     so the dominant number is unambiguous.
 
-    v3.65.1: when the market is closed (weekend, pre-market, after-hours,
-    holiday) we DO NOT show a "day P&L" delta. Alpaca's `account.equity`
-    keeps ticking on extended-hours quotes and its `last_equity` doesn't
-    roll over until next-day open — so the delta is misleading. Instead
-    we show a "Markets closed · last session: {date}" badge.
-    """
-    snaps = _cached_snapshots(str(DB_PATH))
-    if snaps.empty:
-        st.caption("_no daily snapshots yet — sync from GitHub or run "
-                   "`python -m trader.main`._")
+    v3.66.0: now reads from the canonical EquityState (was reading
+    daily_snapshot directly + duplicating session logic). Color audit
+    per UI_BENCHMARK pattern #7: dark-green/dark-red background only
+    when there's a real day delta to show; neutral charcoal otherwise.
+    Provenance line below shows source + age so the user knows whether
+    they're looking at a 5-second-old broker mark or a 2-day-old
+    journal snapshot."""
+    state = _get_equity_state()
+    if state.equity_now is None:
+        st.caption(
+            f"_no equity source reachable_ "
+            f"({state.error or 'broker, journal, briefing all empty'})"
+        )
         return
-    latest = snaps.iloc[0]
-    eq_now = float(latest["equity"])
 
-    session = _market_session()
+    eq_now = state.equity_now
+    sess = state.session
 
-    day_pl_dollar = None
-    day_pl_pct = None
-    # Only compute a day delta when the market is actually open. Two
-    # consecutive snapshots taken on the SAME calendar day during the
-    # session is a real delta; anything else (weekend, after-hours, two
-    # rows that span a non-trading gap) gets suppressed.
-    if session.is_open and len(snaps) >= 2:
-        prev_eq = float(snaps.iloc[1]["equity"])
-        if prev_eq > 0:
-            day_pl_dollar = eq_now - prev_eq
-            day_pl_pct = (eq_now - prev_eq) / prev_eq
-
-    if day_pl_pct is None:
-        bg = "#1e293b"
-        fg = "#e2e8f0"
-        if session.is_open:
-            delta_html = ""
+    # Decide whether to show a day delta. Only when market is OPEN do we
+    # show a colored ▲/▼ — otherwise we render a neutral "Markets closed"
+    # badge. (Pattern #7 in UI_BENCHMARK: green/red is reserved for
+    # active P&L direction.)
+    if sess.is_open and state.today_pl_dollar is not None:
+        if state.today_pl_pct >= 0:
+            bg, fg = "#052e16", "#bbf7d0"
+            arrow_color = "#4ade80"
+            arrow = "▲"
         else:
-            last_str = session.last_trading_day.strftime("%a %b %-d, %Y")
-            delta_html = (
-                f'<span style="color:#94a3b8;font-size:14px;margin-left:18px;'
-                f'font-style:italic">Markets closed · last session {last_str}'
-                f'</span>')
-    elif day_pl_pct >= 0:
-        bg = "#052e16"
-        fg = "#bbf7d0"
+            bg, fg = "#450a0a", "#fecaca"
+            arrow_color = "#f87171"
+            arrow = "▼"
         delta_html = (
-            f'<span style="color:#4ade80;font-size:24px;margin-left:18px">'
-            f'▲ ${day_pl_dollar:+,.0f} ({day_pl_pct*100:+.2f}%)</span>')
+            f'<span style="color:{arrow_color};font-size:24px;'
+            f'margin-left:18px">{arrow} '
+            f'${state.today_pl_dollar:+,.0f} '
+            f'({state.today_pl_pct*100:+.2f}%)</span>')
     else:
-        bg = "#450a0a"
-        fg = "#fecaca"
+        bg, fg = "#1e293b", "#e2e8f0"
+        last_str = sess.last_trading_day.strftime("%a %b %-d, %Y")
         delta_html = (
-            f'<span style="color:#f87171;font-size:24px;margin-left:18px">'
-            f'▼ ${day_pl_dollar:+,.0f} ({day_pl_pct*100:+.2f}%)</span>')
+            f'<span style="color:#94a3b8;font-size:14px;margin-left:18px;'
+            f'font-style:italic">Markets closed · last session '
+            f'{last_str}</span>')
 
-    ts_str = ""
-    try:
-        ts_str = f' · as of {latest["date"]}'
-    except Exception:
-        pass
+    # Provenance line: source + age. v3.66.0 gives the user a way to
+    # answer "where did this number come from?" without grep-ing the
+    # codebase.
+    age = state.source_age_seconds
+    if age < 60:
+        age_str = f"{int(age)}s ago"
+    elif age < 3600:
+        age_str = f"{int(age/60)}m ago"
+    else:
+        age_str = f"{int(age/3600)}h ago"
+    stale_color = "#fbbf24" if state.is_stale else "#64748b"
+    src_html = (
+        f'<div style="color:{stale_color};font-size:10px;'
+        f'margin-top:6px;font-family:JetBrains Mono,monospace">'
+        f'src: {state.source} · {age_str}</div>'
+    )
 
     html = (
         f'<div style="background:{bg};border-radius:10px;'
         f'padding:18px 26px;margin-bottom:16px">'
         f'<div style="color:#94a3b8;font-size:11px;text-transform:uppercase;'
-        f'letter-spacing:0.08em">Equity{ts_str}</div>'
+        f'letter-spacing:0.08em">Equity</div>'
         f'<div style="margin-top:4px">'
         f'<span style="color:{fg};font-size:48px;font-weight:700;'
         f'font-family:JetBrains Mono,monospace">${eq_now:,.0f}</span>'
         f'{delta_html}'
-        f'</div></div>'
+        f'</div>'
+        f'{src_html}'
+        f'</div>'
     )
     st.markdown(html, unsafe_allow_html=True)
 
@@ -1120,14 +1233,17 @@ def _render_floating_hank_fab():
       .hank-fab-row { position: fixed !important; right: 24px;
                        bottom: 24px; z-index: 9999;
                        background: transparent !important; }
+      /* v3.66.0: flat brand-blue (#2563eb) per UI_BENCHMARK pattern
+         #7 — green/red reserved for P&L direction; everything else
+         uses one neutral brand color + grays */
       .hank-fab-row .stButton > button {
-        background: linear-gradient(135deg,#2563eb,#7c3aed);
+        background: #2563eb;
         color: white !important; border: none; border-radius: 999px;
         padding: 12px 20px; font-weight: 600; font-size: 14px;
-        box-shadow: 0 6px 18px rgba(37,99,235,.45);
+        box-shadow: 0 4px 14px rgba(37,99,235,.35);
       }
       .hank-fab-row .stButton > button:hover {
-        filter: brightness(1.10);
+        background: #1d4ed8;
       }
     </style>
     """, unsafe_allow_html=True)
@@ -1518,30 +1634,15 @@ def view_live_positions():
     if getattr(live, "error", None):
         st.warning(f"broker fetch failed: {live.error}")
         return
-    # v3.65.1: when market is closed, "Day P&L" against Alpaca's
-    # lastday_price is misleading (Alpaca's lastday doesn't roll over
-    # until next-day open, so "today" P&L on a Sunday is actually
-    # Thursday→Friday's full session move). Show the LAST-SESSION label
-    # instead so the user knows what they're looking at.
-    session = _market_session()
+    # v3.66.0: pull from canonical EquityState so the equity / day-P&L
+    # cards match what the Overview headline shows. The day-P&L card is
+    # rendered through _render_day_pl_card so the OPEN vs CLOSED label
+    # logic lives in one place.
+    state = _get_equity_state()
     cc = st.columns(4)
     cc[0].metric("Equity", f"${live.equity:,.0f}" if live.equity else "n/a")
     cc[1].metric("Cash", f"${live.cash:,.0f}" if live.cash else "n/a")
-    if session.is_open:
-        cc[2].metric(
-            "Day P&L",
-            f"${live.total_day_pl_dollar:+,.0f}" if live.total_day_pl_dollar is not None else "n/a",
-            f"{live.total_day_pl_pct:+.2%}" if live.total_day_pl_pct is not None else None,
-        )
-    else:
-        last_str = session.last_trading_day.strftime("%a %b %-d")
-        cc[2].metric(
-            f"Last session ({last_str})",
-            f"${live.total_day_pl_dollar:+,.0f}" if live.total_day_pl_dollar is not None else "n/a",
-            f"{live.total_day_pl_pct:+.2%}" if live.total_day_pl_pct is not None else None,
-            help=("Markets closed. This is the most recent trading session's "
-                  "move — not 'today'."),
-        )
+    _render_day_pl_card(cc[2], state)
     cc[3].metric("Total unrealized", f"${live.total_unrealized_pl:+,.0f}")
     if live.positions:
         rows = [{
@@ -1737,15 +1838,9 @@ def view_performance():
                 cc = st.columns(4)
                 cc[0].metric("Equity", f"${ports.get('equity', 0):,.0f}")
                 cc[1].metric("Cash", f"${ports.get('cash', 0):,.0f}")
-                # v3.65.1: same closed-market relabeling as live_positions
-                _sess = _market_session()
-                _label = "Day P&L" if _sess.is_open else (
-                    f"Last session ({_sess.last_trading_day.strftime('%a %b %-d')})")
-                cc[2].metric(_label,
-                              f"${ports.get('total_day_pl_dollar', 0):+,.0f}",
-                              f"{ports.get('total_day_pl_pct', 0):+.2f}%",
-                              help=None if _sess.is_open else
-                              "Markets closed — this is the most recent session move, not 'today'.")
+                # v3.66.0: shared day-P&L card helper (was inlined here +
+                # in view_live_positions; now one definition)
+                _render_day_pl_card(cc[2], _get_equity_state())
                 cc[3].metric("# Positions", ports.get('n_positions', 0))
             else:
                 st.caption(f"Could not load live portfolio: {ports['error']}")
