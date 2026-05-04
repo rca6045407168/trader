@@ -56,7 +56,25 @@ def main() -> int:
                          help="Archive new filings but skip Claude analysis")
     parser.add_argument("--model", default=os.getenv("EARNINGS_REACTOR_MODEL",
                                                        "claude-sonnet-4-6"))
+    parser.add_argument("--no-alerts", action="store_true",
+                         help="Skip the email-alert layer (default: alert when "
+                              "materiality ≥ REACTOR_ALERT_MIN_MATERIALITY)")
+    parser.add_argument("--backfill-alerts", action="store_true",
+                         help="Send alerts for any material signals already in "
+                              "the journal that haven't been notified yet. "
+                              "Doesn't fetch new filings.")
     args = parser.parse_args()
+
+    if args.backfill_alerts:
+        from trader.earnings_reactor import alert_unsent_signals
+        sent = alert_unsent_signals(since_days=args.since_days)
+        if sent:
+            print(f"=== backfill done · sent {len(sent)} alert(s) ===")
+            for sym, acc in sent:
+                print(f"  ✓ {sym:6s} {acc}")
+        else:
+            print("=== backfill done · no unsent material signals ===")
+        return 0
 
     if args.symbol:
         symbols = [args.symbol.upper()]
@@ -109,6 +127,7 @@ def main() -> int:
         symbols, since_days=args.since_days,
         only_material=not args.all_8k,
         model=args.model,
+        alert=not args.no_alerts,
     )
     n_total = sum(len(rs) for rs in results.values())
     n_material = sum(1 for rs in results.values() for r in rs

@@ -1,4 +1,19 @@
-"""Live local dashboard for the trader (v3.68.1).
+"""Live local dashboard for the trader (v3.68.2).
+
+v3.68.2 — Email alerts for material reactor signals. When the reactor
+flags a M≥3 (worth-a-PM's-attention) signal it pushes via the existing
+trader.notify pipeline (SMTP). Idempotent via a notified_at column on
+earnings_signals so re-runs of the launchd job don't spam.
+
+Threshold configurable via REACTOR_ALERT_MIN_MATERIALITY env (default
+3). Anti-stub guarded — the email body always exceeds 80 chars of real
+content (summary + bull/bear quotes + accession + dashboard reference).
+
+Backfilled the INTC M3 ($6.5B debt raise) signal that v3.68.1's first
+auto-fire produced — that email landed in the inbox before this commit.
+
+  - new alert helpers in trader/earnings_reactor.py
+  - new --no-alerts and --backfill-alerts CLI flags
 
 v3.68.1 — Auto-fire the earnings reactor via launchd. Mac launchd job
 at infra/launchd/com.trader.earnings-reactor.plist fires weekdays 17:05
@@ -470,7 +485,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.68.1 · chat-first AI dashboard")
+    st.caption("v3.68.2 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top

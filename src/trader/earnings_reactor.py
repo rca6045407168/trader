@@ -97,6 +97,13 @@ def _ensure_signals_table(db_path: Path) -> None:
                    "ON earnings_signals (symbol, filed_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS ix_earnings_signals_filed "
                    "ON earnings_signals (filed_at DESC)")
+        # v3.68.2 migration: add notified_at column for alert idempotency.
+        # SQLite ADD COLUMN raises if the column exists — catch + ignore.
+        try:
+            c.execute("ALTER TABLE earnings_signals "
+                      "ADD COLUMN notified_at TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         c.commit()
 
 
@@ -245,6 +252,116 @@ def _analyze_filing_with_claude(
     return r
 
 
+def _format_alert_body(r: ReactionResult) -> str:
+    """Compose a substantive email body for a material reactor signal.
+    Anti-stub guard in trader.notify._is_stub requires ≥80 chars; we
+    always exceed that with summary + quotes."""
+    lines: list[str] = []
+    lines.append(
+        f"Symbol: {r.symbol}  ·  Materiality: M{r.materiality}/5  "
+        f"·  Direction: {r.direction}"
+    )
+    lines.append(
+        f"Filed: {r.filed_at}  ·  Items: "
+        f"{', '.join(r.items) if r.items else '—'}"
+    )
+    if r.guidance_change and r.guidance_change != "NONE":
+        lines.append(f"Guidance: {r.guidance_change}")
+    if r.surprise_direction and r.surprise_direction != "NONE":
+        lines.append(f"Surprise: {r.surprise_direction}")
+    lines.append("")
+    if r.summary:
+        lines.append("SUMMARY")
+        lines.append(r.summary)
+        lines.append("")
+    if r.bearish_quotes:
+        lines.append("BEARISH QUOTES")
+        for q in r.bearish_quotes[:5]:
+            lines.append(f'  > "{q}"')
+        lines.append("")
+    if r.bullish_quotes:
+        lines.append("BULLISH QUOTES")
+        for q in r.bullish_quotes[:5]:
+            lines.append(f'  > "{q}"')
+        lines.append("")
+    lines.append(f"Accession: {r.accession}")
+    lines.append("")
+    lines.append("--")
+    lines.append("trader earnings reactor — see 📞 Earnings reactor in dashboard "
+                 "for the full picture. Decision is yours; this email is the "
+                 "analyst layer, not the order layer.")
+    return "\n".join(lines)
+
+
+def _short_summary_for_subject(s: str, max_chars: int = 50) -> str:
+    """Trim summary for email subject so the line stays under ~78 chars total."""
+    s = (s or "").strip().replace("\n", " ").replace("  ", " ")
+    if len(s) <= max_chars:
+        return s
+    return s[:max_chars - 1].rstrip() + "…"
+
+
+def _maybe_alert(r: ReactionResult, db_path: Path,
+                  min_materiality: int = 3) -> bool:
+    """Send email alert for one signal IF (a) materiality crosses the
+    threshold, (b) no error happened, (c) we haven't already notified
+    about this (symbol, accession) pair. Returns True iff an alert was
+    sent.
+
+    Idempotent across runs: the `notified_at` column gates re-sends.
+    Failed sends leave notified_at NULL so the next reactor run retries.
+    """
+    if r.error:
+        return False
+    if (r.materiality or 0) < int(min_materiality):
+        return False
+
+    _ensure_signals_table(db_path)
+    with sqlite3.connect(db_path) as c:
+        row = c.execute(
+            "SELECT notified_at FROM earnings_signals "
+            "WHERE symbol = ? AND accession = ?",
+            (r.symbol, r.accession),
+        ).fetchone()
+    if row is None:
+        return False  # signal not yet persisted — caller order error
+    if row[0]:
+        return False  # already notified — idempotent skip
+
+    short = _short_summary_for_subject(r.summary)
+    subject = f"[trader] {r.symbol} M{r.materiality} {r.direction}"
+    if short:
+        subject = f"{subject} — {short}"
+    body = _format_alert_body(r)
+
+    try:
+        from .notify import notify
+        result = notify(body, level="info", subject=subject)
+        if not result.get("email"):
+            return False
+    except Exception:
+        return False
+
+    # Mark notified_at so we don't re-send next run
+    with sqlite3.connect(db_path) as c:
+        c.execute(
+            "UPDATE earnings_signals SET notified_at = ? "
+            "WHERE symbol = ? AND accession = ?",
+            (datetime.utcnow().isoformat(), r.symbol, r.accession),
+        )
+        c.commit()
+    return True
+
+
+def _alert_threshold() -> int:
+    """Min materiality for email alerts. Default 3 = 'worth a PM's
+    attention'. Configurable via env REACTOR_ALERT_MIN_MATERIALITY."""
+    try:
+        return int(os.getenv("REACTOR_ALERT_MIN_MATERIALITY", "3"))
+    except ValueError:
+        return 3
+
+
 def react_for_symbol(
     symbol: str,
     since_days: int = 14,
@@ -252,6 +369,7 @@ def react_for_symbol(
     archive_root: Optional[Path] = None,
     only_material: bool = True,
     model: str = DEFAULT_MODEL,
+    alert: bool = True,
 ) -> list[ReactionResult]:
     """Fetch + archive + analyze recent 8-Ks for one symbol.
 
@@ -293,8 +411,70 @@ def react_for_symbol(
             continue
         r = _analyze_filing_with_claude(symbol, meta, text, model=model)
         _persist_signal(journal_db, r)
+        if alert:
+            try:
+                _maybe_alert(r, journal_db, min_materiality=_alert_threshold())
+            except Exception as e:
+                print(f"  ! alert send failed for {symbol} {r.accession}: "
+                      f"{type(e).__name__}: {e}")
         results.append(r)
     return results
+
+
+def alert_unsent_signals(
+    journal_db: Path = DEFAULT_JOURNAL_DB,
+    min_materiality: Optional[int] = None,
+    since_days: int = 30,
+    limit: int = 50,
+) -> list[tuple[str, str]]:
+    """Send alerts for any material signals that haven't been notified
+    yet. Useful for backfilling: if the alert layer was added AFTER
+    signals already landed in the journal, this catches them up.
+
+    Returns the list of (symbol, accession) pairs we successfully
+    notified about (empty list if none qualified or all were already
+    sent)."""
+    if min_materiality is None:
+        min_materiality = _alert_threshold()
+    _ensure_signals_table(journal_db)
+    since_iso = (datetime.utcnow().date()
+                 - timedelta(days=since_days)).isoformat()
+    sent: list[tuple[str, str]] = []
+    # Pull rows that are eligible (materiality crosses threshold,
+    # no error, no prior notification)
+    with sqlite3.connect(journal_db) as c:
+        c.row_factory = sqlite3.Row
+        rows = c.execute(
+            "SELECT symbol, accession, filed_at, items_json, direction, "
+            "materiality, guidance_change, surprise_direction, summary, "
+            "bullish_quotes_json, bearish_quotes_json, model, error "
+            "FROM earnings_signals "
+            "WHERE filed_at >= ? AND materiality >= ? "
+            "AND (notified_at IS NULL OR notified_at = '') "
+            "AND (error IS NULL OR error = '') "
+            "ORDER BY filed_at DESC, materiality DESC LIMIT ?",
+            (since_iso, min_materiality, limit),
+        ).fetchall()
+    for row in rows:
+        r = ReactionResult(
+            symbol=row["symbol"], accession=row["accession"],
+            filed_at=row["filed_at"],
+            items=json.loads(row["items_json"]) if row["items_json"] else [],
+            direction=row["direction"] or "NEUTRAL",
+            materiality=int(row["materiality"] or 0),
+            guidance_change=row["guidance_change"] or "NONE",
+            surprise_direction=row["surprise_direction"] or "NONE",
+            summary=row["summary"] or "",
+            bullish_quotes=(json.loads(row["bullish_quotes_json"])
+                             if row["bullish_quotes_json"] else []),
+            bearish_quotes=(json.loads(row["bearish_quotes_json"])
+                             if row["bearish_quotes_json"] else []),
+            model=row["model"] or "",
+            error=row["error"],
+        )
+        if _maybe_alert(r, journal_db, min_materiality=min_materiality):
+            sent.append((r.symbol, r.accession))
+    return sent
 
 
 def react_for_positions(
@@ -304,6 +484,7 @@ def react_for_positions(
     archive_root: Optional[Path] = None,
     only_material: bool = True,
     model: str = DEFAULT_MODEL,
+    alert: bool = True,
 ) -> dict[str, list[ReactionResult]]:
     """Run the reactor across many symbols. Returns {symbol: [results]}."""
     out: dict[str, list[ReactionResult]] = {}
@@ -312,7 +493,7 @@ def react_for_positions(
             out[sym] = react_for_symbol(
                 sym, since_days=since_days, journal_db=journal_db,
                 archive_root=archive_root, only_material=only_material,
-                model=model,
+                model=model, alert=alert,
             )
         except Exception as e:
             out[sym] = []
