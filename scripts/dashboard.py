@@ -522,6 +522,8 @@ with st.sidebar:
         ("🌡️ Regime overlay", "regime"),
         ("⚡ Intraday risk", "intraday"),
         ("— RESEARCH —", None),
+        ("🧪 Strategy Lab", "strategy_lab"),
+        ("📰 News", "news"),
         ("💰 P&L readiness", "pnl_readiness"),
         ("🎯 V5 sleeves", "v5_sleeves"),
         ("🧪 Validation", "validation"),
@@ -3978,6 +3980,293 @@ See `docs/BEST_PRACTICES.md` § 3 for the full narrative.
 
 
 # ============================================================
+# View: News (v3.61.0) — multi-region news streams + sentiment
+# ============================================================
+def view_news():
+    st.title("📰 News — US + Asian financial streams")
+    st.caption(
+        "Free-tier news adapters per `docs/DATA_INTEGRATIONS_ROADMAP.md`. "
+        "US: Reuters / WSJ / MarketWatch / SeekingAlpha / SEC EDGAR / "
+        "Yahoo. Asian: Caixin / Yicai / Sina / Nikkei / Yonhap. "
+        "Sentiment scoring via Claude (when ANTHROPIC_API_KEY set)."
+    )
+
+    try:
+        from trader.news_sources import (
+            SOURCE_REGISTRY, fetch_all, fetch_per_ticker,
+        )
+    except Exception as e:
+        st.error(f"news_sources unavailable: {e}")
+        return
+
+    # Source counts by region
+    cc = st.columns(4)
+    by_region: dict[str, int] = {}
+    for meta in SOURCE_REGISTRY.values():
+        by_region[meta["region"]] = by_region.get(meta["region"], 0) + 1
+    cc[0].metric("US sources", by_region.get("US", 0))
+    cc[1].metric("CN sources", by_region.get("CN", 0))
+    cc[2].metric("JP sources", by_region.get("JP", 0))
+    cc[3].metric("KR sources", by_region.get("KR", 0))
+
+    st.divider()
+
+    fc1, fc2 = st.columns([1, 1])
+    region_pick = fc1.multiselect(
+        "Region filter",
+        options=["US", "CN", "JP", "KR"],
+        default=["US"],
+        key="news_region",
+    )
+    n_per_source = fc2.slider("Items per source", 3, 20, 8, key="news_n")
+
+    if st.button("🔄 Fetch latest", key="news_fetch"):
+        with st.spinner(f"Fetching {n_per_source} per source × "
+                          f"{len(region_pick)} regions..."):
+            try:
+                items = fetch_all(regions=region_pick or None,
+                                    per_source_limit=n_per_source)
+                st.session_state["_news_items"] = items
+            except Exception as e:
+                st.error(f"fetch failed: {e}")
+
+    items = st.session_state.get("_news_items", [])
+    if not items:
+        st.info("Click 'Fetch latest' to pull headlines.")
+        return
+
+    st.success(f"Pulled {len(items)} items.")
+
+    # Per-source counts
+    src_counts: dict[str, int] = {}
+    for it in items:
+        src_counts[it.source] = src_counts.get(it.source, 0) + 1
+    st.caption(" · ".join(f"`{s}` {n}" for s, n in
+                            sorted(src_counts.items(), key=lambda x: -x[1])))
+
+    # Sentiment scoring (optional, costs Claude tokens)
+    if st.button("🧠 Score sentiment via Claude (uses API)",
+                  key="news_score"):
+        try:
+            from trader.news_sentiment import score_items, aggregate_per_ticker
+            with st.spinner(f"Scoring {len(items)} items..."):
+                scores = score_items(items[:50])  # cap at 50 to control cost
+            st.session_state["_news_scores"] = scores
+            agg = aggregate_per_ticker(scores)
+            st.session_state["_news_agg"] = agg
+        except Exception as e:
+            st.error(f"scoring failed: {e}")
+
+    scores = st.session_state.get("_news_scores", [])
+    agg = st.session_state.get("_news_agg", {})
+
+    # Per-ticker aggregate sentiment
+    if agg:
+        st.subheader("📊 Aggregate sentiment by ticker")
+        rows = []
+        for ticker, stats in sorted(agg.items(),
+                                       key=lambda x: -x[1]["weighted_score"]):
+            rows.append({
+                "ticker": ticker,
+                "n_items": stats["n_items"],
+                "weighted_sentiment": f"{stats['weighted_score']:+.2f}",
+                "mean_sentiment": f"{stats['mean_score']:+.2f}",
+            })
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    # Headlines feed
+    st.subheader("📰 Headlines")
+    score_by_url = {s.url: s for s in scores}
+    for it in items[:30]:
+        s = score_by_url.get(it.url)
+        if s:
+            emoji = "🟢" if s.score > 0.2 else ("🔴" if s.score < -0.2 else "⚪")
+            sent_str = f" [{emoji} {s.score:+.2f}]"
+        else:
+            sent_str = ""
+        with st.expander(
+                f"[{it.region}] {it.title[:100]}{sent_str}"):
+            st.caption(f"_{it.source} · {it.ts[:19]} · {it.language}_")
+            if it.body_snippet:
+                st.markdown(it.body_snippet)
+            if s and s.translated_title:
+                st.markdown(f"**EN:** {s.translated_title}")
+            if s and s.tickers:
+                st.caption("Tickers: " + ", ".join(f"`{t}`" for t in s.tickers))
+            if s and s.reasoning:
+                st.caption(f"_Reasoning: {s.reasoning}_")
+            if it.url:
+                st.markdown(f"[source]({it.url})")
+
+    st.divider()
+
+    # Per-ticker fetch
+    st.subheader("🔍 Per-ticker news")
+    tcol = st.columns([3, 1])
+    tk = tcol[0].text_input("Ticker", key="news_ticker_input").upper().strip()
+    if tcol[1].button("Fetch", key="news_ticker_fetch", disabled=not tk):
+        with st.spinner(f"Fetching {tk} news..."):
+            tk_items = fetch_per_ticker(tk, limit=10)
+        if tk_items:
+            for it in tk_items:
+                st.markdown(f"**{it.title}**")
+                st.caption(f"_{it.source} · {it.ts[:19]}_")
+                if it.url:
+                    st.markdown(f"[source]({it.url})")
+                st.divider()
+        else:
+            st.info("No news returned.")
+
+
+# ============================================================
+# View: Strategy Lab (v3.61.0) — every strategy in the codebase
+# ============================================================
+def view_strategy_lab():
+    st.title("🧪 Strategy Lab")
+    st.caption(
+        "Every strategy in this codebase + candidates. Pick one to "
+        "inspect, see its backtest verdict, and queue further tests. "
+        "Single source of truth: `src/trader/strategy_registry.py`."
+    )
+
+    try:
+        from trader.strategy_registry import (
+            REGISTRY, summary_counts, by_status, by_verification, by_category,
+        )
+    except Exception as e:
+        st.error(f"could not import registry: {e}")
+        return
+
+    counts = summary_counts()
+
+    # Top counters
+    cc = st.columns(5)
+    cc[0].metric("Total strategies", counts["total"])
+    cc[1].metric("🟢 LIVE",
+                  counts["by_status"].get("LIVE", 0),
+                  "touching capital")
+    cc[2].metric("🟡 SHADOW",
+                  counts["by_status"].get("SHADOW", 0),
+                  "computed, not enforcing")
+    cc[3].metric("⚪ NOT_WIRED",
+                  counts["by_status"].get("NOT_WIRED", 0),
+                  "callable, no caller")
+    cc[4].metric("❌ REFUTED+DEPRECATED",
+                  counts["by_status"].get("REFUTED", 0)
+                  + counts["by_status"].get("DEPRECATED", 0),
+                  "killed")
+
+    st.divider()
+
+    # Filter controls
+    fc1, fc2, fc3 = st.columns(3)
+    cat_pick = fc1.selectbox("Category",
+                              ["all"] + sorted(by_category().keys()),
+                              key="lab_cat")
+    status_pick = fc2.selectbox("Status",
+                                  ["all"] + sorted(by_status().keys()),
+                                  key="lab_status")
+    ver_pick = fc3.selectbox("Verification",
+                              ["all"] + sorted(by_verification().keys()),
+                              key="lab_ver")
+
+    filtered = [s for s in REGISTRY
+                if (cat_pick == "all" or s.category == cat_pick)
+                and (status_pick == "all" or s.status == status_pick)
+                and (ver_pick == "all" or s.verification == ver_pick)]
+
+    # Strategy table
+    rows = []
+    for s in filtered:
+        rows.append({
+            "name": s.name,
+            "category": s.category,
+            "horizon": s.horizon,
+            "status": s.status,
+            "verification": s.verification,
+            "expected_sharpe": f"{s.expected_sharpe:.2f}" if s.expected_sharpe is not None else "—",
+            "measured_sharpe": f"{s.measured_sharpe:.2f}" if s.measured_sharpe is not None else "—",
+            "verdict": (s.backtest_verdict or "")[:60] + "..."
+                if s.backtest_verdict and len(s.backtest_verdict) > 60
+                else (s.backtest_verdict or ""),
+        })
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    # Strategy detail picker
+    st.subheader("📋 Inspect a strategy")
+    options = ["(select)"] + [s.name for s in filtered]
+    pick = st.selectbox("Strategy", options=options, key="lab_pick",
+                         label_visibility="collapsed")
+    if pick != "(select)":
+        s = next((x for x in filtered if x.name == pick), None)
+        if s:
+            cc = st.columns(3)
+            cc[0].metric("Status", s.status)
+            cc[1].metric("Verification", s.verification)
+            cc[2].metric("Last backtest", s.last_backtest_date or "—")
+            st.markdown(f"**Module:** `{s.module}.{s.entry}`")
+            st.markdown(f"**Category:** {s.category} · **Horizon:** {s.horizon}")
+            if s.paper_basis:
+                st.markdown(f"**Paper basis:** {s.paper_basis}")
+            if s.expected_sharpe is not None or s.measured_sharpe is not None:
+                ec1, ec2 = st.columns(2)
+                if s.expected_sharpe is not None:
+                    ec1.metric("Expected Sharpe (literature)",
+                                f"{s.expected_sharpe:+.2f}")
+                if s.measured_sharpe is not None:
+                    ec2.metric("Measured Sharpe (our backtest)",
+                                f"{s.measured_sharpe:+.2f}")
+            if s.backtest_verdict:
+                st.markdown(f"**Verdict:** {s.backtest_verdict}")
+            if s.notes:
+                st.info(s.notes)
+
+            st.markdown("---")
+            st.markdown("**Test queue (manual):**")
+            st.caption(
+                "Runners that test this strategy. Click to copy a "
+                "command you'd run from terminal."
+            )
+            CMDS = {
+                "vanilla_momentum_top15": "python scripts/run_walk_forward.py --start 2020-01-01 --first-test 2022-01-01",
+                "lowvol_sleeve": "python scripts/multi_sleeve_backtest.py --n-windows 10",
+                "residual_momentum": "python scripts/backtest_residual_momentum.py",
+                "momentum_crash_detector": "python scripts/backtest_crash_detector.py",
+                "fomc_drift": "python scripts/backtest_fomc_drift.py",
+                "sector_neutralizer_35cap": "python scripts/backtest_overlays.py",
+                "trailing_stop_15pct": "python scripts/backtest_overlays.py",
+                "earnings_rule_t1_trim50": "python scripts/backtest_overlays.py",
+            }
+            cmd = CMDS.get(s.name)
+            if cmd:
+                st.code(cmd, language="bash")
+            else:
+                st.caption("_no dedicated runner yet_")
+
+    st.divider()
+
+    # Killed list summary (for honesty)
+    refuted = [s for s in REGISTRY
+                if s.verification == "REFUTED"]
+    if refuted:
+        st.subheader(f"❌ Refuted on backtest ({len(refuted)})")
+        st.caption(
+            "Strategies that LOOKED PROMISING in literature but failed "
+            "on our universe + period. The $$ value of this list is real: "
+            "saves you from making bad capital decisions."
+        )
+        for s in refuted:
+            with st.expander(f"❌ {s.name} — {(s.backtest_verdict or '')[:80]}"):
+                st.markdown(f"**Paper basis:** {s.paper_basis}")
+                if s.measured_sharpe is not None and s.expected_sharpe is not None:
+                    st.markdown(f"**Expected Sharpe:** {s.expected_sharpe:+.2f}  ·  **Measured:** {s.measured_sharpe:+.2f}")
+                st.markdown(f"**Verdict:** {s.backtest_verdict}")
+                if s.notes:
+                    st.info(s.notes)
+
+
+# ============================================================
 # View: P&L flip readiness (v3.60.0) — cost-impact + recommendations
 # ============================================================
 def view_pnl_readiness():
@@ -4558,6 +4847,8 @@ VIEW_DISPATCH = {
     "events": view_events,
     "regime": view_regime,
     "intraday": view_intraday,
+    "strategy_lab": view_strategy_lab,
+    "news": view_news,
     "pnl_readiness": view_pnl_readiness,
     "v5_sleeves": view_v5_sleeves,
     "validation": view_validation,

@@ -110,6 +110,25 @@ def main() -> int:
         return backup_journal.main()
     _prewarm_section("journal backup", _backup)
 
+    # 6. v3.61.0 — News poller. Best-effort fetch of US + Asian news
+    # streams. Sentiment scoring NOT run from prewarm (would consume
+    # Claude tokens on every container restart) — run separately via
+    # `python scripts/news_poller.py --score` from a real cron (hourly
+    # is reasonable; news_sources.py is RSS-based + cached so it's cheap).
+    def _news():
+        sys.path.insert(0, str(ROOT / "scripts"))
+        # Best-effort, no scoring on prewarm
+        import news_poller  # type: ignore
+        # Limit to US for prewarm speed; full multi-region is for the cron
+        import sys as _sys
+        argv_save = _sys.argv
+        _sys.argv = ["news_poller", "--regions", "US", "--per-source-limit", "8"]
+        try:
+            return news_poller.main()
+        finally:
+            _sys.argv = argv_save
+    _prewarm_section("news poller (US only, no scoring)", _news)
+
     # 4. v3.58.3 — LowVolSleeve daily shadow runner (best-effort).
     # Re-running the same day is idempotent (replaces today's row).
     def _lowvol():
