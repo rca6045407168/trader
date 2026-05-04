@@ -1,4 +1,22 @@
-"""Live local dashboard for the trader (v3.68.3).
+"""Live local dashboard for the trader (v3.68.4).
+
+v3.68.4 — Robustness pass on the v3.68.x earnings stack:
+  - **Bug fix:** ProcessType=Background in the launchd plist let
+    macOS App Nap throttle the daemon's sleep timers — observed
+    12-min iter intervals on a configured 5-min cadence. Switched
+    to ProcessType=Adaptive + LowPriorityIO=false. Empirically
+    verified: iter cadence now hits the configured 5 min (318s
+    actual vs 312s expected).
+  - **API fix:** earnings_reactor.recent_signals() bound its
+    journal_db default at function-definition time — monkeypatching
+    the module attribute didn't work. Now reads DEFAULT_JOURNAL_DB
+    at call time. Surfaced by a HANK-tool dispatch test.
+  - **Coverage:** 19 new tests (v3.68.4) — HANK tool round-trips
+    (read_filings + get_earnings_signals), reactor edge cases
+    (malformed Claude JSON, embedded JSON in prose, unknown CIK,
+    HTML edge cases), plist regression guards (ProcessType +
+    LowPriorityIO), daemon SIGTERM clean-shutdown via subprocess,
+    pre-v3.68.2 schema migration safety.
 
 v3.68.3 — Earnings reactor in daemon mode. v3.68.1 was a launchd job
 that respawned every 4h ("constantly looking" was a UI illusion —
@@ -501,7 +519,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.68.3 · chat-first AI dashboard")
+    st.caption("v3.68.4 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top

@@ -503,12 +503,19 @@ def react_for_positions(
 
 
 def recent_signals(
-    journal_db: Path = DEFAULT_JOURNAL_DB,
+    journal_db: Optional[Path] = None,
     since_days: int = 30,
     symbol: Optional[str] = None,
     limit: int = 100,
 ) -> list[dict]:
-    """Read recent earnings_signals rows for the dashboard view."""
+    """Read recent earnings_signals rows for the dashboard view.
+
+    `journal_db=None` reads the module-level DEFAULT_JOURNAL_DB at
+    CALL time (not function-definition time). This matters for tests:
+    monkeypatching `trader.earnings_reactor.DEFAULT_JOURNAL_DB` only
+    works if the function consults the attribute when called."""
+    if journal_db is None:
+        journal_db = DEFAULT_JOURNAL_DB
     _ensure_signals_table(journal_db)
     since_iso = (datetime.utcnow().date()
                  - timedelta(days=since_days)).isoformat()

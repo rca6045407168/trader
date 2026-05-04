@@ -63,8 +63,21 @@
   <key>WorkingDirectory</key>
   <string>/Users/richardchen/trader</string>
 
+  <!-- ProcessType: was 'Background' in the first cut but observed 12-min
+       intervals instead of the configured 300s. macOS App Nap throttles
+       Background-typed processes when the laptop is on battery + idle.
+       'Adaptive' tells launchd we're a long-running task that wants to
+       respect the configured cadence. Confirmed iter cadence honored
+       at 300s after the switch. -->
   <key>ProcessType</key>
-  <string>Background</string>
+  <string>Adaptive</string>
+
+  <!-- Defensive: explicitly opt out of App Nap. Without this, even
+       Adaptive-typed processes can be throttled when no UI is in front. -->
+  <key>LowPriorityIO</key>
+  <false/>
+  <key>LowPriorityBackgroundIO</key>
+  <false/>
 
   <!-- Limit memory to catch any reactor leak before it eats the laptop.
        2GB is generous; typical resident set is ~150 MB. -->
