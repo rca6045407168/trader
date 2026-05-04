@@ -1,4 +1,14 @@
-"""Live local dashboard for the trader (v3.67.0).
+"""Live local dashboard for the trader (v3.67.1).
+
+v3.67.1 — Nav glossary + ambiguous-label fix. Six pages had names that
+sounded interchangeable ("Shadow signals" / "Shadow variants" / "V5
+sleeves" / "Sleeve health" / "Validation" / "Stress test"). Each is
+now renamed with a one-word qualifier and grouped into a sub-section
+that telegraphs its purpose. See docs/GLOSSARY.md for the full
+disambiguation:
+  - 🔬 Research = sleeve construction + validation
+  - 👁️ Shadow track = real-time, not-yet-enforced
+  - 🩺 Diagnostics = observation, slippage, postmortems
 
 v3.67.0 — File split. dashboard.py grew past 5,600 lines; pure helpers
 now live in:
@@ -416,7 +426,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.67.0 · chat-first AI dashboard")
+    st.caption("v3.67.1 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -583,15 +593,24 @@ with st.sidebar:
             ("🔎 Screener", "screener"),
             ("🗂️ Grid", "grid"),
         ]),
+        # v3.67.1: split the old 12-item Research group into Research
+        # (sleeve construction + validation), Shadow (real-time, not-
+        # enforced), and Diagnostics (observation + reports). Renamed
+        # ambiguous items with a one-word qualifier so a glance at the
+        # nav reveals what the page does. See docs/GLOSSARY.md.
         ("🔬 Research", None, [
+            ("🎯 V5 alpha sleeves", "v5_sleeves"),
+            ("🧪 Validation (walk-forward)", "validation"),
+            ("💥 Stress test (crisis)", "stress_test"),
+            ("🩺 Sleeve health (correlation)", "sleeve_health"),
             ("🌡️ Regime overlay", "regime"),
+        ]),
+        ("👁️ Shadow track", None, [
+            ("👁️ Shadow signals (live)", "shadow_signals"),
+            ("🧪 A/B sleeve variants", "shadows"),
+        ]),
+        ("🩺 Diagnostics", None, [
             ("⚡ Intraday risk", "intraday"),
-            ("🎯 V5 sleeves", "v5_sleeves"),
-            ("🧪 Validation", "validation"),
-            ("🧪 Stress test", "stress_test"),
-            ("👁️ Shadow signals", "shadow_signals"),
-            ("👥 Shadow variants", "shadows"),
-            ("🩺 Sleeve health", "sleeve_health"),
             ("⚡ Slippage", "slippage"),
             ("📜 Postmortems", "postmortems"),
             ("📄 Reports", "reports"),
@@ -2642,7 +2661,10 @@ This view shows where we are relative to those thresholds.
 # View: Shadow variants
 # ============================================================
 def view_shadows():
-    st.title("👥 Shadow variants")
+    st.title("🧪 A/B sleeve variants")
+    st.caption("Alternative parameterizations of LIVE sleeves running in "
+               "parallel — see [GLOSSARY.md → Shadow variant](../docs/GLOSSARY.md). "
+               "Different from 👁️ Shadow signals (those are NEW sleeves on probation).")
     with st.expander("ℹ️ What is a shadow variant?"):
         st.markdown("""A **shadow variant** runs alongside LIVE every day but places NO orders.
 It records what it would have done. We have ~12 shadows. The 3-gate
@@ -2680,8 +2702,11 @@ been killed via this pipeline (see docs/CRITIQUE.md).""")
 # View: Sleeve health
 # ============================================================
 def view_sleeve_health():
-    st.title("🔍 Sleeve health")
-    st.caption("Cross-sleeve correlation + per-sleeve rolling Sharpe + auto-demote recommendations.")
+    st.title("🩺 Sleeve health (correlation)")
+    st.caption("Cross-sleeve correlation + per-sleeve rolling Sharpe + "
+               "auto-demote recommendations. **Operational** health of "
+               "LIVE sleeves — NOT a backtest. See [GLOSSARY.md → Sleeve "
+               "health](../docs/GLOSSARY.md).")
     try:
         from trader.sleeve_health import compute_health
         @st.cache_data(ttl=600)
@@ -3488,7 +3513,7 @@ def view_slippage():
 
 # ----- #1 Shadow signal panel ----------------------------------------------
 def view_shadow_signals():
-    st.title("👁️ Shadow signals — what the SHADOW modules say RIGHT NOW")
+    st.title("👁️ Shadow signals (live)")
     st.caption(
         "For every v3.58 module currently in SHADOW, this view runs it "
         "against your LIVE state and shows what it WOULD do. Read the "
@@ -4016,7 +4041,7 @@ def _maybe_open_symbol_modal():
 # View: Walk-forward + sensitivity + chaos (v3.59.5)
 # ============================================================
 def view_validation():
-    st.title("🧪 Validation — walk-forward · sensitivity grid · chaos checks")
+    st.title("🧪 Validation (walk-forward)")
     st.caption(
         "Per `docs/TESTING_PRACTICES.md` Cat 1, 5, 8. Walk-forward shows "
         "OOS performance per quarter; sensitivity grid shows whether "
@@ -4200,7 +4225,7 @@ def view_validation():
 # View: Stress test (v3.59.2) — regime × sleeve grid
 # ============================================================
 def view_stress_test():
-    st.title("🧪 Stress test — sleeves vs historical crisis regimes")
+    st.title("💥 Stress test (crisis regimes)")
     st.caption(
         "Per-sleeve performance across 9 named historical regimes "
         "(2001 9/11 → 2026 Iran). Regenerate by running "
@@ -4828,7 +4853,10 @@ wrong literature claims.
 # View: V5 sleeves (v3.59.1) — pre-FOMC drift / VRP / ML-PEAD scaffolds
 # ============================================================
 def view_v5_sleeves():
-    st.title("🎯 V5 sleeves — pre-FOMC drift, VRP, ML-PEAD")
+    st.title("🎯 V5 alpha sleeves")
+    st.caption("3 NEW alpha sleeves under research: pre-FOMC drift, VRP, "
+               "ML-PEAD. Not yet eligible for LIVE rotation. See "
+               "[GLOSSARY.md → V5 sleeves](../docs/GLOSSARY.md).")
     st.caption(
         "Per `docs/V5_ALPHA_DISCOVERY_PROPOSAL.md`. Each sleeve is "
         "uncorrelated to momentum and has a structural reason to persist. "
