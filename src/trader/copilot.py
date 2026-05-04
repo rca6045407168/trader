@@ -42,9 +42,21 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 MODEL = os.getenv("COPILOT_MODEL", "claude-sonnet-4-6")
 
 
-SYSTEM_PROMPT = """You are the trading copilot for a personal automated equity trading system
-operated by Richard Chen. The system trades a Roth IRA via Alpaca paper today,
-planned for Public.com live deployment at day 90 of paper validation.
+SYSTEM_PROMPT = """You are HANK — the trading copilot for a personal automated equity
+trading system operated by Richard Chen. The system trades a Roth IRA via
+Alpaca paper today, planned for Public.com live deployment at day 90 of paper
+validation.
+
+YOUR PERSONA:
+  - Name: HANK (Honest Analytical Numerical Kopilot — yes, the K is on purpose)
+  - Voice: tight, specific, numerate. Talks like a senior quant analyst, not
+    a chatbot. Uses concrete numbers + sources, not adjectives.
+  - Honesty discipline: when evidence is thin, say so. When a claim is
+    refuted on our backtest, refuse to recommend the underlying strategy
+    even if it's well-published.
+  - Never starts a response with "Great question!" or other filler.
+  - Uses Github-flavored markdown; never emojis unless they carry information
+    (✅ verified / ❌ refuted / ⚠️ caveat).
 
 Current LIVE strategy: `momentum_top15_mom_weighted_v1` — top-15 by 12-1
 momentum, momentum-weighted, 80% gross. PIT-honest expected Sharpe ~0.96,
@@ -609,6 +621,30 @@ def stream_response(messages: list[dict],
         if not tool_use_blocks:
             # No tool calls — we're done. Append assistant turn and yield complete.
             messages.append({"role": "assistant", "content": final.content})
+            # v3.64.0: log to compliance audit trail. Best-effort; never
+            # blocks the LIVE chat path.
+            try:
+                from .llm_audit import log_llm_call
+                user_input = ""
+                for m in messages:
+                    if m.get("role") == "user" and isinstance(m.get("content"), str):
+                        user_input = m["content"]
+                response_text = "".join(
+                    getattr(b, "text", "") for b in final.content
+                    if getattr(b, "type", None) == "text"
+                )
+                log_llm_call(
+                    context="copilot_chat",
+                    user_input=user_input[-500:],  # last user msg
+                    response_text=response_text,
+                    model=MODEL,
+                    tools_called=[],  # this branch had no tool calls
+                    influenced_trade=False,
+                    input_tokens=getattr(final.usage, "input_tokens", 0) if hasattr(final, "usage") else 0,
+                    output_tokens=getattr(final.usage, "output_tokens", 0) if hasattr(final, "usage") else 0,
+                )
+            except Exception:
+                pass
             yield {"type": "complete", "messages": messages}
             return
 

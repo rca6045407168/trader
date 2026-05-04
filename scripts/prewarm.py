@@ -110,6 +110,34 @@ def main() -> int:
         return backup_journal.main()
     _prewarm_section("journal backup", _backup)
 
+    # 7. v3.64.0 — Self-evaluating postmortem. Runs once per day; checks
+    # if today's date already has a postmortem row in journal.postmortems
+    # and skips if so. Best-effort; never blocks Streamlit.
+    def _postmortem():
+        from datetime import datetime as _dt
+        import sqlite3
+        db_path = ROOT / "data" / "journal.db"
+        if not db_path.exists():
+            return "no journal yet"
+        today = _dt.utcnow().date().isoformat()
+        try:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as c:
+                row = c.execute(
+                    "SELECT 1 FROM postmortems WHERE date = ? LIMIT 1",
+                    (today,)).fetchone()
+            if row:
+                return "already-ran-today"
+        except Exception:
+            pass  # table may not exist yet
+        # Run the LLM postmortem
+        try:
+            from trader.postmortem import run_postmortem
+            result = run_postmortem()
+            return f"OK ({result.get('summary', '?')[:60]})"
+        except Exception as e:
+            return f"skip: {type(e).__name__}"
+    _prewarm_section("self-eval postmortem", _postmortem)
+
     # 6. v3.61.0 — News poller. Best-effort fetch of US + Asian news
     # streams. Sentiment scoring NOT run from prewarm (would consume
     # Claude tokens on every container restart) — run separately via

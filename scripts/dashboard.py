@@ -945,7 +945,10 @@ def _render_tool_artifact(idx: int, tc: dict):
 # View: Chat (primary, default)
 # ============================================================
 def view_chat():
-    st.title("🤖 Copilot")
+    st.title("🤖 HANK")
+    st.caption("**H**onest **A**nalytical **N**umerical **K**opilot — your trading research assistant. "
+               "Uses 10 tools autonomously to answer questions about portfolio, "
+               "decisions, performance.")
 
     # v3.57.1 (Phase 4): command bar above chat — Cmd+K-style typeahead
     # backed by saved workflows + suggested prompts.
@@ -3188,10 +3191,13 @@ def view_alerts():
             st.caption(f"_earnings calendar status: {e}_")
 
     # v3.62.1: notification setup status — answers "do I get emails?"
+    # v3.64.0: fixed the SMTP_USER+PASS check (was looking at SMTP_HOST
+    # which has a default value)
     with st.expander("📬 How notifications work", expanded=False):
         import os as _os
         slack = _os.getenv("SLACK_WEBHOOK", "")
-        email_smtp = _os.getenv("SMTP_HOST", "")
+        # Email IS wired in trader.notify since v2.0 — just needs SMTP_USER+PASS
+        email_smtp = _os.getenv("SMTP_USER", "") and _os.getenv("SMTP_PASS", "")
         ntfy = _os.getenv("NTFY_TOPIC", "")
 
         st.markdown("""
@@ -3213,13 +3219,29 @@ system can send to:
         with col2:
             if email_smtp:
                 st.success("✅ **Email** — wired")
-            else:
-                st.warning("**Email** — NOT WIRED")
                 st.caption(
-                    "No email integration shipped yet. To wire: "
-                    "set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, "
-                    "`ALERT_EMAIL` env vars and add an "
-                    "`email_send()` adapter to `trader.notify`."
+                    f"Sends to `{_os.getenv('EMAIL_TO', '?')}` via "
+                    f"`{_os.getenv('SMTP_HOST', 'smtp.gmail.com')}`. "
+                    f"Used by `trader.notify._send_email()`."
+                )
+                # Test button so user can verify it actually works
+                if st.button("✉️ Send test email", key="alerts_test_email"):
+                    try:
+                        from trader.notify import notify
+                        notify("HANK test email — if you see this, email "
+                                "alerts are working.", level="info")
+                        st.success("Test email queued. Check your inbox.")
+                    except Exception as e:
+                        st.error(f"Send failed: {e}")
+            else:
+                st.warning("**Email** — credentials missing")
+                st.caption(
+                    "Adapter EXISTS (`trader.notify`) but needs "
+                    "`SMTP_USER` + `SMTP_PASS` env vars. For Gmail: "
+                    "[create app password](https://myaccount.google.com/"
+                    "apppasswords). Defaults: `EMAIL_TO=" +
+                    _os.getenv("EMAIL_TO", "richard.chen.1989@gmail.com") +
+                    "`, host `smtp.gmail.com:587`."
                 )
         with col3:
             if ntfy:
@@ -3763,13 +3785,87 @@ def _render_watchlist_table(rows: list[dict], held: set, pinned: list[str]):
 
 
 # ----- #3 Per-symbol drill-down modal --------------------------------------
+@st.cache_data(ttl=900, show_spinner=False)
+def _hank_symbol_summary_cached(symbol: str, pos_signature: str) -> str:
+    """v3.64.0: cached LLM summary per (symbol, position-snapshot).
+    pos_signature is a stringified key including weight/day_pl/unrealized
+    so the cache invalidates when material changes happen."""
+    try:
+        import os as _os
+        if not _os.getenv("ANTHROPIC_API_KEY"):
+            return ""
+        from anthropic import Anthropic
+        from trader.copilot import dispatch_tool, MODEL
+        # Pull the actual context — recent decisions, last 5 events, lots
+        try:
+            decisions = dispatch_tool("get_recent_decisions", {"n": 5})
+        except Exception:
+            decisions = {}
+        try:
+            events = dispatch_tool("get_upcoming_events", {"days_ahead": 14})
+        except Exception:
+            events = {}
+        # Filter to this ticker
+        sym_decisions = [d for d in (decisions.get("decisions") or [])
+                          if str(d.get("ticker", "")).upper() == symbol.upper()][:3]
+        sym_events = [e for e in (events.get("events") or [])
+                       if str(e.get("symbol", "")).upper() == symbol.upper()][:3]
+        prompt = (
+            f"Symbol: {symbol}\n"
+            f"Position: {pos_signature}\n"
+            f"Recent decisions on this name: {sym_decisions}\n"
+            f"Upcoming events on this name: {sym_events}\n\n"
+            "Write a 3-bullet HANK-voice summary for the trader. Each bullet "
+            "≤ 2 sentences. First bullet: current position context. "
+            "Second: most recent decision rationale. Third: notable upcoming "
+            "events or risks. NO filler. Numbers + sources only. If a bullet "
+            "has nothing meaningful, write '— no signal'."
+        )
+        client = Anthropic(api_key=_os.getenv("ANTHROPIC_API_KEY"))
+        resp = client.messages.create(
+            model=MODEL, max_tokens=400,
+            system="You are HANK. Tight, numerate, no filler.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(getattr(b, "text", "") for b in resp.content
+                       if getattr(b, "type", None) == "text").strip()
+        # v3.64.0: compliance audit log
+        try:
+            from trader.llm_audit import log_llm_call
+            log_llm_call(
+                context="hank_symbol_summary",
+                user_input=f"summarize {symbol}",
+                response_text=text, model=MODEL,
+                input_tokens=getattr(resp.usage, "input_tokens", 0) if hasattr(resp, "usage") else 0,
+                output_tokens=getattr(resp.usage, "output_tokens", 0) if hasattr(resp, "usage") else 0,
+            )
+        except Exception:
+            pass
+        return text
+    except Exception as e:
+        return f"_summary failed: {type(e).__name__}: {e}_"
+
+
+def _hank_symbol_summary(symbol: str, pos: dict | None) -> str:
+    """Build cache-stable signature + delegate to cached helper."""
+    if pos:
+        sig = (f"weight={pos.get('weight_pct', 0):.1f} "
+               f"day={pos.get('day_pl_pct', 0):+.2f} "
+               f"unr={pos.get('unrealized_pl_pct', 0):+.2f} "
+               f"sector={pos.get('sector', '?')}")
+    else:
+        sig = "not_held"
+    return _hank_symbol_summary_cached(symbol, sig)
+
+
 @st.dialog("🔍 Symbol detail")
 def _symbol_detail_modal(symbol: str):
-    """Per-symbol drill-down: recent decisions, lots, events, slippage, news."""
+    """Per-symbol drill-down: AI summary + recent decisions, lots, events, slippage, news."""
     st.subheader(f"📊 {symbol}")
     db = str(DB_PATH)
 
     # Live position info
+    pos = None
     try:
         from trader.copilot import dispatch_tool
         ports = dispatch_tool("get_portfolio_status", {})
@@ -3785,6 +3881,14 @@ def _symbol_detail_modal(symbol: str):
             st.caption("_not currently held_")
     except Exception:
         pass
+
+    # v3.64.0: HANK summary — Bloomberg-style AI synthesis at top of drill-down
+    with st.expander("🧠 HANK summary", expanded=True):
+        summary = _hank_symbol_summary(symbol, pos)
+        if summary:
+            st.markdown(summary)
+        else:
+            st.caption("_AI summary unavailable — set ANTHROPIC_API_KEY_")
 
     tabs = st.tabs(["🎯 Decisions", "📦 Lots", "📅 Events",
                     "⚡ Slippage", "📈 Chart"])

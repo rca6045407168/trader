@@ -29,16 +29,24 @@ def test_registry_includes_live_momentum():
 
 
 def test_registry_marks_refuted_strategies():
-    """All the items refuted in the v3.60.1 audit must be marked as such."""
+    """All the items refuted in the v3.60.1 audit must be marked as such.
+    v3.63.1: momentum_crash_detector upgraded to CALMAR_TRADE after
+    re-test on momentum portfolio (was REFUTED on SPY proxy)."""
     from trader.strategy_registry import find
+    # These are still REFUTED post-v3.63.1
     for name in ("residual_momentum", "lowvol_sleeve",
-                  "momentum_crash_detector", "trailing_stop_15pct",
+                  "trailing_stop_15pct",
                   "sector_neutralizer_35cap", "fomc_drift",
                   "earnings_rule_t1_trim50"):
         s = find(name)
         assert s is not None, f"missing registry entry: {name}"
         assert s.verification == "REFUTED", \
             f"{name} should be REFUTED, got {s.verification}"
+    # Crash detector: verified-but-not-Sharpe-positive after v3.63.1 re-test
+    crash = find("momentum_crash_detector")
+    assert crash is not None
+    assert crash.verification in ("REFUTED", "CALMAR_TRADE"), \
+        f"crash detector should be REFUTED or CALMAR_TRADE, got {crash.verification}"
 
 
 def test_registry_categorizes_correctly():
