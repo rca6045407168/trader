@@ -1408,7 +1408,51 @@ def view_performance():
 
     perf = _cached_performance(window)
     if perf.n_obs < 2:
-        st.warning(f"Need ≥2 daily snapshots; have {perf.n_obs}. Sync from GitHub via ⚙️ Settings.")
+        st.warning(
+            f"⚠️ **Performance metrics need ≥2 daily snapshots; we have "
+            f"{perf.n_obs}.** This page is data-thin until the trading "
+            f"system has accumulated daily snapshots over a real trading "
+            f"window."
+        )
+        # Show whatever live state we DO have
+        st.subheader("📍 Current account snapshot")
+        try:
+            from trader.copilot import dispatch_tool
+            ports = dispatch_tool("get_portfolio_status", {})
+            if not ports.get("error"):
+                cc = st.columns(4)
+                cc[0].metric("Equity", f"${ports.get('equity', 0):,.0f}")
+                cc[1].metric("Cash", f"${ports.get('cash', 0):,.0f}")
+                cc[2].metric("Day P&L",
+                              f"${ports.get('total_day_pl_dollar', 0):+,.0f}",
+                              f"{ports.get('total_day_pl_pct', 0):+.2f}%")
+                cc[3].metric("# Positions", ports.get('n_positions', 0))
+            else:
+                st.caption(f"Could not load live portfolio: {ports['error']}")
+        except Exception as e:
+            st.caption(f"Live portfolio unavailable: {e}")
+
+        st.divider()
+        st.subheader("📚 What this page WILL show once data accumulates")
+        st.markdown("""
+Once ≥2 daily snapshots exist, this page renders:
+
+- **Headline metrics** — total return, Sharpe ratio, max drawdown, CAGR
+- **Risk/reward** — Sortino, Calmar, Information ratio, beta vs SPY
+- **After-cost numbers** — gross vs net (after spread, turnover, tax)
+- **Equity curve vs SPY** — cumulative P&L overlay with drawdown shading
+- **LowVolSleeve shadow** — second-sleeve curve for diversification check
+- **Rolling Sharpe** — 30-day window
+- **Drawdown periods** — start, end, depth, duration
+- **Monthly returns table** — calendar P&L grid
+
+**To populate this page:**
+1. Run the daily orchestrator: `python -m trader.main` (writes `daily_snapshot` row)
+2. Or sync historical snapshots from GitHub via ⚙️ Settings → Sync state
+3. Or wait for the cron to fire daily
+
+Snapshots are written to `data/journal.db` table `daily_snapshot`.
+""")
         return
 
     # ---- HEADLINE: 4 columns, the things that matter most ----
@@ -3078,6 +3122,66 @@ def view_alerts():
         "halts, slippage outliers. Replaces hunting through stdout + Slack."
     )
 
+    # v3.62.1: notification setup status — answers "do I get emails?"
+    with st.expander("📬 How notifications work", expanded=False):
+        import os as _os
+        slack = _os.getenv("SLACK_WEBHOOK", "")
+        email_smtp = _os.getenv("SMTP_HOST", "")
+        ntfy = _os.getenv("NTFY_TOPIC", "")
+
+        st.markdown("""
+This page is an **in-dashboard log** — it shows everything that happened
+since the system started, no notifications required.
+
+For PUSH notifications (when something breaks while you're away), the
+system can send to:
+""")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if slack:
+                st.success("✅ **Slack** — wired")
+                st.caption("Set via `SLACK_WEBHOOK` env. "
+                            "Used by `trader.notify.notify()`.")
+            else:
+                st.info("**Slack** — not wired")
+                st.caption("Set `SLACK_WEBHOOK` env to enable.")
+        with col2:
+            if email_smtp:
+                st.success("✅ **Email** — wired")
+            else:
+                st.warning("**Email** — NOT WIRED")
+                st.caption(
+                    "No email integration shipped yet. To wire: "
+                    "set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, "
+                    "`ALERT_EMAIL` env vars and add an "
+                    "`email_send()` adapter to `trader.notify`."
+                )
+        with col3:
+            if ntfy:
+                st.success("✅ **ntfy.sh** — wired")
+            else:
+                st.info("**ntfy.sh** — not wired")
+                st.caption(
+                    "Free push-to-phone. Set `NTFY_TOPIC` env to "
+                    "your unique topic (e.g. `trader-richard-7x9k`)."
+                )
+
+        st.markdown("""
+**What triggers a notification:**
+
+- 🔴 Kill-switch trip (catastrophic / data-quality / liquidation)
+- 🔴 Drawdown circuit breaker fired
+- 🔴 Daily-loss freeze triggered (-6% in a day)
+- 🟡 Order errors / partial fills
+- 🟡 Reconcile mismatches (expected vs actual positions)
+- 🟢 Daily run completed (info-level)
+
+**To get emails specifically:** the email adapter is the single
+biggest UX gap. Until shipped, set `SLACK_WEBHOOK` for the same
+real-time alerting via Slack DM/channel — that's the default
+production path.
+""")
+
     # Pull from the journal: runs (status), orders (errors), decisions
     # (final), postmortems, plus the v3.58 slippage_log we just started
     # writing.
@@ -4242,6 +4346,10 @@ def view_strategy_lab():
     if pick != "(select)":
         s = next((x for x in filtered if x.name == pick), None)
         if s:
+            # v3.62.1: lead with the plain-English explanation
+            if s.plain_description:
+                st.markdown(s.plain_description)
+                st.markdown("---")
             cc = st.columns(3)
             cc[0].metric("Status", s.status)
             cc[1].metric("Verification", s.verification)
@@ -4299,6 +4407,10 @@ def view_strategy_lab():
         )
         for s in refuted:
             with st.expander(f"❌ {s.name} — {(s.backtest_verdict or '')[:80]}"):
+                # v3.62.1: lead with plain-English description
+                if s.plain_description:
+                    st.markdown(s.plain_description)
+                    st.markdown("---")
                 st.markdown(f"**Paper basis:** {s.paper_basis}")
                 if s.measured_sharpe is not None and s.expected_sharpe is not None:
                     st.markdown(f"**Expected Sharpe:** {s.expected_sharpe:+.2f}  ·  **Measured:** {s.measured_sharpe:+.2f}")
@@ -4312,12 +4424,44 @@ def view_strategy_lab():
 # ============================================================
 def view_pnl_readiness():
     st.title("💰 P&L flip readiness")
-    st.caption(
-        "If I owned the P&L: which env-var flips actually move the "
-        "needle? Each line below is a calibrated estimate with "
-        "evidence + confidence. **Net expected lift if all "
-        "recommended flips approved: +140bp/yr at $10K.**"
-    )
+    # v3.62.1: plain-language intro before the dense table.
+    # NB: dollar signs in markdown trigger Streamlit LaTeX rendering;
+    # use the literal word "dollars" or escape with backslash.
+    with st.expander("❓ What is this page for?", expanded=True):
+        st.markdown("""
+**Plain English:** every "module" in the codebase has a status flag —
+`LIVE` (touching real money), `SHADOW` (computing in the background
+without making trades), or `NOT_WIRED` (built but disabled).
+
+You can flip a module's status by setting an environment variable
+(e.g. `MOMENTUM_CRASH_STATUS=LIVE`) in `docker-compose.yml`. Flipping
+a module from SHADOW to LIVE changes how the trading system makes
+decisions — and changes your P&L.
+
+**This page asks: "if I flip these env vars, how much money do I make
+or lose per year?"** Each row is a flip you could make, with:
+
+- 💵 bps/yr — basis points per year of P&L impact (100 bps = 1 percent)
+- 💵 dollars/yr — that number at your current account size
+- 🎯 confidence — high / medium / low / speculative
+- 📋 evidence — CALIBRATED from a paper, MEASURED on our backtest,
+   or REFUTED on our backtest?
+
+**Why this exists:** lots of strategies LOOK good in academic literature
+but FAIL on our backtest. This page is the honest ledger.
+
+**Honest verdict (post-v3.60.1 audit):** of the items I originally
+recommended, **6 of 12 were REFUTED on our actual data**. Net expected
+lift from flips that survived audit is currently near zero. The
+**❌ Refuted list is the most valuable part of this page** — it
+saves you from making bad capital decisions based on plausible-but-
+wrong literature claims.
+
+**What you'd do today:**
+1. Skim the ❌ Refuted list — internalize what's been killed and why
+2. Look at ✅ Recommended (likely empty until we re-test more items)
+3. Don't flip anything to LIVE without a fresh backtest
+""")
 
     out_path = ROOT / "data" / "cost_impact_report.json"
     if not out_path.exists():
@@ -4425,10 +4569,19 @@ def view_pnl_readiness():
                               end=_dt.utcnow().date().isoformat(),
                               progress=False, auto_adjust=True)
             if df is not None and not df.empty:
+                # v3.62.1: yfinance returns MultiIndex columns for
+                # single-ticker downloads in some versions. Squeeze
+                # to a Series so float() works.
                 closes = df["Close"].dropna()
+                if hasattr(closes, "columns"):
+                    closes = closes.iloc[:, 0]
                 rets = []
                 for i in range(1, len(closes)):
-                    p, c = float(closes.iloc[i - 1]), float(closes.iloc[i])
+                    try:
+                        p = float(closes.iloc[i - 1])
+                        c = float(closes.iloc[i])
+                    except (TypeError, ValueError):
+                        continue
                     if p > 0:
                         rets.append((c / p) - 1)
                 sig = crash_signal(rets)
