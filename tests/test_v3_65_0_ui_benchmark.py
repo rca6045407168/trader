@@ -32,9 +32,13 @@ def test_ui_benchmark_doc_exists():
 def test_dashboard_version_bumped_to_v3_65_0():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()
+    # The v3.65.0 release tag must still appear in the file's history
+    # (changelog comments). Sidebar caption may have moved to a later
+    # patch (v3.65.1+) — accept any v3.65.x label.
     assert "v3.65.0" in text
-    # Sidebar version label must be updated
-    assert 'st.caption("v3.65.0' in text
+    import re
+    assert re.search(r'st\.caption\("v3\.65\.\d', text), \
+        "sidebar must show some v3.65.x version label"
 
 
 def test_dashboard_has_market_ribbon():

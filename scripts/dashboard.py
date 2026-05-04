@@ -1,4 +1,14 @@
-"""Live local dashboard for the trader (v3.65.0).
+"""Live local dashboard for the trader (v3.65.1).
+
+v3.65.1 — Market-session awareness. Alpaca's `account.equity` keeps
+ticking on extended-hours / weekend marks while `account.last_equity`
+doesn't roll over until the next session opens. The result: a phantom
+"+0.6% day P&L" labeled as TODAY when checked on Saturday/Sunday/before
+Monday open. We now detect the session (OPEN / CLOSED_WEEKEND /
+CLOSED_HOLIDAY / CLOSED_PREMARKET / CLOSED_AFTERHOURS) via
+`trader.market_session` and either suppress the day-P&L delta or
+relabel it as "Last session ({date})" so the user knows what they're
+looking at. Adds a CLOSED · last close badge to the sticky ribbon.
 
 v3.65.0 — UI BENCHMARK pass (per docs/UI_BENCHMARK.md):
   - Sticky market ribbon at the top of every view (SPY/QQQ/VIX/regime)
@@ -378,7 +388,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.65.0 · chat-first AI dashboard")
+    st.caption("v3.65.1 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -928,18 +938,49 @@ def _ribbon_market_snapshot() -> dict:
     return out
 
 
+def _market_session():
+    """Wrapper around trader.market_session.market_session_now so views
+    can branch on OPEN vs CLOSED_* without importing the module each time.
+    Returns SessionState. Falls back to a synthetic OPEN if the helper
+    fails (defensive — we never want session detection to crash a view)."""
+    try:
+        from trader.market_session import market_session_now
+        return market_session_now()
+    except Exception:
+        from datetime import datetime as _dt
+        from collections import namedtuple
+        Fake = namedtuple("Fake", ["label", "is_open", "last_trading_day",
+                                    "next_trading_day", "et_now", "reason"])
+        today = _dt.utcnow().date()
+        return Fake("OPEN", True, today, today, _dt.utcnow(), "session helper failed")
+
+
 def _render_market_ribbon():
     """Thin, always-on horizontal market ribbon — SPY / QQQ / VIX +
-    regime overlay multiplier + journal age. Renders at the top of EVERY
-    non-chat view so the user keeps market context while scrolling
-    through Strategy Lab / Performance / etc.
+    regime overlay multiplier + market-session badge. Renders at the top
+    of EVERY non-chat view so the user keeps market context while
+    scrolling through Strategy Lab / Performance / etc.
 
-    Pattern: Yahoo Finance's persistent market-stats rail.
+    Pattern: Yahoo Finance's persistent market-stats rail. v3.65.1 adds
+    a session badge so the user knows whether the SPY/QQQ/VIX numbers
+    are from a live session or a stale Friday close.
     """
     snap = _ribbon_market_snapshot()
     overlay = _overlay_signal()
+    session = _market_session()
 
     parts: list[str] = []
+
+    # Session badge ALWAYS first so the user sees it before reading numbers
+    if session.is_open:
+        parts.append('<span style="background:#052e16;color:#4ade80;'
+                      'padding:2px 8px;border-radius:4px;font-weight:600">'
+                      '● MARKET OPEN</span>')
+    else:
+        last_str = session.last_trading_day.strftime("%a %b %-d")
+        parts.append(f'<span style="background:#1e293b;color:#94a3b8;'
+                      f'padding:2px 8px;border-radius:4px;font-weight:600">'
+                      f'○ CLOSED · last close {last_str}</span>')
 
     def _fmt(symbol: str, key: str, dec: int = 2) -> str:
         v = snap.get(key)
@@ -990,8 +1031,12 @@ def _render_price_headline():
     NOW + day P&L $/% in a 48px+ font with a green/red background tint
     so the dominant number is unambiguous.
 
-    Falls back to a one-line "no snapshots" caption if the journal is
-    empty so cold-start doesn't crash."""
+    v3.65.1: when the market is closed (weekend, pre-market, after-hours,
+    holiday) we DO NOT show a "day P&L" delta. Alpaca's `account.equity`
+    keeps ticking on extended-hours quotes and its `last_equity` doesn't
+    roll over until next-day open — so the delta is misleading. Instead
+    we show a "Markets closed · last session: {date}" badge.
+    """
     snaps = _cached_snapshots(str(DB_PATH))
     if snaps.empty:
         st.caption("_no daily snapshots yet — sync from GitHub or run "
@@ -1000,9 +1045,15 @@ def _render_price_headline():
     latest = snaps.iloc[0]
     eq_now = float(latest["equity"])
 
+    session = _market_session()
+
     day_pl_dollar = None
     day_pl_pct = None
-    if len(snaps) >= 2:
+    # Only compute a day delta when the market is actually open. Two
+    # consecutive snapshots taken on the SAME calendar day during the
+    # session is a real delta; anything else (weekend, after-hours, two
+    # rows that span a non-trading gap) gets suppressed.
+    if session.is_open and len(snaps) >= 2:
         prev_eq = float(snaps.iloc[1]["equity"])
         if prev_eq > 0:
             day_pl_dollar = eq_now - prev_eq
@@ -1011,7 +1062,14 @@ def _render_price_headline():
     if day_pl_pct is None:
         bg = "#1e293b"
         fg = "#e2e8f0"
-        delta_html = ""
+        if session.is_open:
+            delta_html = ""
+        else:
+            last_str = session.last_trading_day.strftime("%a %b %-d, %Y")
+            delta_html = (
+                f'<span style="color:#94a3b8;font-size:14px;margin-left:18px;'
+                f'font-style:italic">Markets closed · last session {last_str}'
+                f'</span>')
     elif day_pl_pct >= 0:
         bg = "#052e16"
         fg = "#bbf7d0"
@@ -1460,12 +1518,30 @@ def view_live_positions():
     if getattr(live, "error", None):
         st.warning(f"broker fetch failed: {live.error}")
         return
+    # v3.65.1: when market is closed, "Day P&L" against Alpaca's
+    # lastday_price is misleading (Alpaca's lastday doesn't roll over
+    # until next-day open, so "today" P&L on a Sunday is actually
+    # Thursday→Friday's full session move). Show the LAST-SESSION label
+    # instead so the user knows what they're looking at.
+    session = _market_session()
     cc = st.columns(4)
     cc[0].metric("Equity", f"${live.equity:,.0f}" if live.equity else "n/a")
     cc[1].metric("Cash", f"${live.cash:,.0f}" if live.cash else "n/a")
-    cc[2].metric("Day P&L",
-                 f"${live.total_day_pl_dollar:+,.0f}" if live.total_day_pl_dollar is not None else "n/a",
-                 f"{live.total_day_pl_pct:+.2%}" if live.total_day_pl_pct is not None else None)
+    if session.is_open:
+        cc[2].metric(
+            "Day P&L",
+            f"${live.total_day_pl_dollar:+,.0f}" if live.total_day_pl_dollar is not None else "n/a",
+            f"{live.total_day_pl_pct:+.2%}" if live.total_day_pl_pct is not None else None,
+        )
+    else:
+        last_str = session.last_trading_day.strftime("%a %b %-d")
+        cc[2].metric(
+            f"Last session ({last_str})",
+            f"${live.total_day_pl_dollar:+,.0f}" if live.total_day_pl_dollar is not None else "n/a",
+            f"{live.total_day_pl_pct:+.2%}" if live.total_day_pl_pct is not None else None,
+            help=("Markets closed. This is the most recent trading session's "
+                  "move — not 'today'."),
+        )
     cc[3].metric("Total unrealized", f"${live.total_unrealized_pl:+,.0f}")
     if live.positions:
         rows = [{
@@ -1661,9 +1737,15 @@ def view_performance():
                 cc = st.columns(4)
                 cc[0].metric("Equity", f"${ports.get('equity', 0):,.0f}")
                 cc[1].metric("Cash", f"${ports.get('cash', 0):,.0f}")
-                cc[2].metric("Day P&L",
+                # v3.65.1: same closed-market relabeling as live_positions
+                _sess = _market_session()
+                _label = "Day P&L" if _sess.is_open else (
+                    f"Last session ({_sess.last_trading_day.strftime('%a %b %-d')})")
+                cc[2].metric(_label,
                               f"${ports.get('total_day_pl_dollar', 0):+,.0f}",
-                              f"{ports.get('total_day_pl_pct', 0):+.2f}%")
+                              f"{ports.get('total_day_pl_pct', 0):+.2f}%",
+                              help=None if _sess.is_open else
+                              "Markets closed — this is the most recent session move, not 'today'.")
                 cc[3].metric("# Positions", ports.get('n_positions', 0))
             else:
                 st.caption(f"Could not load live portfolio: {ports['error']}")
