@@ -1,4 +1,20 @@
-"""Live local dashboard for the trader (v3.68.2).
+"""Live local dashboard for the trader (v3.68.3).
+
+v3.68.3 — Earnings reactor in daemon mode. v3.68.1 was a launchd job
+that respawned every 4h ("constantly looking" was a UI illusion —
+actual cadence was 6 fires/day). v3.68.3 makes the reactor a
+persistent process polling every 5 min via the new --watch CLI mode.
+
+  - new --watch + --watch-interval flags in scripts/earnings_reactor.py
+  - clean SIGTERM handling (no aborted Claude calls on launchd reload)
+  - per-iter try/except so transient EDGAR / Claude errors don't kill
+    the daemon
+  - launchd plist switched to KeepAlive=true + ThrottleInterval=60s
+    (auto-respawn on crash, no tight loops on bug)
+  - line-buffered stdout so `tail -f` shows progress in real time
+
+Latency: 4h → 5 min from 8-K filing → email. Cost unchanged
+(idempotency at accession level means most polls cost $0).
 
 v3.68.2 — Email alerts for material reactor signals. When the reactor
 flags a M≥3 (worth-a-PM's-attention) signal it pushes via the existing
@@ -485,7 +501,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.68.2 · chat-first AI dashboard")
+    st.caption("v3.68.3 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top

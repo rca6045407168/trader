@@ -61,29 +61,27 @@ def test_launchd_plist_invokes_reactor_script():
     assert "source .env" in cmd or "set -a" in cmd
 
 
-def test_launchd_plist_has_calendar_schedule():
-    """Weekdays only at 17:05 ET (post market close)."""
-    d = _plist_dict()
-    cal = d["StartCalendarInterval"]
-    assert isinstance(cal, list)
-    assert len(cal) == 5  # Mon-Fri
-    weekdays = sorted(entry["Weekday"] for entry in cal)
-    assert weekdays == [1, 2, 3, 4, 5]
-    for entry in cal:
-        assert entry["Hour"] == 17
-        assert entry["Minute"] == 5
-
-
-def test_launchd_plist_sleep_resilient():
-    """Per the FlexHaul memory rule: pair StartCalendarInterval with
-    RunAtLoad + StartInterval to catch fires missed during sleep.
-    Without this, the calendar interval silently skips every fire that
-    landed during a closed-laptop window."""
+def test_launchd_plist_starts_at_load():
+    """RunAtLoad=true so the daemon (or one-shot, depending on version)
+    starts immediately when launchd registers the job. Without this,
+    there's no initial fire and the user has to wait until the next
+    scheduled trigger."""
     d = _plist_dict()
     assert d["RunAtLoad"] is True
-    # StartInterval must be set + reasonable (1h–24h band)
-    assert "StartInterval" in d
-    assert 3600 <= d["StartInterval"] <= 86400
+
+
+def test_launchd_plist_has_a_fire_strategy():
+    """v3.68.1 used StartCalendarInterval + StartInterval (fire-then-exit
+    every 4h). v3.68.3 uses KeepAlive (daemon, runs forever). Either is
+    valid — but SOMETHING must keep it running, otherwise it's a one-shot
+    that fires once at install and never again."""
+    d = _plist_dict()
+    has_daemon_keepalive = d.get("KeepAlive") is True
+    has_calendar_schedule = "StartCalendarInterval" in d
+    has_interval_schedule = "StartInterval" in d
+    assert (has_daemon_keepalive or has_calendar_schedule
+            or has_interval_schedule), \
+        "plist must have KeepAlive (daemon) OR a Start*Interval (cron-style)"
 
 
 def test_launchd_plist_logs_to_user_logs():

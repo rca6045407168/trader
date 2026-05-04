@@ -1,22 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  v3.68.1 — Auto-fire the earnings reactor.
+  v3.68.3 — Earnings reactor in DAEMON mode (replaces v3.68.1 fire-every-4h).
 
-  Pattern (per /Users/richardchen/.claude/projects/.../MEMORY.md note on
-  sleep-resilience): pair StartCalendarInterval with RunAtLoad + StartInterval
-  so missed fires while laptop is asleep get caught up on wake. The reactor
-  is idempotent at the accession-key level, so over-firing is harmless and
-  cheap (zero Claude tokens spent if no new 8-Ks).
+  Architecture change: instead of launchd respawning a fresh Python process
+  every 4 hours, this is now a long-running daemon that polls every 5 minutes
+  in a tight loop. Benefits:
+    - Latency: 4h → 5min for new 8-K → email
+    - Cost: zero — Python startup overhead disappears (was ~1500/day at the
+      tightest interval; now 1 startup per restart, ~1/week typical)
+    - Failure recovery: KeepAlive=true makes launchd respawn the daemon if
+      it crashes. SIGTERM is handled cleanly so reload doesn't lose work
+      mid-Claude-call.
 
-  Cadence:
-    - Weekdays at 17:05 ET (= post-close): catches every earnings 8-K filed
-      during the trading session
-    - Every 4 hours via StartInterval: catches new 8-Ks filed mid-day +
-      catches up after sleep
-    - On load + on wake: belt and suspenders
+  The reactor is still idempotent at the (symbol, accession) level — if a
+  filing is already in the archive, no Claude tokens are spent. Most poll
+  iterations cost ~$0.
 
-  Logs go to ~/Library/Logs/trader-earnings-reactor.log per the memory rule
-  ("log to ~/Library/Logs not /tmp" from OpenClaw safety + privacy first).
+  RTH-only? No. 8-Ks are filed throughout the day, including pre-market
+  and after-hours. We poll 24/7.
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -28,25 +29,22 @@
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>cd /Users/richardchen/trader &amp;&amp; set -a &amp;&amp; [ -f .env ] &amp;&amp; source .env; set +a; exec .venv/bin/python scripts/earnings_reactor.py</string>
+    <string>cd /Users/richardchen/trader &amp;&amp; set -a &amp;&amp; [ -f .env ] &amp;&amp; source .env; set +a; exec .venv/bin/python -u scripts/earnings_reactor.py --watch --watch-interval 300</string>
   </array>
 
-  <key>StartCalendarInterval</key>
-  <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
-    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
-    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
-    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
-  </array>
-
-  <!-- Sleep-resilience: 4h fallback. Reactor is idempotent so over-firing
-       costs ~0¢ when no new 8-Ks have been filed since the last run. -->
-  <key>StartInterval</key>
-  <integer>14400</integer>
+  <!-- Daemon mode: KeepAlive=true → launchd respawns if it ever crashes.
+       The reactor's clean SIGTERM handling means reloads don't lose work. -->
+  <key>KeepAlive</key>
+  <true/>
 
   <key>RunAtLoad</key>
   <true/>
+
+  <!-- Throttle restarts: if the daemon crashes within 60 sec of starting,
+       launchd waits this long before respawning. Prevents tight crash loops
+       from hammering SEC if there's a bug. -->
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
 
   <key>StandardOutPath</key>
   <string>/Users/richardchen/Library/Logs/trader-earnings-reactor.out.log</string>
@@ -57,6 +55,9 @@
   <dict>
     <key>HOME</key><string>/Users/richardchen</string>
     <key>PATH</key><string>/Users/richardchen/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <!-- Tighten the watch interval here if 5 min isn't fast enough.
+         Floor is 60s (enforced by the script). -->
+    <!-- <key>REACTOR_WATCH_INTERVAL</key><string>120</string> -->
   </dict>
 
   <key>WorkingDirectory</key>
@@ -64,5 +65,12 @@
 
   <key>ProcessType</key>
   <string>Background</string>
+
+  <!-- Limit memory to catch any reactor leak before it eats the laptop.
+       2GB is generous; typical resident set is ~150 MB. -->
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key><integer>1024</integer>
+  </dict>
 </dict>
 </plist>

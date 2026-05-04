@@ -68,18 +68,17 @@ launchctl load "$DST_PLIST"
 
 if launchctl list | grep -q "$LABEL"; then
   echo
-  echo "✓ installed: $LABEL"
+  echo "✓ installed: $LABEL (v3.68.3 — daemon mode)"
   echo
-  echo "  Schedule:"
-  echo "    - Weekdays 17:05 ET (post-close)"
-  echo "    - Every 4 hours (sleep-resilient)"
-  echo "    - At launchd load (i.e. now)"
+  echo "  Mode:    long-running daemon, polls every 5 min (REACTOR_WATCH_INTERVAL)"
+  echo "  Restart: launchd KeepAlive=true respawns on crash (60s throttle)"
+  echo "  Latency: <5 min from 8-K filing → email alert (M≥3 only)"
   echo
   echo "  Logs:    $LOG_DIR/trader-earnings-reactor.{out,err}.log"
-  echo "  Status:  launchctl list | grep $LABEL"
+  echo "  Status:  launchctl print gui/\$(id -u)/$LABEL | grep state"
   echo "  Disable: bash scripts/install_launchd_earnings.sh --uninstall"
   echo
-  echo "  First run kicks off in seconds (RunAtLoad=true). Tail the log:"
+  echo "  First poll fires in seconds (RunAtLoad=true). Tail the log:"
   echo "    tail -f $LOG_DIR/trader-earnings-reactor.out.log"
 else
   echo "ERROR: launchctl load did not register the job" >&2

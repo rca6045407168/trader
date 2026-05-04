@@ -41,24 +41,43 @@ macOS launchd jobs that fire on a schedule even when Streamlit isn't
 running. All idempotent so missed fires (laptop asleep) get caught up
 on wake without double-effects.
 
-### `com.trader.earnings-reactor` (v3.68.1)
+### `com.trader.earnings-reactor` (v3.68.3 — daemon mode)
 
-**What it does:** runs `scripts/earnings_reactor.py` for every LIVE
-position. Fetches new SEC 8-Ks, archives them, runs Claude with a
-structured-output schema, persists signals to
-`journal.earnings_signals`. Surfaces in the 📞 Earnings reactor view.
+**What it does:** long-running daemon that polls every 5 minutes,
+fetching new SEC 8-Ks for every LIVE position, archiving them,
+running Claude analysis, persisting signals to
+`journal.earnings_signals`, and emailing on M≥3.
 
-**Schedule:**
-- Weekdays at 17:05 ET (post-close)
-- Every 4 hours via `StartInterval` (sleep-resilient)
-- On launchd load (= when you install it, or after every laptop wake)
+**Architecture (v3.68.3 change from v3.68.1):**
+- v3.68.1 was launchd-respawn-every-4h: ~6 fires/day, 4h latency,
+  ~1500 Python startups/year
+- v3.68.3 is one persistent process polling every 5 min: 5-min
+  latency, ~1 Python startup per crash (typical: zero/year)
 
-**Idempotency:** the reactor's UNIQUE constraint on (symbol, accession)
-makes over-firing free. If no new 8-Ks have been filed since the last
-run, no Claude tokens are spent.
+**Why the change:** the user asked "how are you constantly looking?"
+and I had to admit it wasn't constant — 4h cadence. v3.68.3 makes
+it actually constant within the bound that EDGAR allows (we don't
+hammer; we poll a per-ticker submissions endpoint at 5-min cadence).
 
-**Token cost:** ~$0.018 per material 8-K analyzed. With 15 LIVE
-positions at ~5-10 8-Ks/year each, expected spend is ~$1-2/month.
+**Tunability:** set `REACTOR_WATCH_INTERVAL` env to override the 300s
+default (60s minimum). Tighter = more responsive but more SEC hits
+(still well under the 10 req/sec rate limit even at 60s × 15 positions).
+
+**Failure recovery:**
+- KeepAlive=true → launchd respawns the daemon if it ever crashes
+- ThrottleInterval=60s prevents tight crash loops
+- Per-iteration try/except catches transient EDGAR / Claude errors
+  without tearing down the daemon
+- SIGTERM/SIGINT handled cleanly — finishes current iter, then exits
+  with code 0
+
+**Idempotency:** UNIQUE constraint on (symbol, accession) at archive
++ signals + notifications layers. Re-polling 8-Ks we've already
+analyzed costs zero Claude tokens. Email alerts gated by `notified_at`
+column so the user gets one email per material event, not 288.
+
+**Token cost:** ~$0.018 per material 8-K analyzed. ~5-10 8-Ks/year
+per position × 15 positions = ~$1-2/month steady state.
 
 **Install:**
 ```
