@@ -45,6 +45,14 @@ class Strategy:
     # PLAIN_DESCRIPTIONS dict at module-load time so the REGISTRY entries
     # themselves stay clean.
     plain_description: str = ""
+    # v3.62.2: when verification == REFUTED, why? Categories:
+    #   IMPLEMENTATION_BUG — the strategy never ran correctly
+    #   TEST_DESIGN_FLAW   — our test measured the wrong thing
+    #   PERIOD_DEPENDENT   — true on our window, may flip elsewhere
+    #   GENUINE            — claim is false
+    # See docs/WHY_REFUTED.md for full per-strategy analysis.
+    refutation_category: Optional[str] = None
+    retest_path: Optional[str] = None  # what would change the verdict
 
 
 REGISTRY: list[Strategy] = [
@@ -644,3 +652,53 @@ PLAIN_DESCRIPTIONS: dict[str, str] = {
 # Attach descriptions to registry entries at module load.
 for _s in REGISTRY:
     _s.plain_description = PLAIN_DESCRIPTIONS.get(_s.name, "")
+
+
+# v3.62.2: refutation categories — see docs/WHY_REFUTED.md for analysis.
+REFUTATION_CATEGORIES: dict[str, tuple[str, str]] = {
+    # name → (category, retest_path)
+    "earnings_rule_t1_trim50": (
+        "IMPLEMENTATION_BUG",
+        "Switch earnings calendar source to Polygon free / Finnhub / SEC EDGAR. "
+        "yfinance silently returns empty earnings_dates for major tickers.",
+    ),
+    "fomc_drift": (
+        "TEST_DESIGN_FLAW",
+        "Lucca-Moench measured close→2pm-ET drift; we tested close-to-close. "
+        "Need intraday data (Polygon free tier minute bars) for honest test.",
+    ),
+    "momentum_crash_detector": (
+        "TEST_DESIGN_FLAW",
+        "Daniel-Moskowitz claim is about momentum portfolios; we tested SPY proxy. "
+        "Re-test using actual top-15 momentum portfolio path as base.",
+    ),
+    "trailing_stop_15pct": (
+        "TEST_DESIGN_FLAW",
+        "Test redistributed stopped-out weight to survivors instead of holding cash. "
+        "Rewrite to keep stopped portion in cash for the rest of the window.",
+    ),
+    "residual_momentum": (
+        "PERIOD_DEPENDENT",
+        "liquid_50 too narrow for FF5 regression + Mag-7 dominance violates "
+        "residual mean-reversion thesis. Re-test on SP500 over 2010-2024.",
+    ),
+    "lowvol_sleeve": (
+        "PERIOD_DEPENDENT",
+        "Defensive characteristic IS real (28/33 regime DD wins) but blend "
+        "Sharpe didn't lift because correlation was +0.67 in Mag-7 era. "
+        "Try regime-conditional router (RegimeRouter) instead of static blend.",
+    ),
+    "sector_neutralizer_35cap": (
+        "PERIOD_DEPENDENT",
+        "Mag-7 era penalizes concentration caps because alpha LIVES in the "
+        "concentration. Make cap regime-conditional or accept ride-the-trend.",
+    ),
+    "bottom_catch_llm_debate": (
+        "GENUINE",
+        "LLM-driven trading is on the verified-failed pattern list "
+        "(per CLAUDE.md). Stay killed.",
+    ),
+}
+for _s in REGISTRY:
+    if _s.name in REFUTATION_CATEGORIES:
+        _s.refutation_category, _s.retest_path = REFUTATION_CATEGORIES[_s.name]

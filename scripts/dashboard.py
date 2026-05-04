@@ -2049,6 +2049,40 @@ def view_events():
 
 
 # ============================================================
+# v3.62.2: cached SPY history for crash-detector / regime views.
+# yfinance hits the network; cache 1h. Used by view_pnl_readiness +
+# any other view that wants long SPY return history.
+# ============================================================
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_spy_returns(days: int = 900) -> list[float]:
+    """Returns list of SPY daily returns over the last `days`.
+    Empty list on network failure."""
+    try:
+        import yfinance as yf
+        from datetime import timedelta as _td, datetime as _dt
+        df = yf.download("SPY", start=(_dt.utcnow().date() - _td(days=days)).isoformat(),
+                          end=_dt.utcnow().date().isoformat(),
+                          progress=False, auto_adjust=True)
+        if df is None or df.empty:
+            return []
+        closes = df["Close"].dropna()
+        if hasattr(closes, "columns"):
+            closes = closes.iloc[:, 0]
+        rets = []
+        for i in range(1, len(closes)):
+            try:
+                p = float(closes.iloc[i - 1])
+                c = float(closes.iloc[i])
+            except (TypeError, ValueError):
+                continue
+            if p > 0:
+                rets.append((c / p) - 1)
+        return rets
+    except Exception:
+        return []
+
+
+# ============================================================
 # View: Regime overlay (with historical context + per-regime stats)
 # ============================================================
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -4138,11 +4172,24 @@ def view_news():
 
     try:
         from trader.news_sources import (
-            SOURCE_REGISTRY, fetch_all, fetch_per_ticker,
+            SOURCE_REGISTRY, fetch_all as _fetch_all_raw,
+            fetch_per_ticker as _fetch_per_ticker_raw,
         )
     except Exception as e:
         st.error(f"news_sources unavailable: {e}")
         return
+
+    # v3.62.2: cache RSS calls 10 min — each region group hits 5 sites,
+    # ~2-5s round trip. Hash by (regions tuple, limit) so different
+    # filters don't share a cache slot.
+    @st.cache_data(ttl=600, show_spinner=False)
+    def fetch_all(regions=None, per_source_limit=10):
+        return _fetch_all_raw(regions=list(regions) if regions else None,
+                                per_source_limit=per_source_limit)
+
+    @st.cache_data(ttl=600, show_spinner=False)
+    def fetch_per_ticker(ticker: str, limit: int = 10):
+        return _fetch_per_ticker_raw(ticker, limit=limit)
 
     # Source counts by region
     cc = st.columns(4)
@@ -4400,13 +4447,30 @@ def view_strategy_lab():
                 if s.verification == "REFUTED"]
     if refuted:
         st.subheader(f"❌ Refuted on backtest ({len(refuted)})")
-        st.caption(
-            "Strategies that LOOKED PROMISING in literature but failed "
-            "on our universe + period. The $$ value of this list is real: "
-            "saves you from making bad capital decisions."
-        )
+        # v3.62.2: surface why each was refuted — most are NOT genuine
+        # claim failures; they're test-design flaws or period-dependence.
+        cat_counts: dict[str, int] = {}
         for s in refuted:
-            with st.expander(f"❌ {s.name} — {(s.backtest_verdict or '')[:80]}"):
+            cat = s.refutation_category or "uncategorized"
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        st.caption(
+            f"Of {len(refuted)} refutations: "
+            + " · ".join(f"**{c}**: {n}" for c, n in cat_counts.items())
+            + " — see `docs/WHY_REFUTED.md` for the full analysis. "
+            "Most aren't genuine claim failures — they're test-design flaws or "
+            "period-dependent. Re-testable with better methodology."
+        )
+        CAT_EMOJI = {
+            "IMPLEMENTATION_BUG": "🔧",
+            "TEST_DESIGN_FLAW": "🧪",
+            "PERIOD_DEPENDENT": "📅",
+            "GENUINE": "🪦",
+        }
+        for s in refuted:
+            cat = s.refutation_category or "uncategorized"
+            cat_emoji = CAT_EMOJI.get(cat, "❓")
+            label = f"❌ {s.name} · {cat_emoji} {cat}"
+            with st.expander(label):
                 # v3.62.1: lead with plain-English description
                 if s.plain_description:
                     st.markdown(s.plain_description)
@@ -4415,6 +4479,9 @@ def view_strategy_lab():
                 if s.measured_sharpe is not None and s.expected_sharpe is not None:
                     st.markdown(f"**Expected Sharpe:** {s.expected_sharpe:+.2f}  ·  **Measured:** {s.measured_sharpe:+.2f}")
                 st.markdown(f"**Verdict:** {s.backtest_verdict}")
+                # v3.62.2: re-test guidance
+                if s.retest_path:
+                    st.info(f"**Re-test path ({cat}):** {s.retest_path}")
                 if s.notes:
                     st.info(s.notes)
 
@@ -4563,27 +4630,9 @@ wrong literature claims.
         })
         # Simpler: fetch SPY directly
         try:
-            import yfinance as yf
-            from datetime import timedelta as _td, datetime as _dt
-            df = yf.download("SPY", start=(_dt.utcnow().date() - _td(days=900)).isoformat(),
-                              end=_dt.utcnow().date().isoformat(),
-                              progress=False, auto_adjust=True)
-            if df is not None and not df.empty:
-                # v3.62.1: yfinance returns MultiIndex columns for
-                # single-ticker downloads in some versions. Squeeze
-                # to a Series so float() works.
-                closes = df["Close"].dropna()
-                if hasattr(closes, "columns"):
-                    closes = closes.iloc[:, 0]
-                rets = []
-                for i in range(1, len(closes)):
-                    try:
-                        p = float(closes.iloc[i - 1])
-                        c = float(closes.iloc[i])
-                    except (TypeError, ValueError):
-                        continue
-                    if p > 0:
-                        rets.append((c / p) - 1)
+            # v3.62.2: cached. Was a fresh yfinance call per render.
+            rets = _cached_spy_returns(days=900)
+            if rets:
                 sig = crash_signal(rets)
                 cc = st.columns(3)
                 cc[0].metric("24mo SPY return",
