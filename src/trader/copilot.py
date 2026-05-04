@@ -329,6 +329,53 @@ def tool_compute_scenario(symbol: str, pct_move: float) -> dict:
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+def tool_read_filings(query: str, symbol: str = "",
+                       limit: int = 5) -> dict:
+    """Search the on-disk SEC filings archive for `query` (substring,
+    case-insensitive). Returns matching filings + ±300-char context
+    around each hit. Idempotent + cheap (no LLM call here)."""
+    try:
+        from . import filings_archive
+        sym = symbol.strip().upper() if symbol else None
+        limit = max(1, min(int(limit or 5), 20))
+        matches = filings_archive.search(query, symbol=sym, limit=limit)
+        out = []
+        q_lower = query.lower()
+        for f in matches:
+            text = filings_archive.read_text(f.accession) or ""
+            idx = text.lower().find(q_lower)
+            context = ""
+            if idx >= 0:
+                start = max(0, idx - 300)
+                end = min(len(text), idx + len(query) + 300)
+                context = text[start:end]
+            out.append({
+                "symbol": f.symbol, "form_type": f.form_type,
+                "accession": f.accession, "filed_at": f.filed_at,
+                "items": f.items, "url": f.url,
+                "n_chars": f.n_chars,
+                "context": context,
+            })
+        return {"query": query, "n_matches": len(out), "filings": out}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+def tool_get_earnings_signals(symbol: str = "", since_days: int = 30,
+                                min_materiality: int = 1) -> dict:
+    """Recent Claude-flagged earnings signals from the reactor."""
+    try:
+        from . import earnings_reactor
+        sym = symbol.strip().upper() if symbol else None
+        rows = earnings_reactor.recent_signals(
+            since_days=int(since_days), symbol=sym, limit=100,
+        )
+        rows = [r for r in rows if (r.get("materiality") or 0) >= int(min_materiality)]
+        return {"n_signals": len(rows), "signals": rows}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 def tool_summarize_period(start_date: str, end_date: str) -> dict:
     """Performance summary between two ISO dates (YYYY-MM-DD)."""
     try:
@@ -417,6 +464,16 @@ TOOLS = [
         "description": "Performance summary between two ISO dates (YYYY-MM-DD): start equity, end equity, total return %, n decisions, n orders submitted.",
         "input_schema": {"type": "object", "properties": {"start_date": {"type": "string"}, "end_date": {"type": "string"}}, "required": ["start_date", "end_date"]},
     },
+    {
+        "name": "read_filings",
+        "description": "Search the on-disk SEC filings archive (8-K / 10-Q / 10-K) for a symbol and substring. Returns matching filing snippets with accession + filed_at + matched context (±300 chars around hit). Use for 'what did NVDA say about supply chain in Q3?' or 'has GOOGL mentioned regulation in any filing this year?'. The archive is populated by `python scripts/earnings_reactor.py` from SEC EDGAR.",
+        "input_schema": {"type": "object", "properties": {"symbol": {"type": "string", "description": "Ticker. Optional — leave empty to search all archived symbols."}, "query": {"type": "string", "description": "Substring to find (case-insensitive). E.g. 'guidance', 'supply chain', 'AI capex'."}, "limit": {"type": "integer", "description": "Max number of matching filings (default 5, max 20)"}}, "required": ["query"]},
+    },
+    {
+        "name": "get_earnings_signals",
+        "description": "Recent Claude-extracted earnings signals from the reactor: per-position direction (BULLISH/NEUTRAL/BEARISH/SURPRISE), materiality 1-5, guidance change, surprise direction, summary, bullish/bearish quotes. Use for 'any material earnings news on my book this month?'.",
+        "input_schema": {"type": "object", "properties": {"symbol": {"type": "string", "description": "Optional ticker filter"}, "since_days": {"type": "integer", "description": "Lookback in days (default 30)"}, "min_materiality": {"type": "integer", "description": "Filter to signals with materiality ≥ N (default 1)"}}, "required": []},
+    },
 ]
 
 
@@ -431,6 +488,8 @@ _TOOL_DISPATCH = {
     "get_postmortem_history": lambda args: tool_get_postmortem_history(**args),
     "compute_scenario": lambda args: tool_compute_scenario(**args),
     "summarize_period": lambda args: tool_summarize_period(**args),
+    "read_filings": lambda args: tool_read_filings(**args),
+    "get_earnings_signals": lambda args: tool_get_earnings_signals(**args),
 }
 
 
@@ -448,6 +507,8 @@ TOOL_TIERS: dict[str, str] = {
     "get_postmortem_history": "read_only",
     "compute_scenario": "sim",
     "summarize_period": "read_only",
+    "read_filings": "read_only",
+    "get_earnings_signals": "read_only",
 }
 
 

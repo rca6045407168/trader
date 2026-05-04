@@ -138,6 +138,34 @@ def main() -> int:
             return f"skip: {type(e).__name__}"
     _prewarm_section("self-eval postmortem", _postmortem)
 
+    # 8. v3.68.0 — Earnings reactor (archive-only path on prewarm; full
+    # Claude-analysis run is left to a real cron because it can spend
+    # tokens. The archive-only fetch is free + populates the on-disk
+    # SEC filings archive incrementally as new 8-Ks are filed for our
+    # LIVE positions). Idempotent: re-running on the same day skips
+    # already-archived filings.
+    def _earnings_archive():
+        from datetime import datetime as _dt
+        last_marker = ROOT / "data" / ".last_earnings_archive_run"
+        today_iso = _dt.utcnow().date().isoformat()
+        if last_marker.exists() and last_marker.read_text().strip() == today_iso:
+            return "already-ran-today"
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import earnings_reactor as er  # type: ignore
+            import sys as _sys
+            argv_save = _sys.argv
+            _sys.argv = ["earnings_reactor", "--skip-claude"]
+            try:
+                er.main()
+            finally:
+                _sys.argv = argv_save
+            last_marker.write_text(today_iso)
+            return True
+        except SystemExit:
+            return True
+    _prewarm_section("earnings archive (8-K, no LLM)", _earnings_archive)
+
     # 6. v3.61.0 — News poller. Best-effort fetch of US + Asian news
     # streams. Sentiment scoring NOT run from prewarm (would consume
     # Claude tokens on every container restart) — run separately via

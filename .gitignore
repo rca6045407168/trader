@@ -4,6 +4,7 @@ __pycache__/
 .env
 data/
 reports/
+logs/
 *.db
 *.parquet
 .DS_Store

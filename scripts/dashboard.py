@@ -1,4 +1,24 @@
-"""Live local dashboard for the trader (v3.67.2).
+"""Live local dashboard for the trader (v3.68.0).
+
+v3.68.0 — Earnings reactor + persistent filings archive. Mirrors the
+Sand Grove / FT pattern (LLMQuant 2026-05-04 article): AI compresses
+100-page-doc → structured-thesis time, decision layer stays human.
+
+  - New trader/filings_archive.py — on-disk archive of SEC filings +
+    transcripts indexed in SQLite. data/filings/{symbol}/{form}/
+    {accession}.txt + sidecar JSON. Persistent across container
+    restarts.
+  - New trader/sec_filings.py — free SEC EDGAR fetcher (no API key).
+    Pulls 8-K / 10-Q / 10-K via data.sec.gov.
+  - New trader/earnings_reactor.py — orchestrator. For each LIVE
+    position, fetches new 8-Ks, archives them, and runs Claude for a
+    structured signal (direction, materiality 1-5, guidance change,
+    surprise direction, summary, bullish/bearish quotes). Persists to
+    journal.earnings_signals. Logs every Claude call via llm_audit.
+  - scripts/earnings_reactor.py — CLI (--skip-claude for archive-only)
+  - 📞 Earnings reactor + 📂 Filings archive views in Discovery group
+  - HANK gains read_filings + get_earnings_signals tools
+  - prewarm.py auto-archives 8-Ks daily (no Claude — that's manual)
 
 v3.67.2 — Hotfix for the v3.66.0 single-source-of-truth refactor.
 Caught one consumer site I missed: `_headline_metrics()` (the 6-up
@@ -435,7 +455,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.67.2 · chat-first AI dashboard")
+    st.caption("v3.68.0 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -598,6 +618,8 @@ with st.sidebar:
         ("📰 Discovery", None, [
             ("📰 News", "news"),
             ("📅 Events", "events"),
+            ("📞 Earnings reactor", "earnings_reactor"),
+            ("📂 Filings archive", "filings_archive"),
             ("👁️ Watchlist", "watchlist"),
             ("🔎 Screener", "screener"),
             ("🗂️ Grid", "grid"),
@@ -4366,6 +4388,192 @@ See `docs/BEST_PRACTICES.md` § 3 for the full narrative.
 # ============================================================
 # View: News (v3.61.0) — multi-region news streams + sentiment
 # ============================================================
+# ============================================================
+# View: Earnings reactor (v3.68.0) — Claude-flagged signals from
+# newly-filed 8-Ks for our LIVE positions
+# ============================================================
+def view_earnings_reactor():
+    st.title("📞 Earnings reactor")
+    st.caption(
+        "Claude-summarized signals from SEC 8-K filings for our LIVE "
+        "positions. Mirrors the Sand Grove / FT pattern: AI compresses "
+        "100-page-doc → structured-thesis time. **Decision still human.** "
+        "See [GLOSSARY.md](../docs/GLOSSARY.md) for the workflow."
+    )
+
+    try:
+        from trader.earnings_reactor import recent_signals
+        from trader import filings_archive
+    except Exception as e:
+        st.error(f"earnings_reactor module unavailable: {e}")
+        return
+
+    cc = st.columns([1, 1, 1, 2])
+    sym_filter = cc[0].text_input(
+        "Filter by symbol", value="", placeholder="(all)"
+    ).upper().strip() or None
+    since_days = cc[1].number_input("Lookback (days)", value=30,
+                                      min_value=1, max_value=365, step=1)
+    min_materiality = cc[2].number_input("Min materiality", value=1,
+                                           min_value=1, max_value=5, step=1)
+
+    rows = recent_signals(since_days=int(since_days),
+                            symbol=sym_filter, limit=200)
+    rows = [r for r in rows if (r["materiality"] or 0) >= min_materiality]
+    if not rows:
+        st.info(
+            "_No signals yet for this window._ Run "
+            "`python scripts/earnings_reactor.py` to populate "
+            "(or wait for the prewarm hook to fire on next container start)."
+        )
+        try:
+            astats = filings_archive.stats()
+            st.caption(
+                f"Archive: {astats['n_total']} filings across "
+                f"{astats['n_symbols']} symbols, "
+                f"{astats['total_chars']/1000:.0f}KB total. "
+                f"Latest filed: {astats['latest_filed_at'] or '—'}."
+            )
+        except Exception:
+            pass
+        return
+
+    # Summary chips
+    n_bull = sum(1 for r in rows if r["direction"] == "BULLISH")
+    n_bear = sum(1 for r in rows if r["direction"] == "BEARISH")
+    n_surprise = sum(1 for r in rows if r["direction"] == "SURPRISE")
+    chips = st.columns(4)
+    chips[0].metric("Total signals", len(rows))
+    chips[1].metric("🟢 Bullish", n_bull)
+    chips[2].metric("🔴 Bearish", n_bear)
+    chips[3].metric("⚡ Surprise", n_surprise)
+
+    st.divider()
+
+    # Per-row expandable card
+    for r in rows:
+        emoji = {"BULLISH": "🟢", "BEARISH": "🔴",
+                  "SURPRISE": "⚡", "NEUTRAL": "⚪"}.get(r["direction"], "⚪")
+        m = r["materiality"] or 1
+        m_dots = "●" * m + "○" * (5 - m)
+        items_str = ", ".join(r["items"]) or "—"
+        title = (f"{emoji} {r['symbol']:6s}  {r['filed_at']}  "
+                 f"[{r['direction']}]  M:{m_dots}  Items: {items_str}")
+        with st.expander(title, expanded=(r["materiality"] or 0) >= 4):
+            cc = st.columns(4)
+            cc[0].metric("Direction", r["direction"])
+            cc[1].metric("Materiality", f"{m}/5")
+            cc[2].metric("Guidance", r["guidance_change"])
+            cc[3].metric("Surprise", r["surprise_direction"])
+
+            if r["summary"]:
+                st.markdown(f"**Summary.** {r['summary']}")
+
+            tabs = st.tabs(["🟢 Bullish quotes", "🔴 Bearish quotes",
+                             "📄 Source"])
+            with tabs[0]:
+                if r["bullish_quotes"]:
+                    for q in r["bullish_quotes"]:
+                        st.markdown(f"> {q}")
+                else:
+                    st.caption("_no bullish quotes flagged_")
+            with tabs[1]:
+                if r["bearish_quotes"]:
+                    for q in r["bearish_quotes"]:
+                        st.markdown(f"> {q}")
+                else:
+                    st.caption("_no bearish quotes flagged_")
+            with tabs[2]:
+                st.caption(f"accession: `{r['accession']}`  ·  "
+                           f"model: `{r['model']}`  ·  "
+                           f"cost: ${(r['cost_usd'] or 0):.4f}")
+                # Try to surface the archived doc link
+                try:
+                    f = filings_archive.get(r["accession"])
+                    if f:
+                        st.markdown(f"[Open on SEC EDGAR]({f.url})")
+                        if f.text_path:
+                            st.caption(f"Local archive: `{f.text_path}` "
+                                       f"({f.n_chars:,} chars)")
+                except Exception:
+                    pass
+
+
+# ============================================================
+# View: Filings archive (v3.68.0) — browse the on-disk filings index
+# ============================================================
+def view_filings_archive():
+    st.title("📂 Filings archive")
+    st.caption(
+        "Persistent archive of every SEC filing we've fetched for our "
+        "LIVE positions. Source: SEC EDGAR (free, no API key). Used by "
+        "the 📞 Earnings reactor + (eventually) HANK's `read_filings` "
+        "tool for cross-quarter analysis."
+    )
+
+    try:
+        from trader import filings_archive
+    except Exception as e:
+        st.error(f"filings_archive unavailable: {e}")
+        return
+
+    astats = filings_archive.stats()
+    cc = st.columns(4)
+    cc[0].metric("Filings stored", astats["n_total"])
+    cc[1].metric("Symbols", astats["n_symbols"])
+    cc[2].metric("Total chars",
+                  f"{astats['total_chars']/1000:.0f}K" if astats['total_chars']
+                  else "0")
+    cc[3].metric("Latest filed", astats["latest_filed_at"] or "—")
+
+    if astats["by_form"]:
+        st.markdown("**By form type:** " + " · ".join(
+            f"`{k}` ×{v}" for k, v in astats["by_form"].items()))
+
+    st.divider()
+    st.subheader("Browse")
+
+    fcc = st.columns([1, 1, 2])
+    sym_filter = fcc[0].text_input("Symbol", value="",
+                                     placeholder="AAPL").upper().strip() or None
+    form_filter = fcc[1].selectbox("Form type",
+                                     ["(any)", "8-K", "10-Q", "10-K"], index=0)
+    form_types = None if form_filter == "(any)" else [form_filter]
+
+    if sym_filter:
+        rows = filings_archive.list_for_symbol(sym_filter,
+                                                  form_types=form_types,
+                                                  limit=100)
+    else:
+        rows = filings_archive.list_recent("1970-01-01",
+                                             form_types=form_types, limit=100)
+
+    if not rows:
+        st.info("_archive empty_ — run `python scripts/earnings_reactor.py "
+                "--skip-claude` to backfill")
+        return
+
+    for f in rows:
+        items_str = ", ".join(f.items) or "—"
+        title = (f"{f.symbol:6s}  {f.filed_at}  {f.form_type}  "
+                 f"items={items_str}  ({f.n_chars:,} chars)")
+        with st.expander(title, expanded=False):
+            cc2 = st.columns([3, 1])
+            cc2[0].markdown(f"[{f.title or f.accession}]({f.url})")
+            cc2[1].caption(f"`{f.accession}`")
+            preview_chars = 4000
+            text = filings_archive.read_text(f.accession) or ""
+            if not text:
+                st.caption("_text not on disk (deleted?)_")
+                continue
+            if len(text) > preview_chars:
+                st.text(text[:preview_chars] + "\n\n[...truncated]")
+                st.caption(f"Showing first {preview_chars:,} of "
+                           f"{len(text):,} chars")
+            else:
+                st.text(text)
+
+
 def view_news():
     st.title("📰 News — US + Asian financial streams")
     st.caption(
@@ -5317,6 +5525,8 @@ VIEW_DISPATCH = {
     "manual": view_manual,
     "manual_override": view_manual_override,
     "world_class": view_world_class,
+    "earnings_reactor": view_earnings_reactor,
+    "filings_archive": view_filings_archive,
     "settings": view_settings,
 }
 
