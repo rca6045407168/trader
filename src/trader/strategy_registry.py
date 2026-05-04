@@ -151,11 +151,11 @@ REGISTRY: list[Strategy] = [
         module="trader.momentum_crash",
         entry="compute_signal",
         category="risk_overlay", horizon="monthly",
-        status="SHADOW", verification="REFUTED",
-        last_backtest_date="2026-05-03",
-        backtest_verdict="-64bp/yr CAGR on SPY proxy; Sharpe lift only +0.04",
+        status="SHADOW", verification="CALMAR_TRADE",
+        last_backtest_date="2026-05-04",
+        backtest_verdict="momentum-portfolio re-test: max DD -34.8% → -24.2% (+10.6pp), CAGR -1.1pp, Sharpe +0.03 — DD-protective Calmar trade",
         paper_basis="Daniel-Moskowitz 2016 'Momentum Crashes'",
-        notes="Catches 2008 (+3.3pp) but burns 2020 V-recovery (-2.9pp). Re-test on actual momentum portfolio path before final verdict.",
+        notes="v3.63.0 update: re-tested on actual momentum portfolio (was SPY proxy in v3.60.1). Result: not Sharpe-positive but cuts max DD by 10.6pp — meaningful for behavioral retail.",
     ),
     Strategy(
         name="sector_neutralizer_35cap",
@@ -668,9 +668,11 @@ REFUTATION_CATEGORIES: dict[str, tuple[str, str]] = {
         "Need intraday data (Polygon free tier minute bars) for honest test.",
     ),
     "momentum_crash_detector": (
-        "TEST_DESIGN_FLAW",
-        "Daniel-Moskowitz claim is about momentum portfolios; we tested SPY proxy. "
-        "Re-test using actual top-15 momentum portfolio path as base.",
+        "CALMAR_TRADE",
+        "v3.63.0 re-test on actual momentum portfolio (not SPY): max DD -34.8% → "
+        "-24.2% (improvement +10.6pp), CAGR -1.1pp, Sharpe +0.03. Not a Sharpe "
+        "win but a meaningful drawdown reduction — the kind that matters "
+        "behaviorally for retail (cuts panic-sell risk).",
     ),
     "trailing_stop_15pct": (
         "TEST_DESIGN_FLAW",
@@ -678,9 +680,12 @@ REFUTATION_CATEGORIES: dict[str, tuple[str, str]] = {
         "Rewrite to keep stopped portion in cash for the rest of the window.",
     ),
     "residual_momentum": (
-        "PERIOD_DEPENDENT",
-        "liquid_50 too narrow for FF5 regression + Mag-7 dominance violates "
-        "residual mean-reversion thesis. Re-test on SP500 over 2010-2024.",
+        "GENUINE_ON_OUR_UNIVERSE",
+        "v3.63.0 re-test on broader 127-name universe over 2018-2026: STILL "
+        "REFUTED. Vanilla CAGR +9.80% vs residual +3.49%. Sharpe lift -0.24, "
+        "lift -631bp/yr. The Blitz-Hanauer claim doesn't survive on US large/"
+        "mid-cap. May still hold on full SP500 + 1990-2024 + EU/Global, but "
+        "for OUR universe we should treat this as genuinely refuted.",
     ),
     "lowvol_sleeve": (
         "PERIOD_DEPENDENT",

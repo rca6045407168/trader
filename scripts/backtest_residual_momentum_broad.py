@@ -167,12 +167,29 @@ def main():
     vanilla_daily, residual_daily = [], []
     per_window = []
 
+    # v3.63.0: efficient vanilla momentum from pre-fetched panel (no
+    # per-symbol yfinance calls per rebalance). Residual momentum still
+    # uses the heavier path but ships from in-process FF5 cache.
+    def _vanilla_picks_at(asof_str, top_n=15):
+        from datetime import datetime as _dt
+        rb = _dt.fromisoformat(asof_str).date()
+        scores = []
+        for sym, cd in panel.items():
+            sd = sorted(d for d in cd if d <= rb)
+            if len(sd) < 273:
+                continue
+            t_skip = sd[-22]; t_back = sd[-273]
+            if cd[t_back] > 0:
+                scores.append((sym, (cd[t_skip] / cd[t_back]) - 1))
+        scores.sort(key=lambda x: x[1], reverse=True)
+        return [s for s, _ in scores[:top_n]]
+
     for asof in asof_dates:
         win_end = (datetime.fromisoformat(asof) +
                    timedelta(days=args.window_days)).date().isoformat()
         print(f"  [{asof}] computing picks...")
         try:
-            van = vanilla_momentum_picks(universe, asof=asof, top_n=15)
+            van = _vanilla_picks_at(asof, top_n=15)
         except Exception as e:
             print(f"    vanilla failed: {e}")
             van = []

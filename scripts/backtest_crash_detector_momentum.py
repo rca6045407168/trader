@@ -49,7 +49,7 @@ def fetch_close(ticker: str, start: str, end: str) -> dict:
 
 
 def compute_signal_history(spy_returns: list[tuple[date, float]],
-                             vol_threshold: float = 0.20):
+                             vol_threshold: float = 0.16):  # DM original; was 0.20 (too restrictive)
     """For each date, compute the crash signal using only data up to date.
     Returns [(date, crash_on)]."""
     out = []
@@ -145,21 +145,29 @@ def main():
         cur = cur + timedelta(days=args.rebalance_days)
     print(f"  Rebalance dates: {len(rebalance_dates)}")
 
-    # For each rebalance: get rank_momentum picks AS-OF that date.
-    # Hold for window, equal-weight portfolio daily.
+    # v3.63.0: efficient version — compute momentum score directly from the
+    # pre-fetched panel instead of calling rank_momentum() (which would
+    # re-fetch OHLCV per symbol per rebalance). Uses 12-1 trailing return.
+    def _picks_at(rb_date, top_n=15):
+        # 12-1 momentum: skip last 21 trading days, return over prior 252
+        scores = []
+        for sym, cd in panel.items():
+            sd = sorted(d for d in cd if d <= rb_date)
+            if len(sd) < 273:
+                continue
+            t = sd[-1]; t_skip = sd[-22]; t_back = sd[-273]
+            p_skip = cd[t_skip]; p_back = cd[t_back]
+            if p_back > 0:
+                scores.append((sym, (p_skip / p_back) - 1))
+        scores.sort(key=lambda x: x[1], reverse=True)
+        return [s for s, _ in scores[:top_n]]
+
     no_prot_daily: list[float] = []
     with_prot_daily: list[float] = []
     no_prot_dates: list[date] = []
 
     for i, rb_date in enumerate(rebalance_dates):
-        try:
-            cands = rank_momentum(universe, lookback_months=12,
-                                    skip_months=1, top_n=15,
-                                    end_date=rb_date.isoformat())
-            picks = [c.ticker for c in cands]
-        except Exception as e:
-            print(f"  rebal {rb_date}: rank failed ({e}); using prev picks")
-            continue
+        picks = _picks_at(rb_date, top_n=15)
         if not picks:
             continue
         # Hold from rb_date until next rebalance
