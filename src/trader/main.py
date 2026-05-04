@@ -321,20 +321,27 @@ def main(force: bool = False) -> dict:
     # without actually trimming. Failsafe: any error keeps targets unchanged.
     try:
         from .v358_world_class import EarningsRule
-        from .events_calendar import compute_upcoming_events
+        # v3.63.0: switched from yfinance-only events_calendar to the
+        # multi-source earnings_calendar module which falls back through
+        # Polygon → Finnhub → AlphaVantage → yfinance. Fixes the v3.58.1
+        # INERT bug where yfinance.Ticker.earnings_dates silently returns
+        # empty for major tickers (AAPL, NVDA, MSFT, etc).
+        from .earnings_calendar import next_earnings_date as _next_earnings, status as _earnings_status
         er = EarningsRule()
         if er.status() in ("LIVE", "SHADOW") and final_targets:
             symbols = list(final_targets.keys())
             today = datetime.utcnow()
-            today_d = today.date()
-            events = compute_upcoming_events(symbols, days_ahead=er.days_before + 1)
-            # Build {symbol: earliest_earnings_date} from events
+            es = _earnings_status()
+            if not es.get("any_paid_source_configured"):
+                print(f"  EarningsRule warning: no paid earnings source "
+                      f"(POLYGON_API_KEY / FINNHUB_API_KEY / ALPHA_VANTAGE_KEY) "
+                      f"configured. Falling back to yfinance which silently "
+                      f"fails for major tickers.")
             sym_to_earnings: dict[str, datetime] = {}
-            for ev in events:
-                if ev.event_type == "earnings" and ev.symbol:
-                    edt = datetime.combine(ev.date, datetime.min.time())
-                    if ev.symbol not in sym_to_earnings or edt < sym_to_earnings[ev.symbol]:
-                        sym_to_earnings[ev.symbol] = edt
+            for sym in symbols:
+                edate = _next_earnings(sym, days_ahead=er.days_before + 1)
+                if edate:
+                    sym_to_earnings[sym] = datetime.combine(edate, datetime.min.time())
             trimmed = {}
             for sym, weight in list(final_targets.items()):
                 edate = sym_to_earnings.get(sym)
@@ -348,6 +355,9 @@ def main(force: bool = False) -> dict:
                 print(f"  EarningsRule {action} {len(trimmed)} positions:")
                 for s, (old, new, d) in trimmed.items():
                     print(f"    {s}: {old:.3f} → {new:.3f} (earnings {d})")
+            else:
+                print(f"  EarningsRule: no positions in trim window "
+                      f"(checked {len(symbols)} symbols).")
     except ImportError:
         pass
     except Exception as e:

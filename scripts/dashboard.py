@@ -3156,6 +3156,37 @@ def view_alerts():
         "halts, slippage outliers. Replaces hunting through stdout + Slack."
     )
 
+    # v3.63.0: earnings calendar source status — fixes the v3.58.1 INERT bug
+    with st.expander("📅 Earnings calendar sources", expanded=False):
+        try:
+            from trader.earnings_calendar import status as _earnings_status
+            es = _earnings_status()
+            cc = st.columns(4)
+            cc[0].metric("Polygon",
+                          "✅ wired" if es["polygon_configured"] else "⚪ not set",
+                          help="Set POLYGON_API_KEY env var")
+            cc[1].metric("Finnhub",
+                          "✅ wired" if es["finnhub_configured"] else "⚪ not set",
+                          help="Set FINNHUB_API_KEY env var")
+            cc[2].metric("Alpha Vantage",
+                          "✅ wired" if es["alpha_vantage_configured"] else "⚪ not set",
+                          help="Set ALPHA_VANTAGE_KEY env var")
+            cc[3].metric("Cached entries", es["cache_entries"],
+                          help=f"Cached at {es['cache_file']}")
+            if not es["any_paid_source_configured"]:
+                st.warning(
+                    "⚠️ No paid earnings source configured. Falling back to "
+                    "yfinance which silently returns empty for major tickers — "
+                    "this means **EarningsRule LIVE has been DOING NOTHING**. "
+                    "Set any one of POLYGON_API_KEY / FINNHUB_API_KEY / "
+                    "ALPHA_VANTAGE_KEY to fix."
+                )
+            else:
+                st.success("✅ At least one reliable earnings source configured. "
+                           "EarningsRule LIVE will actually trim positions.")
+        except Exception as e:
+            st.caption(f"_earnings calendar status: {e}_")
+
     # v3.62.1: notification setup status — answers "do I get emails?"
     with st.expander("📬 How notifications work", expanded=False):
         import os as _os
