@@ -1,4 +1,13 @@
-"""Live local dashboard for the trader (v3.67.1).
+"""Live local dashboard for the trader (v3.67.2).
+
+v3.67.2 — Hotfix for the v3.66.0 single-source-of-truth refactor.
+Caught one consumer site I missed: `_headline_metrics()` (the 6-up
+metric grid below the price headline) was still reading directly from
+`_cached_snapshots()`, returning the journal's daily_snapshot value
+($106K from Friday). Meanwhile the big-block headline above it (also
+on Overview) was reading from EquityState ($104K live). Same page,
+two equity numbers, both labeled "Equity." Now `_headline_metrics`
+consumes `_get_equity_state()` like every other v3.66.0+ consumer.
 
 v3.67.1 — Nav glossary + ambiguous-label fix. Six pages had names that
 sounded interchangeable ("Shadow signals" / "Shadow variants" / "V5
@@ -426,7 +435,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.67.1 · chat-first AI dashboard")
+    st.caption("v3.67.2 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -864,29 +873,61 @@ _cached_snapshots = _data.cached_snapshots
 
 
 def _headline_metrics():
-    """Render the headline metrics row used at top of Overview + Chat views."""
+    """Render the headline metrics row used at top of Overview + Chat views.
+
+    v3.67.2: was reading "Equity" + "Cash" directly from the journal's
+    daily_snapshot table, which on Mondays/Tuesdays returns Friday's
+    pre-rebalance number — disagreeing with the big-block price
+    headline above (which uses the canonical live broker mark). Now
+    consumes _get_equity_state() like every other v3.66.0+ consumer.
+
+    The "Window return" + "vs anchor" cards still derive from the
+    journal because those are explicitly multi-day metrics; using the
+    canonical equity_now as the latest endpoint keeps them coherent
+    with the big-block headline."""
+    state = _get_equity_state()
     snaps = _cached_snapshots(str(DB_PATH))
     cols = st.columns(6)
-    if not snaps.empty:
+
+    if state.equity_now is not None:
+        eq = state.equity_now
+        cols[0].metric("Equity", f"${eq:,.0f}",
+                       help=f"src: {state.source} · "
+                             f"{int(state.source_age_seconds)}s ago")
+        if state.cash is not None:
+            cols[1].metric("Cash", f"${state.cash:,.0f}",
+                           f"{(state.cash/eq*100):.1f}% of book")
+        else:
+            cols[1].metric("Cash", "—",
+                           help="Cash unavailable from this source")
+    elif not snaps.empty:
+        # Fallback: journal snapshot (offline mode)
         latest = snaps.iloc[0]
         eq = float(latest["equity"])
-        cols[0].metric("Equity", f"${eq:,.0f}")
+        cols[0].metric("Equity", f"${eq:,.0f}",
+                       help="src: journal_snapshot (broker unreachable)")
         cols[1].metric("Cash", f"${float(latest['cash']):,.0f}",
                        f"{(float(latest['cash'])/eq*100):.1f}% of book")
+    else:
+        eq = None
+        cols[0].metric("Equity", "n/a", "sync from GitHub")
+
+    if eq is not None:
         anchor = read_state_file(str(ROOT / "data" / "deployment_anchor.json"))
         if anchor:
             anchor_eq = float(anchor.get("equity_at_deploy", 0))
             if anchor_eq > 0:
                 dd = (eq - anchor_eq) / anchor_eq
-                cols[2].metric("vs anchor", f"{dd:+.2%}", f"${anchor_eq:,.0f} baseline")
-        if len(snaps) >= 2:
+                cols[2].metric("vs anchor", f"{dd:+.2%}",
+                               f"${anchor_eq:,.0f} baseline")
+        if not snaps.empty and len(snaps) >= 2:
+            # Window return: today's canonical equity vs oldest snapshot
             first_eq = float(snaps.iloc[-1]["equity"])
             ret_window = (eq - first_eq) / first_eq if first_eq > 0 else 0
-            cols[3].metric("Window return", f"{ret_window:+.2%}", f"{len(snaps)} snaps")
+            cols[3].metric("Window return", f"{ret_window:+.2%}",
+                           f"{len(snaps)} snaps")
         else:
             cols[3].metric("Window", "≥1 snap needed")
-    else:
-        cols[0].metric("Equity", "n/a", "sync from GitHub")
 
     overlay = _overlay_signal()
     if overlay is not None:

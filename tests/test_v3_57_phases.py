@@ -82,15 +82,21 @@ def test_grid_default_questions_are_real_keys():
 
 
 def test_render_helpers_defined_in_dashboard():
-    """Sanity-check that the citation pill + artifact helpers are present
-    in the dashboard. They're called from view_chat in two places."""
+    """Sanity-check that the citation pill + artifact helpers are present.
+    v3.67.0+: helper bodies live in trader/dashboard_ui.py; dashboard.py
+    keeps underscore-prefixed aliases."""
     from pathlib import Path
-    src = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = src.read_text()
-    assert "def _render_citation_pills" in text
-    assert "def _render_tool_artifact" in text
-    assert "def view_grid" in text
-    assert "def view_screener" in text
-    # View dispatch wires both
-    assert '"grid": view_grid' in text
-    assert '"screener": view_screener' in text
+    base = Path(__file__).resolve().parent.parent
+    db_text = (base / "scripts" / "dashboard.py").read_text()
+    ui_text = (base / "src" / "trader" / "dashboard_ui.py").read_text()
+    # Helper definitions live in dashboard_ui.py (no underscore prefix)
+    assert "def render_citation_pills" in ui_text
+    assert "def render_tool_artifact" in ui_text
+    # Aliases preserved in dashboard.py for backward-compat with views
+    assert "_render_citation_pills" in db_text
+    assert "_render_tool_artifact" in db_text
+    # View dispatch unchanged
+    assert "def view_grid" in db_text
+    assert "def view_screener" in db_text
+    assert '"grid": view_grid' in db_text
+    assert '"screener": view_screener' in db_text

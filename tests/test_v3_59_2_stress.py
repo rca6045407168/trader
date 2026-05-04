@@ -107,7 +107,10 @@ def test_stress_test_view_in_dashboard():
     text = p.read_text()
     assert "def view_stress_test" in text
     assert '"stress_test": view_stress_test' in text
-    assert "🧪 Stress test" in text
+    # v3.67.1 renamed "🧪 Stress test" → "💥 Stress test (crisis)" to
+    # disambiguate from the other 🧪-prefixed tabs (Validation, Strategy
+    # Lab, A/B variants). Accept either label.
+    assert ("🧪 Stress test" in text) or ("💥 Stress test" in text)
 
 
 def test_fomc_backtest_module_imports():

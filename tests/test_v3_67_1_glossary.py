@@ -97,5 +97,9 @@ def test_glossary_cross_referenced_from_views():
 def test_dashboard_version_v3_67_1():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()
+    # v3.67.1 changelog comment must remain even after later patches.
+    # Sidebar caption may have moved to a later release.
     assert "v3.67.1" in text
-    assert 'st.caption("v3.67.1' in text
+    import re
+    assert re.search(r'st\.caption\("v3\.6\d\.\d', text), \
+        "sidebar must show some v3.6x.y version label"
