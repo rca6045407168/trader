@@ -155,10 +155,10 @@ def xs_top25(asof, prices):
 
 
 # ============================================================
-# 6. Score-weighted XS top-15
+# 6. Score-weighted XS top-15 (max-zero scheme)
 # ============================================================
 @register("score_weighted_xs",
-          "XS top-15 with weights proportional to momentum score")
+          "XS top-15, weights ∝ max(score, 0); drops negative-momentum names")
 def score_weighted_xs(asof, prices):
     picks = _score_universe(asof, prices)[:15]
     if not picks:
@@ -169,6 +169,29 @@ def score_weighted_xs(asof, prices):
         w = 0.80 / len(picks)
         return {t: w for t, _ in picks}
     return {t: 0.80 * (raw[t] / total) for t in raw}
+
+
+# ============================================================
+# 6b. PRODUCTION variant — replicate the LIVE momentum_top15_mom_weighted
+#     so the leaderboard compares apples-to-apples against what's
+#     actually deployed. Different from score_weighted_xs in negative-
+#     score handling: this scheme keeps all 15 names by adding
+#     (score - min(score) + 0.01), even when momentum is broadly
+#     negative.
+# ============================================================
+@register("xs_top15_min_shifted",
+          "PRODUCTION (LIVE variant momentum_top15_mom_weighted): "
+          "weights ∝ (score - min + 0.01); preserves all 15 names")
+def xs_top15_min_shifted(asof, prices):
+    picks = _score_universe(asof, prices)[:15]
+    if not picks:
+        return {}
+    min_s = min(m for _, m in picks)
+    shifted = [(t, m - min_s + 0.01) for t, m in picks]
+    total = sum(s for _, s in shifted)
+    if total <= 0:
+        return {t: 0.80 / len(picks) for t, _ in picks}
+    return {t: 0.80 * (s / total) for t, s in shifted}
 
 
 # ============================================================

@@ -23,13 +23,13 @@ ROOT = Path(__file__).resolve().parent.parent
 # ============================================================
 # Registry
 # ============================================================
-def test_ten_strategies_registered():
-    """Module import must register exactly 10 strategies — the
-    canonical comparison set."""
+def test_eleven_strategies_registered():
+    """v3.73.11: 10 candidates + 1 production-replica (xs_top15_min_shifted)
+    so the leaderboard compares apples-to-apples against the LIVE variant."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 10, \
-        f"expected 10 strategies, got {len(specs)}: {[s.name for s in specs]}"
+    assert len(specs) == 11, \
+        f"expected 11 strategies, got {len(specs)}: {[s.name for s in specs]}"
 
 
 def test_canonical_strategy_names_present():
@@ -39,6 +39,7 @@ def test_canonical_strategy_names_present():
         "xs_top15", "xs_top15_capped", "vertical_winner",
         "xs_top8", "xs_top25", "score_weighted_xs", "inv_vol_xs",
         "dual_momentum", "sector_rotation_top3", "equal_weight_universe",
+        "xs_top15_min_shifted",  # v3.73.11 production-replica
     }
     assert names == expected, f"missing: {expected - names}, extra: {names - expected}"
 
@@ -116,14 +117,14 @@ def test_evaluate_at_inserts_rows_and_is_idempotent(tmp_path, monkeypatch):
     db = tmp_path / "j.db"
     asof = dates[-1]
     n1 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
-    assert n1 == 10, f"first call should insert 10 rows; got {n1}"
+    assert n1 == 11, f"first call should insert 11 rows; got {n1}"
     n2 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
     assert n2 == 0, f"second call should be idempotent; got {n2} new rows"
 
     con = sqlite3.connect(db)
     total = con.execute("SELECT COUNT(*) FROM strategy_eval").fetchone()[0]
     con.close()
-    assert total == 10
+    assert total == 11
 
 
 def test_settle_returns_only_settles_unsettled_rows(tmp_path):
