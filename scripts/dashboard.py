@@ -1,4 +1,16 @@
-"""Live local dashboard for the trader (v3.69.1).
+"""Live local dashboard for the trader (v3.69.2).
+
+v3.69.2 — Email alert format + test isolation. Two pieces:
+
+  - Body now includes EDGAR URL link, current position weight, and
+    the ReactorSignalRule action hint (e.g. "WOULD trim to 50%
+    (status SHADOW)" or "NO trim (M3 below threshold M4)"). The
+    "do I need to do anything?" question is answered inline.
+  - Subject line surfaces the trim tag when the rule will act:
+    "[trader] INTC M4 BEARISH → would trim — Intel raised $6.5B…"
+  - tests/conftest.py auto-stubs SMTP/Slack creds at session +
+    test scope so a misconfigured test can never leak real
+    notifications again (the v3.69.1 incident).
 
 v3.69.1 — Slack alerts to **prismtrading** workspace. Reactor's
 material-signal alerts (M≥3) now push to BOTH email AND Slack via
@@ -546,7 +558,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.69.1 · chat-first AI dashboard")
+    st.caption("v3.69.2 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top

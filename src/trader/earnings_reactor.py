@@ -252,10 +252,87 @@ def _analyze_filing_with_claude(
     return r
 
 
+def _edgar_url(accession: str) -> str:
+    """Construct the SEC EDGAR archive URL for a filing accession.
+    Returns empty string if accession looks fabricated (e.g. test 'A1')."""
+    if not accession or "-" not in accession or len(accession) < 18:
+        return ""
+    return (f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany"
+            f"&filenum={accession}")
+
+
+def _live_position_weight(symbol: str) -> Optional[float]:
+    """Best-effort: look up the live position's current weight in the
+    book. Returns None if broker is unreachable. Cheap call (Alpaca
+    cache hits during a daemon iter)."""
+    try:
+        from .positions_live import fetch_live_portfolio
+        pf = fetch_live_portfolio()
+        if pf.error or not pf.positions:
+            return None
+        for p in pf.positions:
+            if p.symbol == symbol.upper() and p.weight_of_book is not None:
+                return float(p.weight_of_book)
+        return None
+    except Exception:
+        return None
+
+
+def _rule_action_hint(r: ReactionResult,
+                       current_weight: Optional[float]) -> str:
+    """Translate the rule's threshold + the signal's materiality into
+    a one-line "what action will this trigger?" string. The user's
+    most-asked question on receiving an alert is "do I need to do
+    something?" — this answers it inline."""
+    try:
+        from .reactor_rule import ReactorSignalRule
+        rsr = ReactorSignalRule()
+        threshold = rsr.min_materiality
+        trim_pct = rsr.trim_to_pct
+        status = rsr.status()
+    except Exception:
+        return ""
+
+    # Direction-gated: BULLISH/NEUTRAL never trigger a rule action
+    if r.direction not in ("BEARISH", "SURPRISE"):
+        return f"Rule: no action (direction {r.direction} doesn't trigger trim)"
+    if r.direction == "SURPRISE" and r.surprise_direction != "MISSED":
+        return (f"Rule: no action (SURPRISE/{r.surprise_direction or 'NONE'} "
+                f"doesn't trigger trim)")
+
+    # Materiality threshold check
+    if r.materiality < threshold:
+        return (f"Rule: NO trim (M{r.materiality} below threshold M{threshold}; "
+                f"status {status})")
+
+    # Eligible for trim
+    new_pct_str = ""
+    if current_weight is not None:
+        new_w = current_weight * trim_pct
+        new_pct_str = (f"  ·  current {current_weight*100:.2f}% → "
+                       f"{new_w*100:.2f}%")
+    if status == "LIVE":
+        return (f"Rule: WILL trim to {trim_pct*100:.0f}% at next "
+                f"rebalance{new_pct_str}")
+    if status == "SHADOW":
+        return (f"Rule: WOULD trim to {trim_pct*100:.0f}% (status SHADOW; "
+                f"set REACTOR_RULE_STATUS=LIVE to actually trim)"
+                f"{new_pct_str}")
+    return f"Rule: status={status} (no action)"
+
+
 def _format_alert_body(r: ReactionResult) -> str:
-    """Compose a substantive email body for a material reactor signal.
-    Anti-stub guard in trader.notify._is_stub requires ≥80 chars; we
-    always exceed that with summary + quotes."""
+    """Compose a substantive email/Slack body for a material reactor
+    signal. Anti-stub guard in trader.notify._is_stub requires ≥80
+    chars; we always exceed that with summary + quotes.
+
+    v3.69.2: now includes (a) EDGAR URL link, (b) current position
+    weight, (c) the ReactorSignalRule action hint so the recipient
+    knows whether the rebalance gate will act on this. The earlier
+    format was technically complete but missing the "what does this
+    mean for me?" answer."""
+    weight = _live_position_weight(r.symbol)
+
     lines: list[str] = []
     lines.append(
         f"Symbol: {r.symbol}  ·  Materiality: M{r.materiality}/5  "
@@ -269,7 +346,16 @@ def _format_alert_body(r: ReactionResult) -> str:
         lines.append(f"Guidance: {r.guidance_change}")
     if r.surprise_direction and r.surprise_direction != "NONE":
         lines.append(f"Surprise: {r.surprise_direction}")
+    if weight is not None:
+        lines.append(f"Current position weight: {weight*100:.2f}% of book")
+
+    # The most useful single line for a recipient: what will the
+    # rebalance gate do with this signal?
+    hint = _rule_action_hint(r, weight)
+    if hint:
+        lines.append(hint)
     lines.append("")
+
     if r.summary:
         lines.append("SUMMARY")
         lines.append(r.summary)
@@ -284,7 +370,12 @@ def _format_alert_body(r: ReactionResult) -> str:
         for q in r.bullish_quotes[:5]:
             lines.append(f'  > "{q}"')
         lines.append("")
-    lines.append(f"Accession: {r.accession}")
+
+    edgar = _edgar_url(r.accession)
+    if edgar:
+        lines.append(f"EDGAR: {edgar}")
+    else:
+        lines.append(f"Accession: {r.accession}")
     lines.append("")
     lines.append("--")
     lines.append("trader earnings reactor — see 📞 Earnings reactor in dashboard "
@@ -329,7 +420,28 @@ def _maybe_alert(r: ReactionResult, db_path: Path,
         return False  # already notified — idempotent skip
 
     short = _short_summary_for_subject(r.summary)
+    # v3.69.2: subject surfaces the rule's action — most-asked question
+    # on opening an alert is "do I need to do something?"
+    try:
+        from .reactor_rule import ReactorSignalRule
+        rsr = ReactorSignalRule()
+        will_trim = (
+            r.direction in ("BEARISH", "SURPRISE")
+            and not (r.direction == "SURPRISE"
+                      and r.surprise_direction != "MISSED")
+            and r.materiality >= rsr.min_materiality
+        )
+        if will_trim and rsr.status() == "LIVE":
+            tag = "→ TRIM"
+        elif will_trim and rsr.status() == "SHADOW":
+            tag = "→ would trim"
+        else:
+            tag = ""
+    except Exception:
+        tag = ""
     subject = f"[trader] {r.symbol} M{r.materiality} {r.direction}"
+    if tag:
+        subject = f"{subject} {tag}"
     if short:
         subject = f"{subject} — {short}"
     body = _format_alert_body(r)
