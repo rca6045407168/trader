@@ -837,7 +837,7 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.5 · chat-first AI dashboard")
+    st.caption("v3.73.6 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the
@@ -1736,6 +1736,174 @@ def _render_drawdown_protocol_panel() -> None:
         )
 
 
+def _render_benchmark_panel() -> None:
+    """v3.73.6: NAV-vs-SPY headline panel. The goal of the system is
+    to beat SP500; this panel is how we know if we are.
+
+    Renders:
+      - Big chart: portfolio NAV (normalized to 100 at start) vs SPY
+        NAV on the same axis
+      - 4-up KPI tile: active return YTD, information ratio, beta,
+        alpha-annualized
+      - Honest sample-size disclosure when we have <30 days of history
+        (IR / alpha need ≥30-60 daily obs to be statistically meaningful)
+      - Backfill button if no data found
+
+    Reads from journal.daily_snapshot (date, equity, benchmark_spy_close).
+    The backfill is one-time-on-demand; daily orchestrator extends.
+    """
+    st.subheader("🎯 vs SP500 (the actual scoreboard)")
+    st.caption(
+        "Portfolio NAV vs SPY, normalized to 100 at first snapshot. "
+        "All metrics are RELATIVE to SPY because absolute return is "
+        "not the same question as 'is the strategy working.'"
+    )
+
+    try:
+        from trader.benchmark_track import (
+            load_snapshots, compute_metrics, nav_series_for_chart,
+            backfill_journal,
+        )
+    except Exception as e:
+        st.caption(f"_panel unavailable: {e}_")
+        return
+
+    snaps = load_snapshots()
+    if not snaps:
+        st.warning("No NAV-vs-SPY data on disk.")
+        if st.button("Backfill from Alpaca + yfinance now"):
+            with st.spinner("Backfilling..."):
+                n = backfill_journal(period="6M")
+            st.success(f"Backfilled {n} snapshots. Reloading...")
+            st.rerun()
+        return
+
+    metrics = compute_metrics(snaps)
+    if metrics is None:
+        st.info("Not enough snapshots to compute metrics yet "
+                "(need ≥5 days; have %d)." % len(snaps))
+        return
+
+    # ---- Headline KPI tile ----
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        delta_color = "normal" if metrics.is_winning else "inverse"
+        st.metric(
+            "Active return",
+            f"{metrics.active_return_pct:+.2f}pp",
+            delta=f"{'beating' if metrics.is_winning else 'trailing'} SPY",
+            delta_color=delta_color,
+            help=(
+                f"Portfolio: {metrics.portfolio_return_pct:+.2f}% · "
+                f"SPY: {metrics.benchmark_return_pct:+.2f}%"
+            ),
+        )
+    with c2:
+        st.metric(
+            "Information ratio",
+            f"{metrics.information_ratio:+.2f}",
+            help=(
+                "Annualized active return / tracking error. "
+                ">1 is institutional-good; >0 is positive alpha. "
+                f"TE: {metrics.tracking_error_annualized:.2f}% ann."
+            ),
+        )
+    with c3:
+        beta_warn = "high" if metrics.beta > 1.3 else ("low" if metrics.beta < 0.7 else "balanced")
+        st.metric(
+            "Beta to SPY",
+            f"{metrics.beta:+.2f}",
+            delta=beta_warn,
+            delta_color="off",
+            help=(
+                f"Daily covariance of port vs SPY divided by SPY variance. "
+                f"Correlation: {metrics.correlation:+.2f}."
+            ),
+        )
+    with c4:
+        st.metric(
+            "Alpha (annualized)",
+            f"{metrics.alpha_annualized:+.1f}%",
+            help=(
+                "Jensen's alpha: portfolio return minus β × SPY return, "
+                "annualized. The 'unexplained' return after stripping "
+                "out the benchmark beta exposure."
+            ),
+        )
+
+    # ---- Sample-size honesty ----
+    if metrics.period_days < 30:
+        st.warning(
+            f"⚠️ Only {metrics.period_days} days of history. IR / alpha / "
+            "beta are NOT statistically meaningful at this sample size "
+            "(need 30-60 daily obs minimum). Track the trend over time, "
+            "don't act on a single point."
+        )
+    elif metrics.period_days < 90:
+        st.info(
+            f"ℹ️ {metrics.period_days} days of history — preliminary signal. "
+            "Confidence improves materially past 90 days."
+        )
+
+    # ---- Chart ----
+    dates, port, spy = nav_series_for_chart(snaps)
+    chart_df = {
+        "date": [d.isoformat() for d in dates],
+        "Portfolio": port,
+        "SPY": spy,
+    }
+    try:
+        import pandas as pd
+        df = pd.DataFrame(chart_df).set_index("date")
+        st.line_chart(df, use_container_width=True)
+    except Exception:
+        st.caption("_chart render failed_")
+
+    # ---- Secondary detail row ----
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric(
+            "Daily win-rate vs SPY",
+            f"{metrics.win_rate*100:.0f}%",
+            help="Fraction of days where portfolio daily return > SPY daily return.",
+        )
+    with c2:
+        st.metric(
+            "Max relative DD",
+            f"{metrics.max_relative_drawdown:.2f}%",
+            help="Worst sustained underperformance vs SPY (peak-to-trough on the relative-equity curve).",
+        )
+    with c3:
+        st.metric(
+            "Period",
+            f"{metrics.period_days} days",
+            help="Days of NAV-vs-SPY history available.",
+        )
+
+    # ---- Refresh / extend backfill ----
+    with st.expander("Backfill / refresh data"):
+        st.caption(
+            "Re-pulls Alpaca portfolio history + yfinance SPY closes. "
+            "Idempotent — overwrites existing snapshot rows by date."
+        )
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            if st.button("Backfill 6M"):
+                with st.spinner("Backfilling..."):
+                    n = backfill_journal(period="6M")
+                st.success(f"Wrote {n} rows."); st.rerun()
+        with col_b:
+            if st.button("Backfill 1Y"):
+                with st.spinner("Backfilling..."):
+                    n = backfill_journal(period="1Y")
+                st.success(f"Wrote {n} rows."); st.rerun()
+        with col_c:
+            if st.button("Backfill ALL"):
+                with st.spinner("Backfilling..."):
+                    n = backfill_journal(period="all")
+                st.success(f"Wrote {n} rows."); st.rerun()
+
+
 def _render_portfolio_caps_panel() -> None:
     """v3.73.5: surface whether the 8% single-name + 25% sector caps
     are binding on the live book right now. Reads the live portfolio,
@@ -1852,6 +2020,14 @@ def view_overview():
     # gets its own oversized treatment so the user sees it instantly.
     _render_price_headline()
     _headline_metrics()
+
+    # v3.73.6: SP500 BENCHMARK panel — the goal of the system is to
+    # beat SPY, so this panel is THE headline measurement. NAV-vs-SPY
+    # chart + active return + IR + beta + alpha. Sized large because
+    # without it, every other metric is absolute and disconnected
+    # from the only question that matters.
+    st.divider()
+    _render_benchmark_panel()
 
     # v3.73.2: four-threshold drawdown protocol panel. Surfaces the
     # current 180d-peak DD against the four tiers (-5/-8/-12/-15) per
