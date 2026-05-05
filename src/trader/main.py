@@ -616,6 +616,29 @@ def main(force: bool = False) -> dict:
     except Exception as e:
         print(f"  decision_report write failed (non-fatal): {type(e).__name__}: {e}")
 
+    # v3.73.7: write a row to strategy_eval for every candidate
+    # strategy on every rebalance run. The eval runner is cheap
+    # (pure functions on the same price panel; ~1-2s for all 10),
+    # and accumulating rows is what turns the leaderboard into a
+    # real signal over time. Failures here MUST NOT fail the run.
+    try:
+        from .eval_runner import evaluate_at, settle_returns
+        from .data import fetch_history
+        import pandas as pd
+        end = pd.Timestamp.today()
+        start = (end - pd.DateOffset(months=18)).strftime("%Y-%m-%d")
+        prices = fetch_history(universe + ["SPY"], start=start)
+        prices = prices.dropna(axis=1, how="any")
+        if not prices.empty:
+            asof = prices.index[-1]
+            n = evaluate_at(asof, universe, prices=prices.drop(columns=["SPY"], errors="ignore"))
+            print(f"  -> strategy_eval: recorded {n} new picks for {asof.date()}")
+            settled = settle_returns(asof, prices=prices)
+            if settled:
+                print(f"  -> strategy_eval: settled {settled} prior windows")
+    except Exception as e:
+        print(f"  strategy_eval hook failed (non-fatal): {type(e).__name__}: {e}")
+
     if not DRY_RUN:
         finish_run(run_id, status="completed",
                    notes=f"{len(final_targets)} targets, {len(rebalance_results)} mom, {len(bracket_results)} bot")
