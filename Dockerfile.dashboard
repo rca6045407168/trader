@@ -55,6 +55,17 @@ COPY --chown=trader:trader pyproject.toml .
 # v3.55.1: bake the theme config into the image so dark-mode is default
 COPY --chown=trader:trader .streamlit/ ./.streamlit/
 
+# v3.73.1: bake build provenance into the image. The dashboard reads
+# /app/BUILD_INFO.txt at startup and renders the commit + timestamp
+# in the sidebar, with a yellow drift warning when the container is
+# running stale code (e.g. you edited dashboard.py on the host but
+# forgot to rebuild). Args supplied by docker-compose's `args:` block;
+# default-empty so direct `docker build` still works.
+ARG BUILD_COMMIT=""
+ARG BUILD_TIMESTAMP=""
+RUN echo "commit=${BUILD_COMMIT}" > /app/BUILD_INFO.txt \
+    && echo "built_at=${BUILD_TIMESTAMP}" >> /app/BUILD_INFO.txt
+
 VOLUME ["/app/data"]
 
 ENV PYTHONPATH=/app/src

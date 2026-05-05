@@ -30,6 +30,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dashboard
+      # v3.73.1: pass the build commit + timestamp so the dashboard
+      # can render "container is stale" warnings when host code has
+      # moved past what's baked in the image. Defaults to empty if
+      # the host shell doesn't export them; the badge then says
+      # "(unknown)" rather than the actual commit.
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT-}"
+        BUILD_TIMESTAMP: "${BUILD_TIMESTAMP-}"
     image: trader-dashboard:latest
     container_name: trader-dashboard
     restart: unless-stopped

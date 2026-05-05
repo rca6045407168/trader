@@ -1,4 +1,29 @@
-"""Live local dashboard for the trader (v3.73.0).
+"""Live local dashboard for the trader (v3.73.1).
+
+v3.73.1 — Build-info badge + drift detector + production-pickling fix.
+
+Three things ship together because they share a root cause: today's
+"Overview shows Friday's $106K" episode revealed that container
+drift goes invisible without active discipline. v3.73.1 makes drift
+loud + fixes the latent crash that surfaced once the container was
+finally rebuilt.
+
+  - Dockerfile.dashboard now bakes /app/BUILD_INFO.txt with git
+    commit + UTC timestamp at image-build time. docker-compose.yml
+    passes them via build args (BUILD_COMMIT, BUILD_TIMESTAMP).
+  - scripts/build_dashboard.sh wraps `docker compose build` so the
+    operator doesn't have to remember the env-var dance.
+  - dashboard.py sidebar reads BUILD_INFO and compares `built_at` to
+    the file mtime of dashboard.py. If host code is >60s newer than
+    the image, fires a yellow warning with the exact drift duration
+    + the exact commands to fix.
+  - **Production crash fix:** _read_disk_overlay() returned a
+    local-class instance which pickle.dumps cannot serialize. The
+    new container had empty Streamlit cache → first call to
+    _overlay_signal (@st.cache_data) hit the disk path → AttrError.
+    Replaced with types.SimpleNamespace which IS picklable. This
+    bug was latent pre-v3.66.0 because the cache was pre-warmed
+    from the dataclass path. Caught by today's container rebuild.
 
 v3.73.0 — Daily-orchestrator heartbeat alert (Round-2 Block A item #6).
 Per docs/RISK_FRAMEWORK.md + docs/ROUND_2_SYNTHESIS.md, silent cron
@@ -663,11 +688,119 @@ if "linked_symbol" not in st.session_state:
 
 
 # ============================================================
+# v3.73.1 — Build-info badge / drift detector
+#
+# Reads /app/BUILD_INFO.txt (or ./BUILD_INFO.txt for dev runs) which
+# is baked at image build time with the git commit + UTC timestamp.
+# Compares to the file mtime of dashboard.py — if the file is newer
+# than the build timestamp, the container is running stale code
+# and the badge fires a yellow warning.
+#
+# The drift warning catches the failure mode that produced the
+# 39-hour Friday-equity-bug episode on 2026-05-05: dashboard.py was
+# edited 18 times on the host, container kept serving the
+# 2026-05-03 frozen copy, no signal anywhere told the user the
+# container was stale.
+# ============================================================
+def _read_build_info() -> dict:
+    """Parse BUILD_INFO.txt baked into the image. Returns
+    {commit: str, built_at: str} with empty strings on failure."""
+    candidates = [
+        Path("/app/BUILD_INFO.txt"),                     # in-container path
+        ROOT / "BUILD_INFO.txt",                          # dev / out-of-container
+    ]
+    info = {"commit": "", "built_at": ""}
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            for line in p.read_text().splitlines():
+                if "=" in line:
+                    k, _, v = line.partition("=")
+                    info[k.strip()] = v.strip()
+            return info
+        except Exception:
+            continue
+    return info
+
+
+def _build_info_drift_seconds() -> Optional[float]:
+    """How many seconds AHEAD of the build timestamp is the latest
+    edit to dashboard.py? Positive means the host code has moved past
+    the image — drift. Returns None if BUILD_INFO is unset (e.g. dev
+    `streamlit run`) so we don't false-alarm in non-Docker contexts."""
+    info = _read_build_info()
+    built_at_raw = info.get("built_at", "")
+    if not built_at_raw:
+        return None
+    try:
+        # Accept either ISO-8601 with or without 'Z' suffix
+        built_at_str = built_at_raw.rstrip("Z")
+        built_at = datetime.fromisoformat(built_at_str)
+    except ValueError:
+        return None
+    try:
+        dashboard_mtime = datetime.utcfromtimestamp(
+            (ROOT / "scripts" / "dashboard.py").stat().st_mtime)
+    except OSError:
+        return None
+    return (dashboard_mtime - built_at).total_seconds()
+
+
+def _render_build_info_badge() -> None:
+    """Sidebar badge: build commit + timestamp + drift warning.
+
+    Three states:
+      - No BUILD_INFO present (dev mode): caption "(local dev)"
+      - BUILD_INFO present + no drift: caption "built {ts} · {commit}"
+      - BUILD_INFO present + drift > 60s: yellow warning "container
+        stale, rebuild" with the exact drift number for forensics
+    """
+    info = _read_build_info()
+    commit = info.get("commit", "")
+    built_at = info.get("built_at", "")
+    if not commit and not built_at:
+        st.caption("_(local dev — no BUILD_INFO)_")
+        return
+
+    short = (commit[:7] if commit else "(unknown)")
+    drift = _build_info_drift_seconds()
+    if drift is None or drift <= 60:
+        # Healthy — code matches container
+        ts_short = built_at.split("T")[0] if "T" in built_at else built_at
+        st.caption(f"_built {ts_short} · {short}_")
+        return
+
+    # Drift exceeds 60s — host code has moved past the image
+    if drift < 3600:
+        age_str = f"{int(drift / 60)}m"
+    elif drift < 86400:
+        age_str = f"{int(drift / 3600)}h"
+    else:
+        age_str = f"{int(drift / 86400)}d"
+    st.warning(
+        f"⚠️ Container stale — host code moved {age_str} ahead of image "
+        f"(built {built_at[:16]}, commit `{short}`). "
+        f"Run `docker compose build dashboard && "
+        f"docker compose up -d --force-recreate dashboard` to refresh."
+    )
+
+
+from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
+
+
+# ============================================================
 # Sidebar — left nav (FlexHaul-style)
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.0 · chat-first AI dashboard")
+    st.caption("v3.73.1 · chat-first AI dashboard")
+    # v3.73.1: build-info badge — surfaces the commit + build timestamp
+    # baked into the running image, plus a drift warning when host
+    # code has moved past what's in the container. Catches the
+    # "container running stale code" failure mode that produced the
+    # 39-hour Friday-equity-bug episode on 2026-05-05.
+    _render_build_info_badge()
     st.divider()
 
     # Primary action up top
@@ -1044,20 +1177,24 @@ _OVERLAY_CACHE_FILE = ROOT / "data" / "overlay_cache.json"
 
 
 def _read_disk_overlay():
+    """Disk-cached overlay signal, attribute-accessible.
+
+    v3.73.1: was returning a local-class instance (`class O: pass`)
+    which pickle.dumps cannot serialize, breaking @st.cache_data
+    downstream. Pre-v3.66.0 the cache was pre-warmed from the
+    dataclass path so the bug was latent. The new container has
+    empty Streamlit cache → first call hits the disk path → AttrError
+    on pickle. Use types.SimpleNamespace, which IS picklable and
+    supports the same attribute access pattern."""
     if not _OVERLAY_CACHE_FILE.exists():
         return None
     try:
+        from types import SimpleNamespace
         data = json.loads(_OVERLAY_CACHE_FILE.read_text())
         ts = datetime.fromisoformat(data.get("_cached_at", "1970-01-01"))
         if (datetime.utcnow() - ts).total_seconds() > 300:
             return None
-        # Build a lightweight obj that matches OverlaySignal's interface
-        class O:
-            pass
-        o = O()
-        for k, v in data.get("overlay", {}).items():
-            setattr(o, k, v)
-        return o
+        return SimpleNamespace(**data.get("overlay", {}))
     except Exception:
         return None
 
