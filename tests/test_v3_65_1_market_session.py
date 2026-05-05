@@ -132,8 +132,8 @@ def test_dashboard_version_bumped_to_v3_65_1():
     # sidebar caption may have moved to a later patch.
     assert "v3.65.1" in text
     import re
-    assert re.search(r'st\.caption\("v3\.6\d\.\d', text), \
-        "sidebar must show some v3.6x.y version label"
+    assert re.search(r'st\.caption\("v3\.[67]\d\.\d', text), \
+        "sidebar must show some v3.6x.y or v3.7x.y version label"
 
 
 def test_dashboard_has_market_session_helper():

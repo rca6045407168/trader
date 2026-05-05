@@ -1,4 +1,20 @@
-"""Live local dashboard for the trader (v3.69.2).
+"""Live local dashboard for the trader (v3.70.0).
+
+v3.70.0 — Per-symbol poll cadence (HOT around earnings, WARM otherwise).
+User insight: 8-K earnings releases are pre-announced. We can poll
+faster on earnings days (catch the print within seconds) without
+paying for it on the other 60+ days/year per name.
+
+  - HOT (60s cadence): symbol is within ±2 days of next earnings
+  - WARM (300s cadence): every other day. Still catches unscheduled
+    8-Ks (debt raises, officer changes, M&A) — ~50% of v3.68.x
+    material flags came from these. Earnings-only would miss them.
+  - Schedule rebuilt at every UTC-midnight roll inside the daemon
+  - 📞 Earnings reactor view shows the per-symbol schedule + which
+    symbols are HOT today
+
+Empirical first-build: AMD is HOT today (earnings within window),
+14 others WARM. AMD now polls every 60s; others every 300s.
 
 v3.69.2 — Email alert format + test isolation. Two pieces:
 
@@ -558,7 +574,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.69.2 · chat-first AI dashboard")
+    st.caption("v3.70.0 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -4511,6 +4527,49 @@ def view_earnings_reactor():
     except Exception as e:
         st.error(f"earnings_reactor module unavailable: {e}")
         return
+
+    # v3.70.0: HOT/WARM polling schedule panel — show which symbols
+    # are within their earnings window (60s cadence) vs. baseline (300s).
+    try:
+        from trader.poll_schedule import build_schedule, hot_symbols
+        from trader.positions_live import fetch_live_portfolio
+        pf = fetch_live_portfolio()
+        if not pf.error and pf.positions:
+            live_syms = [p.symbol for p in pf.positions
+                          if float(p.qty) > 0]
+            if live_syms:
+                @st.cache_data(ttl=600, show_spinner=False)
+                def _cached_schedule(syms_tuple):
+                    return build_schedule(list(syms_tuple))
+                sched = _cached_schedule(tuple(sorted(live_syms)))
+                hot = hot_symbols(sched)
+                with st.expander(
+                    f"🔥 Polling schedule · "
+                    f"{len(hot)} HOT · {len(sched)-len(hot)} WARM",
+                    expanded=bool(hot),
+                ):
+                    st.caption(
+                        "Symbols within ±2 days of scheduled earnings poll "
+                        "every 60s (HOT). Others poll every 300s (WARM). "
+                        "Schedule rebuilds at every UTC midnight inside the "
+                        "daemon. Cadence is unchanged in cost: idempotent "
+                        "at the accession key — re-polling 8-Ks we've "
+                        "already analyzed costs zero Claude tokens."
+                    )
+                    rows = []
+                    for sym in sorted(sched.keys()):
+                        s = sched[sym]
+                        rows.append({
+                            "symbol": s.symbol,
+                            "next_earnings": (s.next_earnings_date.isoformat()
+                                              if s.next_earnings_date else "—"),
+                            "cadence": s.cadence,
+                            "poll_every": (f"{s.cadence_seconds}s"),
+                        })
+                    st.dataframe(rows, use_container_width=True,
+                                  hide_index=True)
+    except Exception as e:
+        st.caption(f"_polling-schedule panel unavailable: {e}_")
 
     # v3.69.0: status + would-trim panel for the rebalance gate
     try:

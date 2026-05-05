@@ -101,5 +101,5 @@ def test_dashboard_version_v3_67_1():
     # Sidebar caption may have moved to a later release.
     assert "v3.67.1" in text
     import re
-    assert re.search(r'st\.caption\("v3\.6\d\.\d', text), \
-        "sidebar must show some v3.6x.y version label"
+    assert re.search(r'st\.caption\("v3\.[67]\d\.\d', text), \
+        "sidebar must show some v3.6x.y or v3.7x.y version label"

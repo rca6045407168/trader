@@ -67,62 +67,125 @@ def _install_signal_handlers():
 
 
 def _watch_loop(symbols: list[str], args) -> int:
-    """Long-running daemon. Polls every args.watch_interval seconds.
-    Same per-iteration logic as one-shot mode + a sleep between iters.
+    """Long-running daemon with per-symbol cadence (v3.70.0).
 
-    Emits a per-iteration line to stdout (line-buffered so launchd /
-    `tail -f` show progress in real time). On SIGTERM, exits with 0
-    after the current iteration completes — never aborts mid-Claude-call."""
+    HOT symbols (within ±2 days of scheduled earnings) poll every 60s.
+    WARM symbols (default) poll every 300s. Each symbol tracks its
+    own next_poll_at; the outer loop ticks every 30s and polls only
+    symbols whose due time has passed.
+
+    Schedule rebuilt once at startup + once per UTC midnight rollover
+    (inexpensive — earnings_calendar.next_earnings_date hits a paid
+    cache, but only N times/day total).
+
+    Emits a per-iter line to stdout (line-buffered so `tail -f` shows
+    progress). On SIGTERM, exits with 0 after the current iter — never
+    aborts mid-Claude-call."""
     import sys as _sys
-    # Force line buffering so logs are usable in real time
     _sys.stdout.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
     _install_signal_handlers()
 
     from trader.earnings_reactor import react_for_positions
-    interval = max(60, int(args.watch_interval))  # floor at 1 min
-    print(f"=== earnings reactor WATCH mode "
-          f"(interval={interval}s, {len(symbols)} symbols, "
+    from trader.poll_schedule import (
+        build_schedule, refresh_classifications, hot_symbols, due_symbols,
+        HOT_CADENCE_SECONDS, WARM_CADENCE_SECONDS,
+    )
+
+    print(f"=== earnings reactor WATCH mode v3.70.0 "
+          f"(per-symbol cadence: {HOT_CADENCE_SECONDS}s HOT / "
+          f"{WARM_CADENCE_SECONDS}s WARM, {len(symbols)} symbols, "
           f"model={args.model}) ===")
     print(f"=== ctrl-c or SIGTERM exits cleanly; launchd KeepAlive will "
           f"restart on crash ===")
 
+    # Build initial schedule (resolves earnings dates for each symbol)
+    print(f"  building schedule...")
+    t_sched = time.time()
+    schedule = build_schedule(symbols)
+    elapsed_sched = time.time() - t_sched
+    hot = hot_symbols(schedule)
+    print(f"  schedule built in {elapsed_sched:.1f}s · "
+          f"{len(hot)} HOT, {len(schedule)-len(hot)} WARM")
+    if hot:
+        print(f"  HOT today: {', '.join(hot)}")
+    last_schedule_refresh = datetime.utcnow().date()
+
+    # Outer loop ticks every 30s — granular enough to honor 60s HOT
+    # cadence, slow enough to be cheap.
+    OUTER_TICK_SECONDS = 30
     iter_n = 0
     while not _SHUTDOWN:
-        iter_n += 1
-        t0 = time.time()
-        try:
-            results = react_for_positions(
-                symbols, since_days=args.since_days,
-                only_material=not args.all_8k,
-                model=args.model,
-                alert=not args.no_alerts,
-            )
-            n_new = sum(len(rs) for rs in results.values())
-            n_material = sum(1 for rs in results.values() for r in rs
-                              if r.materiality >= 3)
-            elapsed = time.time() - t0
-            ts = datetime.utcnow().isoformat(timespec="seconds")
-            print(f"[iter {iter_n:>5d} {ts}Z] {n_new} new signals, "
-                  f"{n_material} material · {elapsed:.1f}s", flush=True)
-            # Detail lines only when something happened
-            for sym, rs in results.items():
-                for r in rs:
-                    tag = "ERR" if r.error else f"M{r.materiality}"
-                    cost = f" ${r.cost_usd:.4f}" if r.cost_usd else ""
-                    print(f"  [{tag}] {sym:6s} {r.filed_at} "
-                          f"{r.direction:<10s} items={','.join(r.items) or '-':<10s}"
-                          f"{cost}  {r.summary[:80]}", flush=True)
-        except Exception as e:
-            print(f"[iter {iter_n} ERROR] {type(e).__name__}: {e}",
-                   flush=True)
-            # Don't break on transient errors — launchd KeepAlive can
-            # respawn us if things get really bad, but a single SEC
-            # 503 shouldn't tear down the daemon.
+        now = datetime.utcnow()
 
-        # Sleep in 5-sec chunks so SIGTERM gets noticed quickly
+        # Daily schedule refresh: rebuild dates + re-classify symbols
+        # at every UTC midnight roll. Cheap (paid earnings calendar
+        # call N times once per day).
+        if now.date() > last_schedule_refresh:
+            try:
+                fresh = build_schedule(symbols)
+                # Preserve next_poll_at (don't force immediate re-poll
+                # of every symbol on rollover); only update earnings
+                # date + cadence.
+                for sym, fresh_sched in fresh.items():
+                    if sym in schedule:
+                        old = schedule[sym]
+                        old.next_earnings_date = fresh_sched.next_earnings_date
+                        old.cadence = fresh_sched.cadence
+                        old.cadence_seconds = fresh_sched.cadence_seconds
+                    else:
+                        schedule[sym] = fresh_sched
+                last_schedule_refresh = now.date()
+                hot = hot_symbols(schedule)
+                print(f"[schedule refresh {now.isoformat(timespec='seconds')}Z] "
+                      f"{len(hot)} HOT, {len(schedule)-len(hot)} WARM"
+                      + (f" · HOT: {', '.join(hot)}" if hot else ""),
+                      flush=True)
+            except Exception as e:
+                print(f"[schedule refresh ERROR] {type(e).__name__}: {e}",
+                       flush=True)
+
+        # Find due symbols
+        due = due_symbols(schedule, now)
+        if due:
+            iter_n += 1
+            t0 = time.time()
+            try:
+                results = react_for_positions(
+                    due, since_days=args.since_days,
+                    only_material=not args.all_8k,
+                    model=args.model,
+                    alert=not args.no_alerts,
+                )
+                # Mark each polled symbol's next_poll_at
+                for sym in due:
+                    if sym in schedule:
+                        schedule[sym].mark_polled(now)
+                n_new = sum(len(rs) for rs in results.values())
+                n_material = sum(1 for rs in results.values() for r in rs
+                                  if r.materiality >= 3)
+                elapsed = time.time() - t0
+                # Tag iter line with hot/warm split
+                hot_count = sum(1 for sym in due if schedule[sym].cadence == "HOT")
+                warm_count = len(due) - hot_count
+                ts = now.isoformat(timespec="seconds")
+                print(f"[iter {iter_n:>5d} {ts}Z] polled {len(due)} "
+                      f"({hot_count}H/{warm_count}W) · {n_new} new signals, "
+                      f"{n_material} material · {elapsed:.1f}s", flush=True)
+                for sym, rs in results.items():
+                    for r in rs:
+                        tag = "ERR" if r.error else f"M{r.materiality}"
+                        cost = f" ${r.cost_usd:.4f}" if r.cost_usd else ""
+                        print(f"  [{tag}] {sym:6s} {r.filed_at} "
+                              f"{r.direction:<10s} items={','.join(r.items) or '-':<10s}"
+                              f"{cost}  {r.summary[:80]}", flush=True)
+            except Exception as e:
+                print(f"[iter {iter_n} ERROR] {type(e).__name__}: {e}",
+                       flush=True)
+
+        # Sleep ~30s in 5-sec chunks so SIGTERM gets noticed quickly
         slept = 0
-        while slept < interval and not _SHUTDOWN:
-            time.sleep(min(5, interval - slept))
+        while slept < OUTER_TICK_SECONDS and not _SHUTDOWN:
+            time.sleep(min(5, OUTER_TICK_SECONDS - slept))
             slept += 5
     print("=== watch loop exited cleanly ===")
     return 0

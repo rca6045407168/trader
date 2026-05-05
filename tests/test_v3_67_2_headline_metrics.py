@@ -66,8 +66,8 @@ def test_dashboard_version_v3_67_2():
     # may have moved to a later patch.
     assert "v3.67.2" in text
     import re
-    assert re.search(r'st\.caption\("v3\.6\d\.\d', text), \
-        "sidebar must show some v3.6x.y version label"
+    assert re.search(r'st\.caption\("v3\.[67]\d\.\d', text), \
+        "sidebar must show some v3.6x.y or v3.7x.y version label"
 
 
 def test_no_other_consumer_renders_equity_from_raw_snapshot():

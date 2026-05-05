@@ -277,12 +277,15 @@ def test_plist_opts_out_of_low_priority_io():
 # Watch loop: floor the interval at 60s
 # ============================================================
 def test_watch_interval_floor_in_code():
-    """If env or CLI specifies an absurdly low interval, the script
-    must clamp to 60s (no 1-sec hot loop)."""
-    p = (Path(__file__).resolve().parent.parent / "scripts"
-         / "earnings_reactor.py")
+    """v3.70.0+: per-symbol cadence replaced single global watch_interval.
+    The 60s floor is now enforced via the HOT_CADENCE_SECONDS constant
+    in trader.poll_schedule (HOT mode) — there's no way for any symbol
+    to poll faster than that."""
+    p = (Path(__file__).resolve().parent.parent / "src" / "trader"
+         / "poll_schedule.py")
     text = p.read_text()
-    assert "max(60," in text
+    assert "HOT_CADENCE_SECONDS = 60" in text
+    assert "WARM_CADENCE_SECONDS = 300" in text
 
 
 # ============================================================

@@ -81,8 +81,11 @@ def test_watch_loop_handles_signals():
     text = p.read_text()
     assert "_install_signal_handlers" in text
     assert "SIGTERM" in text
-    # Floor the interval at 60s in case env override is too aggressive
-    assert "max(60," in text
+    # v3.70.0+: floor moved to trader.poll_schedule HOT_CADENCE_SECONDS
+    # constant. Daemon's outer tick is OUTER_TICK_SECONDS = 30 (a
+    # check-cadence, not a poll-cadence — the schedule decides which
+    # symbols to poll on each tick).
+    assert "OUTER_TICK_SECONDS" in text
 
 
 def test_watch_loop_per_iter_exception_handler():
@@ -119,8 +122,8 @@ def test_dashboard_version_v3_68_3():
     # may have moved to a later patch.
     assert "v3.68.3" in text
     import re
-    assert re.search(r'st\.caption\("v3\.6\d\.\d', text), \
-        "sidebar must show some v3.6x.y version label"
+    assert re.search(r'st\.caption\("v3\.[67]\d\.\d', text), \
+        "sidebar must show some v3.6x.y or v3.7x.y version label"
 
 
 def test_automation_doc_describes_daemon_mode():
