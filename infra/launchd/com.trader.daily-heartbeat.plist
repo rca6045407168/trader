@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  v3.73.0 — Daily-orchestrator heartbeat alert.
+
+  Fires weekdays at 14:30 UTC (= 10:30 ET). By that time, a healthy
+  daily run (which the separate ai.flexhaul.trader-daily-run job
+  triggers at 13:10 UTC) should have written a row to journal.runs.
+  If not, the heartbeat script emails + Slacks an alert.
+
+  Idempotent: a date-stamped marker file suppresses repeat alerts
+  within the same day, so over-firing is harmless.
+
+  Writes nothing destructive — read-only against the journal.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trader.daily-heartbeat</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /Users/richardchen/trader &amp;&amp; set -a &amp;&amp; [ -f .env ] &amp;&amp; source .env; set +a; exec .venv/bin/python scripts/check_daily_heartbeat.py</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/richardchen/Library/Logs/trader-daily-heartbeat.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/richardchen/Library/Logs/trader-daily-heartbeat.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/richardchen</string>
+    <key>PATH</key><string>/Users/richardchen/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/richardchen/trader</string>
+
+  <key>ProcessType</key>
+  <string>Adaptive</string>
+</dict>
+</plist>

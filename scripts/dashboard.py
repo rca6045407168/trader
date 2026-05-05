@@ -1,4 +1,26 @@
-"""Live local dashboard for the trader (v3.72.2).
+"""Live local dashboard for the trader (v3.73.0).
+
+v3.73.0 — Daily-orchestrator heartbeat alert (Round-2 Block A item #6).
+Per docs/RISK_FRAMEWORK.md + docs/ROUND_2_SYNTHESIS.md, silent cron
+failure was the top operational-risk blindspot. Real evidence at the
+time of this build: yesterday (Mon May 4) had ZERO rows in
+journal.runs — the daily orchestrator did not fire and there was no
+alert.
+
+  - scripts/check_daily_heartbeat.py runs idempotently. Detects
+    "trading day + no run started today" and fires an email + Slack
+    alert via the existing notify pipeline. Date-stamped marker file
+    suppresses repeat alerts within the same day.
+  - infra/launchd/com.trader.daily-heartbeat.plist fires Mon-Fri at
+    14:30 UTC (= 10:30 ET) — after the 13:10 UTC daily-run window so
+    healthy runs have ~80 min to complete before the check fires.
+  - Tests verify the state machine: skip on weekends/holidays, alert
+    on no-run-today, idempotent within a day, marker resets daily,
+    plist scheduled correctly.
+
+To install the launchd job: `bash scripts/install_launchd_earnings.sh`
+already supports the pattern; add a similar one for the heartbeat or
+manually `launchctl load ~/Library/LaunchAgents/com.trader.daily-heartbeat.plist`.
 
 v3.72.2 — Operational fix: docker-compose healthcheck used `wget` but
 Dockerfile.dashboard only installs `curl`. Result: 4593 consecutive
@@ -645,7 +667,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.72.2 · chat-first AI dashboard")
+    st.caption("v3.73.0 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
