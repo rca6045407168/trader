@@ -56,7 +56,10 @@ services:
       - REGIME_OVERLAY_ENABLED=false
       - PYTHONUNBUFFERED=1
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8501/_stcore/health || exit 1"]
+      # v3.72.2: was `wget` but Dockerfile.dashboard only installs `curl`.
+      # Result: 4593 consecutive healthcheck failures over 38h showing
+      # "unhealthy" while the dashboard ran fine the whole time.
+      test: ["CMD-SHELL", "curl -fs http://localhost:8501/_stcore/health > /dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

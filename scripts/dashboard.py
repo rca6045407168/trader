@@ -1,4 +1,19 @@
-"""Live local dashboard for the trader (v3.72.1).
+"""Live local dashboard for the trader (v3.72.2).
+
+v3.72.2 — Operational fix: docker-compose healthcheck used `wget` but
+Dockerfile.dashboard only installs `curl`. Result: 4593 consecutive
+healthcheck failures across 38h while the dashboard actually ran
+fine. Switched to `curl -fs`. Plus a regression test guarding the
+binary used by the healthcheck against the binaries actually
+installed in the image.
+
+This release does NOT include code changes to dashboard.py beyond
+the version label — the SOT bug the user reported ("Overview tab
+still shows Friday's number") was caused by their container running
+a 38h-old image that predates v3.66.0's EquityState refactor. Fix is
+operational: `docker compose build dashboard && docker compose up -d
+--force-recreate dashboard` to pick up everything from v3.65.0 →
+v3.72.2.
 
 v3.72.1 — Structured "Why we own it" panel in the per-symbol modal.
 Replaces the old single-line `12-1 mom +35.5%` rationale with four
@@ -630,7 +645,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.72.1 · chat-first AI dashboard")
+    st.caption("v3.72.2 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
