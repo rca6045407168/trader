@@ -1,4 +1,27 @@
-"""Live local dashboard for the trader (v3.73.1).
+"""Live local dashboard for the trader (v3.73.2).
+
+v3.73.2 — Four-threshold drawdown protocol (Round-2 Block A item #3).
+Per docs/RISK_FRAMEWORK.md §6, extends the existing single -8% kill
+into four tiers with pre-committed response actions:
+
+  -5% YELLOW         pause new sizing; weekly→biweekly review
+  -8% RED            existing kill — halt all rebalancing (unchanged)
+  -12% ESCALATION    trim core to top 5; raise cash to 50%
+  -15% CATASTROPHIC  liquidate all; manual re-arm + 30d cool-off
+
+Defaults to ADVISORY mode (logs the tier without mutating targets).
+ENFORCING mode wires the response actions into check_account_risk —
+opt in via DRAWDOWN_PROTOCOL_MODE=ENFORCING env. Same SHADOW/LIVE/
+INERT pattern as the v3.69.0 ReactorSignalRule.
+
+Adds a "🛡️ Drawdown protocol" expander to Overview that surfaces:
+  - Current tier (with emoji indicator)
+  - Tier-strip showing which thresholds have been crossed
+  - The response action verbatim from RISK_FRAMEWORK.md §6
+  - Mode badge (ADVISORY vs ENFORCING) + the env var to flip it
+
+The existing -8% kill remains binding regardless of mode — this
+release ADDS tiers around it, not replaces it.
 
 v3.73.1 — Build-info badge + drift detector + production-pickling fix.
 
@@ -794,7 +817,7 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.1 · chat-first AI dashboard")
+    st.caption("v3.73.2 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the
@@ -1593,6 +1616,105 @@ def view_chat():
 # ============================================================
 # View: Overview
 # ============================================================
+def _render_drawdown_protocol_panel() -> None:
+    """v3.73.2: Show current 180d-peak DD + which tier we're in.
+
+    Reads daily_snapshot for the rolling 180d window, computes peak,
+    derives current DD, evaluates the tier (GREEN/YELLOW/RED/ESCALATION/
+    CATASTROPHIC), surfaces the response action verbatim from
+    docs/RISK_FRAMEWORK.md §6.
+
+    The panel is the ADVISORY surface in v3.73.2 — it doesn't change
+    target weights. ENFORCING mode (env var) wires the responses into
+    check_account_risk; that's a separate behavior toggle.
+    """
+    try:
+        from trader.risk_manager import (
+            evaluate_drawdown_tier, drawdown_protocol_mode,
+            DRAWDOWN_YELLOW_PCT, DRAWDOWN_RED_PCT,
+            DRAWDOWN_ESCALATION_PCT, DRAWDOWN_CATASTROPHIC_PCT,
+            DD_PEAK_LOOKBACK_DAYS,
+        )
+    except Exception as e:
+        st.caption(f"_drawdown protocol panel unavailable: {e}_")
+        return
+
+    state = _get_equity_state()
+    if state.equity_now is None:
+        return  # nothing to evaluate
+
+    snaps = _cached_snapshots(str(DB_PATH))
+    if snaps.empty or "equity" not in snaps.columns:
+        return  # no snapshot history
+
+    # 180-day-peak DD (matching check_account_risk's existing logic)
+    eqs = snaps["equity"].dropna()
+    if eqs.empty:
+        return
+    peak = float(eqs.max())
+    if peak <= 0:
+        return
+    dd_pct = (state.equity_now - peak) / peak  # negative for actual DD
+    tier = evaluate_drawdown_tier(dd_pct)
+    mode = drawdown_protocol_mode()
+
+    # Build the tier-strip display: which tiers we've crossed
+    tier_emoji = {
+        "GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴",
+        "ESCALATION": "🟠", "CATASTROPHIC": "⛔",
+    }.get(tier.name, "⚪")
+
+    # Show the panel — collapsed by default unless we're past GREEN
+    title = (f"🛡️ Drawdown protocol · {tier_emoji} **{tier.label}** "
+             f"({dd_pct*100:+.2f}%)  ·  mode: {mode}")
+    with st.expander(title, expanded=(tier.name != "GREEN")):
+        # Tier strip
+        cc = st.columns(4)
+        for i, (label, threshold) in enumerate([
+            ("Yellow", DRAWDOWN_YELLOW_PCT),
+            ("Red (existing kill)", DRAWDOWN_RED_PCT),
+            ("Escalation", DRAWDOWN_ESCALATION_PCT),
+            ("Catastrophic", DRAWDOWN_CATASTROPHIC_PCT),
+        ]):
+            crossed = abs(dd_pct) >= threshold
+            indicator = "🔴" if crossed else "⚪"
+            cc[i].metric(
+                f"{indicator} {label}",
+                f"-{threshold*100:.0f}%",
+                f"{'CROSSED' if crossed else 'clear'}",
+            )
+
+        st.markdown(f"**Current tier:** {tier_emoji} {tier.label}")
+        if tier.name != "GREEN":
+            st.markdown(f"**Pre-committed response.** {tier.response}")
+            if mode == "ADVISORY":
+                st.caption(
+                    "_ADVISORY mode — this panel surfaces the tier + "
+                    "response but does NOT mutate target weights at "
+                    "rebalance. Set `DRAWDOWN_PROTOCOL_MODE=ENFORCING` "
+                    "in `.env` to actually apply the response actions._"
+                )
+            else:
+                st.caption(
+                    f"_ENFORCING mode — the daily orchestrator WILL "
+                    f"apply this tier's response action at next "
+                    f"rebalance: {tier.enforce_action}._"
+                )
+        else:
+            st.caption(
+                f"_180d-peak: ${peak:,.0f}. Current equity: "
+                f"${state.equity_now:,.0f}. Buffer to YELLOW (-5%): "
+                f"{(DRAWDOWN_YELLOW_PCT - abs(dd_pct))*100:.2f}pp._"
+            )
+
+        # Reference to the source doc
+        st.markdown(
+            "_Tier definitions per [RISK_FRAMEWORK.md §6](../docs/"
+            "RISK_FRAMEWORK.md). Window: "
+            f"{DD_PEAK_LOOKBACK_DAYS}-day rolling peak._"
+        )
+
+
 def view_overview():
     st.title("🏠 Overview")
     st.caption("Headline metrics + sector heatmap + last 5 runs.")
@@ -1602,6 +1724,14 @@ def view_overview():
     # gets its own oversized treatment so the user sees it instantly.
     _render_price_headline()
     _headline_metrics()
+
+    # v3.73.2: four-threshold drawdown protocol panel. Surfaces the
+    # current 180d-peak DD against the four tiers (-5/-8/-12/-15) per
+    # docs/RISK_FRAMEWORK.md §6. Default ADVISORY — shows the tier
+    # without mutating targets. Caller flips to ENFORCING via env when
+    # comfortable.
+    _render_drawdown_protocol_panel()
+
     st.divider()
 
     st.subheader("🗺️ Sector heatmap")

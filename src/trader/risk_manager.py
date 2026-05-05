@@ -44,6 +44,24 @@ MAX_DAILY_LOSS_PCT = 0.06  # v3.46: institutional-style -6% (was -3%). Below thi
 MAX_DRAWDOWN_HALT_PCT = 0.08  # from 180-day peak (existing)
 DD_PEAK_LOOKBACK_DAYS = 180
 
+# v3.73.2: Four-threshold drawdown protocol per docs/RISK_FRAMEWORK.md §6.
+# Adds tiers BETWEEN the existing -8% kill and the deployment-anchor gates,
+# each with a pre-committed response action (no discretion under stress).
+# Tiers are evaluated against the SAME 180-day-peak metric the existing
+# -8% kill uses; -8% is preserved as the existing red-alert threshold.
+DRAWDOWN_YELLOW_PCT = 0.05         # -5% pause new sizing, weekly→biweekly review
+DRAWDOWN_RED_PCT = 0.08            # -8% existing kill (alias for clarity)
+DRAWDOWN_ESCALATION_PCT = 0.12     # -12% trim core to top 5, raise cash to 50%
+DRAWDOWN_CATASTROPHIC_PCT = 0.15   # -15% liquidate all, manual re-arm + cool-off
+
+# v3.73.2: drawdown protocol modes — same SHADOW/LIVE/INERT pattern as the
+# v3.69.0 ReactorSignalRule. ADVISORY surfaces the tier in warnings + the
+# dashboard but does not mutate targets. ENFORCING actually applies the
+# mechanical responses (trim core, raise cash). User flips via env when
+# ready. Default ADVISORY because the existing -8% kill remains binding
+# regardless; the new tiers are additional response actions.
+DRAWDOWN_PROTOCOL_MODE = "ADVISORY"  # "ADVISORY" | "ENFORCING" — env-overridable
+
 # v3.46 NEW: deployment-DD gates (referenced from deployment_anchor module)
 MAX_DEPLOY_DD_FREEZE_PCT = 0.25       # -25% from deployment → 30-day no-new-position freeze
 MAX_DEPLOY_DD_LIQUIDATION_PCT = 0.33  # -33% from deployment → written post-mortem required
@@ -158,6 +176,174 @@ def _trigger_liquidation_gate() -> None:
     state["liquidation_gate_tripped"] = True
     state["liquidation_tripped_at"] = datetime.utcnow().isoformat()
     _save_freeze_state(state)
+
+
+# ============================================================
+# v3.73.2 — Four-threshold drawdown protocol
+# Per docs/RISK_FRAMEWORK.md §6. Each tier carries a pre-committed
+# response so there's no discretion under stress.
+# ============================================================
+@dataclass
+class DrawdownTier:
+    """One tier of the four-threshold protocol."""
+    name: str                 # "GREEN" | "YELLOW" | "RED" | "ESCALATION" | "CATASTROPHIC"
+    label: str                # display label
+    threshold_pct: float      # decimal, e.g. 0.05 for -5%
+    response: str             # human-readable action
+    enforce_action: str       # "NONE" | "PAUSE_GROWTH" | "HALT_ALL" | "TRIM_TO_TOP5" | "LIQUIDATE_ALL"
+
+
+_DRAWDOWN_TIERS = [
+    DrawdownTier(
+        name="GREEN",
+        label="Green",
+        threshold_pct=0.0,
+        response="Normal operation. Standard weekly review.",
+        enforce_action="NONE",
+    ),
+    DrawdownTier(
+        name="YELLOW",
+        label="Yellow alert",
+        threshold_pct=DRAWDOWN_YELLOW_PCT,
+        response=("Pause new position sizing across all sleeves. "
+                  "Continue holding existing positions. Increase review "
+                  "cadence weekly → twice-weekly. No halt."),
+        enforce_action="PAUSE_GROWTH",
+    ),
+    DrawdownTier(
+        name="RED",
+        label="Red alert (existing kill)",
+        threshold_pct=DRAWDOWN_RED_PCT,
+        response=("Halt all rebalancing. Liquidate VRP sleeve in full "
+                  "(when v5 ships). Freeze experimental sleeves. "
+                  "Daily risk review until DD recovers to -6%."),
+        enforce_action="HALT_ALL",
+    ),
+    DrawdownTier(
+        name="ESCALATION",
+        label="Escalation",
+        threshold_pct=DRAWDOWN_ESCALATION_PCT,
+        response=("Trim momentum core from current gross to 30% gross "
+                  "(keep top 5 names by score, drop ranks 6-15). Raise "
+                  "cash to 50%. Daily email with recovery plan."),
+        enforce_action="TRIM_TO_TOP5",
+    ),
+    DrawdownTier(
+        name="CATASTROPHIC",
+        label="Catastrophic",
+        threshold_pct=DRAWDOWN_CATASTROPHIC_PCT,
+        response=("Liquidate all positions. Manual re-arm only after "
+                  "30-day cool-off + external human review + written "
+                  "re-arming pre-commit. -$1.5k on $10k account; risk "
+                  "is no longer 'managed', it's catastrophic."),
+        enforce_action="LIQUIDATE_ALL",
+    ),
+]
+
+
+def evaluate_drawdown_tier(current_dd_pct: float) -> DrawdownTier:
+    """Map a current 180d-peak drawdown (decimal, e.g. -0.07 for -7%)
+    to its tier. Returns the WORST tier whose threshold has been
+    crossed. -0.07 → YELLOW (between -5% and -8%), -0.13 → ESCALATION
+    (between -12% and -15%), etc."""
+    # Normalize: convert negative DD into positive magnitude for comparison
+    dd_mag = abs(current_dd_pct) if current_dd_pct < 0 else 0.0
+    # Walk from worst to best, return first crossed
+    for tier in reversed(_DRAWDOWN_TIERS):
+        if dd_mag >= tier.threshold_pct:
+            return tier
+    return _DRAWDOWN_TIERS[0]  # GREEN
+
+
+def drawdown_protocol_mode() -> str:
+    """LIVE/SHADOW pattern: ADVISORY surfaces the tier without mutating
+    targets; ENFORCING applies the mechanical responses. Env-overridable
+    via DRAWDOWN_PROTOCOL_MODE."""
+    import os as _os
+    return _os.getenv("DRAWDOWN_PROTOCOL_MODE",
+                       DRAWDOWN_PROTOCOL_MODE).upper()
+
+
+def apply_drawdown_protocol(
+    equity: float,
+    targets: dict[str, float],
+    snapshots: list[dict] | None = None,
+    momentum_ranks: list[str] | None = None,
+) -> tuple[dict[str, float], DrawdownTier, list[str]]:
+    """Compute the current tier and (if mode == ENFORCING) apply the
+    mechanical response to the target weights.
+
+    Returns: (adjusted_targets, current_tier, warnings).
+
+    Snapshots format: list of {date, equity}. If None, no DD evaluation
+    happens and we return GREEN tier.
+
+    momentum_ranks: ordered list of symbols by current momentum (top
+    rank first). Required only for the ESCALATION TRIM_TO_TOP5 action.
+    Without it we degrade to PAUSE_GROWTH semantics + a warning."""
+    warnings: list[str] = []
+    if not snapshots:
+        return dict(targets), _DRAWDOWN_TIERS[0], warnings
+
+    peak = max(s["equity"] for s in snapshots if s.get("equity"))
+    if not peak or peak <= 0:
+        return dict(targets), _DRAWDOWN_TIERS[0], warnings
+    dd_pct = (equity - peak) / peak  # negative number
+
+    tier = evaluate_drawdown_tier(dd_pct)
+    if tier.name == "GREEN":
+        return dict(targets), tier, warnings
+
+    mode = drawdown_protocol_mode()
+    warnings.append(
+        f"drawdown_protocol[{mode}]: {tier.label} ({dd_pct*100:+.2f}% "
+        f"from {DD_PEAK_LOOKBACK_DAYS}d peak ${peak:,.0f}). {tier.response}"
+    )
+
+    if mode != "ENFORCING":
+        # ADVISORY mode — log + return targets unchanged
+        return dict(targets), tier, warnings
+
+    # ENFORCING — apply the mechanical response
+    adjusted = dict(targets)
+    if tier.enforce_action == "PAUSE_GROWTH":
+        # Pause new sizing means: don't grow any weight beyond what's
+        # already on the book. We don't have the actual current weights
+        # here so the safest interpretation is "freeze the rebalance
+        # entirely" — same effect as RED in v1. A future v3.73.x can
+        # plumb current_weights through the call signature.
+        warnings.append(
+            "PAUSE_GROWTH semantics in v3.73.2: returns targets "
+            "unchanged but the daily orchestrator is expected to skip "
+            "the rebalance entirely until DD recovers. Wire-up TODO.")
+    elif tier.enforce_action == "HALT_ALL":
+        # The existing -8% halt path in check_account_risk already
+        # halts; this tier reaches that branch and returns proceed=False
+        # before our enforcement runs. So this is informational here.
+        pass
+    elif tier.enforce_action == "TRIM_TO_TOP5":
+        if momentum_ranks and len(momentum_ranks) >= 5:
+            keep = set(momentum_ranks[:5])
+            adjusted = {sym: w for sym, w in targets.items() if sym in keep}
+            # Rescale the kept names to 30% gross total
+            current_gross = sum(adjusted.values())
+            if current_gross > 0:
+                scale = 0.30 / current_gross
+                adjusted = {sym: w * scale for sym, w in adjusted.items()}
+            warnings.append(
+                f"ESCALATION enforced: kept top 5 ({sorted(keep)}); "
+                f"dropped ranks 6-15; rescaled to 30% gross (cash 70%).")
+        else:
+            warnings.append(
+                "ESCALATION wanted to trim to top 5 but momentum_ranks "
+                "weren't provided; returning targets unchanged.")
+    elif tier.enforce_action == "LIQUIDATE_ALL":
+        adjusted = {sym: 0.0 for sym in targets}
+        warnings.append(
+            "CATASTROPHIC enforced: all targets set to 0.0. Daily "
+            "orchestrator is expected to liquidate; manual re-arm "
+            "required after the 30-day cool-off.")
+    return adjusted, tier, warnings
 
 
 def check_account_risk(
