@@ -837,7 +837,7 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.6 · chat-first AI dashboard")
+    st.caption("v3.73.7 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the
@@ -1035,6 +1035,7 @@ with st.sidebar:
             ("📄 Reports", "reports"),
             ("🧰 World-class gaps", "world_class"),
             ("🛡️ Risk roadmap", "risk_roadmap"),
+            ("🏁 Strategy leaderboard", "strategy_leaderboard"),
         ]),
         ("⚙️ System", None, [
             ("🔧 Manual triggers", "manual"),
@@ -6918,6 +6919,160 @@ Each module's docstring cites the underlying paper or methodology. Highlights:
 
 
 # ============================================================
+# v3.73.7 — Strategy leaderboard view
+# ============================================================
+def view_strategy_leaderboard():
+    """Continuous evaluation across the 10 candidate strategies in
+    src/trader/eval_strategies.py. Each strategy's picks are journaled
+    monthly (or daily, when the orchestrator hooks in); forward returns
+    are settled at the next rebalance. The leaderboard aggregates over
+    a configurable lookback.
+
+    The point isn't to pick a winner from a single backtest — it's to
+    keep all 10 running side-by-side as data accumulates so the actual
+    answer crystallizes from realized data, not from priors. This is
+    the answer to "do we have a mechanism to constantly evaluate model
+    performance?"
+    """
+    st.title("🏁 Strategy leaderboard")
+    st.caption(
+        "10 candidate strategies, evaluated on the same universe + "
+        "monthly rebalance, ranked by cumulative active return vs SPY. "
+        "All settled returns persist in journal.strategy_eval; backfill "
+        "covers the last ~19 monthly rebalance windows. The constant-"
+        "eval daemon adds a new row each rebalance."
+    )
+
+    try:
+        from trader.eval_runner import leaderboard, evaluate_at, settle_returns
+        from trader import eval_strategies
+    except Exception as e:
+        st.caption(f"_leaderboard unavailable: {e}_")
+        return
+
+    # Lookback selector
+    lookback = st.selectbox(
+        "Lookback window",
+        [30, 90, 180, 365, 720],
+        index=4,
+        format_func=lambda x: f"{x} days",
+        help="Days of history to aggregate. 720 covers the full ~19-month backfill.",
+    )
+
+    lb = leaderboard(days_back=lookback)
+    if not lb:
+        st.warning("No settled evaluations yet. Run the backfill below.")
+        if st.button("Backfill 30 monthly windows"):
+            from trader.sectors import SECTORS
+            from trader.data import fetch_history
+            import pandas as pd
+            with st.spinner("Backfilling..."):
+                universe = list(SECTORS.keys())
+                end_d = pd.Timestamp.today()
+                start_d = (end_d - pd.DateOffset(months=30)).strftime("%Y-%m-%d")
+                prices = fetch_history(universe + ["SPY"], start=start_d).dropna(axis=1, how="any")
+                month_ends = [
+                    d for d in pd.date_range(start=prices.index[0], end=prices.index[-1], freq="BME")
+                    if d <= prices.index[-1]
+                ]
+                for d in month_ends:
+                    evaluate_at(d, universe, prices=prices.drop(columns=["SPY"], errors="ignore"))
+                for i in range(len(month_ends)):
+                    if i + 1 < len(month_ends):
+                        settle_returns(month_ends[i + 1], prices=prices)
+                settle_returns(prices.index[-1], prices=prices)
+            st.rerun()
+        return
+
+    # Top-of-board: who's winning?
+    leader = lb[0]
+    cols = st.columns(3)
+    with cols[0]:
+        st.metric(
+            "Leader",
+            leader["strategy"],
+            delta=f"+{leader['cum_active_pct']:.2f}pp vs SPY",
+            delta_color="normal",
+            help="Highest cumulative active return over the lookback.",
+        )
+    with cols[1]:
+        st.metric(
+            "Cum portfolio",
+            f"{leader['cum_port_pct']:+.2f}%",
+            help="Leader's cumulative return over the lookback.",
+        )
+    with cols[2]:
+        st.metric(
+            "Cum SPY",
+            f"{leader['cum_spy_pct']:+.2f}%",
+            help="Benchmark cumulative return over the same window.",
+        )
+
+    # Full table
+    rows = [
+        {
+            "rank": i + 1,
+            "strategy": r["strategy"],
+            "n obs": r["n_obs"],
+            "cum active vs SPY": f"{r['cum_active_pct']:+.2f}pp",
+            "cum port": f"{r['cum_port_pct']:+.2f}%",
+            "cum SPY": f"{r['cum_spy_pct']:+.2f}%",
+            "win rate": f"{r['win_rate']*100:.0f}%",
+            "IR": f"{r['ir']:+.2f}",
+        }
+        for i, r in enumerate(lb)
+    ]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    # Honest caveats
+    obs = leader["n_obs"]
+    if obs < 30:
+        st.warning(
+            f"⚠️ Leader has only {obs} settled observations. IR / cum-active "
+            "differences this small are easily within sample noise. **Don't "
+            "act on the rankings yet** — let the table accumulate 30+ obs."
+        )
+    elif obs < 90:
+        st.info(
+            f"ℹ️ {obs} obs — preliminary. Trend signal but not a "
+            "statistical claim. Ranks can flip with one bad month."
+        )
+
+    # Strategy descriptions
+    st.divider()
+    st.subheader("Strategy descriptions")
+    for spec in eval_strategies.all_strategies():
+        st.markdown(f"- **`{spec.name}`** — {spec.description}")
+
+    # Re-run / extend
+    st.divider()
+    with st.expander("Re-evaluate now (against last available date)"):
+        st.caption(
+            "Re-pulls history, re-runs every strategy at the most "
+            "recent month-end, and settles forward returns. Idempotent "
+            "on (asof, strategy)."
+        )
+        if st.button("Re-evaluate"):
+            from trader.sectors import SECTORS
+            from trader.data import fetch_history
+            import pandas as pd
+            with st.spinner("Re-evaluating..."):
+                universe = list(SECTORS.keys())
+                end_d = pd.Timestamp.today()
+                start_d = (end_d - pd.DateOffset(months=18)).strftime("%Y-%m-%d")
+                prices = fetch_history(universe + ["SPY"], start=start_d).dropna(axis=1, how="any")
+                month_ends = [
+                    d for d in pd.date_range(start=prices.index[0], end=prices.index[-1], freq="BME")
+                    if d <= prices.index[-1]
+                ]
+                if month_ends:
+                    evaluate_at(month_ends[-1], universe,
+                                prices=prices.drop(columns=["SPY"], errors="ignore"))
+                settle_returns(prices.index[-1], prices=prices)
+            st.rerun()
+
+
+# ============================================================
 # Main dispatch
 # ============================================================
 VIEW_DISPATCH = {
@@ -6951,6 +7106,7 @@ VIEW_DISPATCH = {
     "manual_override": view_manual_override,
     "world_class": view_world_class,
     "risk_roadmap": view_risk_roadmap,
+    "strategy_leaderboard": view_strategy_leaderboard,
     "earnings_reactor": view_earnings_reactor,
     "filings_archive": view_filings_archive,
     "settings": view_settings,
