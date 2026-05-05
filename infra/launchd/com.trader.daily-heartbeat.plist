@@ -34,8 +34,22 @@
     <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
   </array>
 
+  <!-- v3.73.8 sleep-resilience: pair StartCalendarInterval with
+       StartInterval so missed-on-sleep fires are picked up on the
+       next wake. The check_daily_heartbeat.py script is idempotent
+       (date-stamped marker), so over-firing is harmless. 1800s = 30min;
+       small enough to catch a sleep within an hour, large enough to
+       avoid burning resources on a healthy day. Per the FlexHaul
+       lesson: never use StartCalendarInterval alone. -->
+  <key>StartInterval</key>
+  <integer>1800</integer>
+
+  <!-- v3.73.8: RunAtLoad=true so a missed-overnight heartbeat is
+       backfilled the next time launchd wakes (ie. when laptop opens).
+       Idempotent marker file prevents repeat alerts. Without this,
+       the operator gets the alert hours late at the next 30-min tick. -->
   <key>RunAtLoad</key>
-  <false/>
+  <true/>
 
   <key>StandardOutPath</key>
   <string>/Users/richardchen/Library/Logs/trader-daily-heartbeat.out.log</string>

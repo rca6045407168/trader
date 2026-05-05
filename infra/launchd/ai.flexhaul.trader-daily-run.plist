@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.flexhaul.trader-daily-run</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/richardchen/openclaw-workspace/trader-jobs/run-trader-task.sh</string>
+    <string>trader-daily-run</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>10</integer></dict>
+  </array>
+  <!-- v3.73.8: pair StartCalendarInterval with StartInterval for sleep
+       resilience. The orchestrator is idempotent (start_run() refuses
+       to re-fire if a completed run exists for today), so over-firing
+       is harmless. 3600s = 1hr — enough to catch sleep-skipped fires
+       within an hour of wake without burning resources on a healthy day. -->
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/richardchen/openclaw-workspace/trader-jobs/logs/launchd-trader-daily-run.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/richardchen/openclaw-workspace/trader-jobs/logs/launchd-trader-daily-run.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/richardchen</string>
+    <key>PATH</key><string>/Users/richardchen/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
