@@ -837,7 +837,7 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.3 · chat-first AI dashboard")
+    st.caption("v3.73.4 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the
@@ -6261,6 +6261,34 @@ def view_risk_roadmap():
     )
 
     base = ROOT / "docs"
+
+    # v3.73.4: surface the independent DD memo at the top of this
+    # view. This is the first place an LP would look — putting it
+    # above the to-do list is deliberate. The body is rendered inline
+    # the same way the source docs are, so it's always one click to
+    # re-read against current strategy state.
+    dd_path = base / "DUE_DILIGENCE_2026_05_05.md"
+    if dd_path.exists():
+        st.subheader("🔍 Independent due-diligence (2026-05-05)")
+        st.caption(
+            "Senior-analyst pass on the system as it stands today. "
+            "Dominant finding: operational gap (missed daily runs) "
+            "is the single biggest risk before sized capital. "
+            "Strategy stack is at v3.73; ops stack needs to catch up."
+        )
+        with st.expander("**Read the DD memo**", expanded=False):
+            try:
+                dd_text = dd_path.read_text()
+                if len(dd_text) > 60_000:
+                    dd_text = (dd_text[:60_000]
+                               + "\n\n_...[truncated; "
+                               f"{(len(dd_path.read_text())-60_000)/1024:.0f}KB more "
+                               f"in the file]._")
+                st.markdown(dd_text)
+            except Exception as e:
+                st.caption(f"_render failed: {e}_")
+        st.divider()
+
     docs = [
         {
             "title": "Round-2 synthesis",
