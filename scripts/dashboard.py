@@ -1,4 +1,12 @@
-"""Live local dashboard for the trader (v3.69.0).
+"""Live local dashboard for the trader (v3.69.1).
+
+v3.69.1 — Slack alerts to **prismtrading** workspace. Reactor's
+material-signal alerts (M≥3) now push to BOTH email AND Slack via
+Incoming Webhook (set SLACK_WEBHOOK in .env). Channels are independent
+— email failure doesn't block Slack and vice versa. Either delivering
+counts as success for the notified_at idempotency gate.
+
+Setup: see docs/AUTOMATION.md → Slack alerts section.
 
 v3.69.0 — ReactorSignalRule wires the v3.68.x earnings reactor into
 the rebalance gate. When a held name has a recent (≤14d) M≥4 BEARISH
@@ -538,7 +546,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.69.0 · chat-first AI dashboard")
+    st.caption("v3.69.1 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top

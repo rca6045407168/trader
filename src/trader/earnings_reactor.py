@@ -337,7 +337,11 @@ def _maybe_alert(r: ReactionResult, db_path: Path,
     try:
         from .notify import notify
         result = notify(body, level="info", subject=subject)
-        if not result.get("email"):
+        # v3.69.1: count either channel as successful delivery so we
+        # don't retry every reactor iter when only one channel is
+        # configured (e.g. only email + no Slack webhook yet).
+        delivered = bool(result.get("email") or result.get("slack"))
+        if not delivered:
             return False
     except Exception:
         return False

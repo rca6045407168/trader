@@ -144,6 +144,46 @@ will appear within seconds.
 
 ---
 
+## Slack alerts (prismtrading workspace)
+
+v3.69.1+: reactor alerts now push to **prismtrading** Slack alongside
+email. The webhook is workspace-agnostic — the URL determines which
+workspace + channel receives the message.
+
+### One-time setup
+
+1. Go to https://api.slack.com/apps → **Create New App** → **From
+   scratch**.
+2. Pick the **prismtrading** workspace (you must be an admin there to
+   add apps).
+3. Sidebar → **Incoming Webhooks** → toggle **Activate**.
+4. **Add New Webhook to Workspace** → pick the channel for alerts
+   (e.g. `#alerts` or `#trader-alerts`).
+5. Copy the webhook URL (starts `https://hooks.slack.com/services/T.../B.../xxx`).
+6. Add to your `.env`:
+   ```
+   SLACK_WEBHOOK=https://hooks.slack.com/services/T.../B.../xxx
+   ```
+7. Either restart the reactor daemon (`bash scripts/install_launchd_earnings.sh`)
+   OR wait — the reactor reads SLACK_WEBHOOK at call time, so the next
+   alert will use it once the env is in place.
+
+### What it pushes
+
+Same threshold as email: every M≥3 reactor signal triggers a Slack
+message via Block Kit. Subject becomes a header block; body
+(structured fields + summary + verbatim bull/bear quotes) lands in a
+section as a code block. Both email AND Slack go out per signal —
+either delivering counts as success for idempotency, so unconfigured
+channels never cause retry loops.
+
+### Disabling
+
+Just remove `SLACK_WEBHOOK` from `.env`. Email continues to deliver.
+Or leave both unset for console-only.
+
+---
+
 ## What's NOT automated (yet)
 
 - **News sentiment scoring** — `scripts/news_poller.py --score` exists
@@ -155,6 +195,3 @@ will appear within seconds.
   them when added.
 - **Cross-quarter diff analysis** — "how did NVDA's guidance language
   shift Q1→Q4?" The data is in the archive; the reader isn't built.
-- **Slack/email reactor alerts** — when the reactor flags a M5 (thesis-
-  altering) event, no notification is pushed. Add this when material
-  events become more common in the portfolio.
