@@ -265,3 +265,53 @@ def equal_weight_universe(asof, prices):
         return {}
     w = 0.80 / len(available)
     return {t: w for t in available}
+
+
+# ============================================================
+# 12. Long-short momentum (the structural alpha)
+# ============================================================
+@register("long_short_momentum",
+          "Long top-15 (min-shifted) + short bottom-5 (equal-weighted); "
+          "70% long / 30% short / 40% net")
+def long_short_momentum(asof, prices):
+    """v3.73.12 — the only structural addition that can produce
+    benchmark-beating IR in a 2022-style reversal regime, where pure
+    long-only momentum drawdowns are -25 to -40%.
+
+    Construction:
+      Long  side: 70% gross, top-15 by score, min-shift weighted
+                  (replicates the LIVE production scheme on the
+                  long side, which was the leader of the long-only
+                  comparison).
+      Short side: 30% gross, bottom-5 by score, equal-weight.
+                  Bottom-5 (not bottom-15) because the conviction
+                  on shorts is harder; concentrate on the worst.
+      Net:        +40% gross long exposure (lower beta than the
+                  pure long book's +80%).
+
+    Returns negative weights for short positions. Caller
+    (eval_runner) is intentional that net P&L sums correctly:
+      ret_total = sum_t weight_t * (price_t1 / price_t0 - 1)
+    A short with weight -0.06 on a name that drops 10% contributes
+    -(-0.06) * 0.10 = +0.006 to portfolio return. Already correct.
+    """
+    scored = _score_universe(asof, prices)
+    if len(scored) < 20:
+        return {}
+
+    # Long side (top-15, min-shifted)
+    longs = scored[:15]
+    min_long = min(m for _, m in longs)
+    shifted = [(t, m - min_long + 0.01) for t, m in longs]
+    total_l = sum(s for _, s in shifted)
+    long_weights = (
+        {t: 0.70 * (s / total_l) for t, s in shifted}
+        if total_l > 0 else {t: 0.70 / len(longs) for t, _ in longs}
+    )
+
+    # Short side (bottom-5, equal-weight, negative)
+    shorts = scored[-5:]
+    short_weights = {t: -0.30 / len(shorts) for t, _ in shorts}
+
+    # Combine
+    return {**long_weights, **short_weights}

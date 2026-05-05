@@ -23,13 +23,14 @@ ROOT = Path(__file__).resolve().parent.parent
 # ============================================================
 # Registry
 # ============================================================
-def test_eleven_strategies_registered():
-    """v3.73.11: 10 candidates + 1 production-replica (xs_top15_min_shifted)
-    so the leaderboard compares apples-to-apples against the LIVE variant."""
+def test_twelve_strategies_registered():
+    """v3.73.12: 10 candidates + 1 production-replica + 1 long-short.
+    Total 12 strategies so the leaderboard tests selection × weighting ×
+    structure (long-only vs long-short)."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 11, \
-        f"expected 11 strategies, got {len(specs)}: {[s.name for s in specs]}"
+    assert len(specs) == 12, \
+        f"expected 12 strategies, got {len(specs)}: {[s.name for s in specs]}"
 
 
 def test_canonical_strategy_names_present():
@@ -40,8 +41,33 @@ def test_canonical_strategy_names_present():
         "xs_top8", "xs_top25", "score_weighted_xs", "inv_vol_xs",
         "dual_momentum", "sector_rotation_top3", "equal_weight_universe",
         "xs_top15_min_shifted",  # v3.73.11 production-replica
+        "long_short_momentum",    # v3.73.12 structural addition
     }
     assert names == expected, f"missing: {expected - names}, extra: {names - expected}"
+
+
+def test_long_short_returns_negative_weights():
+    """The short side must produce negative weights so the eval
+    runner's `weight * (p1/p0 - 1)` accounting works correctly."""
+    import pandas as pd
+    import numpy as np
+    from trader.eval_strategies import long_short_momentum
+    from trader.sectors import SECTORS
+
+    np.random.seed(7)
+    cols = list(SECTORS.keys())[:30]
+    dates = pd.bdate_range("2025-01-01", periods=350)
+    data = 100 * np.cumprod(1 + np.random.randn(len(dates), len(cols)) * 0.01, axis=0)
+    prices = pd.DataFrame(data, index=dates, columns=cols)
+
+    picks = long_short_momentum(dates[-1], prices)
+    longs = {t: w for t, w in picks.items() if w > 0}
+    shorts = {t: w for t, w in picks.items() if w < 0}
+    assert len(longs) == 15, f"expected 15 longs, got {len(longs)}"
+    assert len(shorts) == 5, f"expected 5 shorts, got {len(shorts)}"
+    # Net gross: 0.70 long - 0.30 short = 0.40 net
+    assert abs(sum(longs.values()) - 0.70) < 1e-3
+    assert abs(sum(shorts.values()) + 0.30) < 1e-3
 
 
 def test_each_strategy_has_description():
@@ -117,14 +143,14 @@ def test_evaluate_at_inserts_rows_and_is_idempotent(tmp_path, monkeypatch):
     db = tmp_path / "j.db"
     asof = dates[-1]
     n1 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
-    assert n1 == 11, f"first call should insert 11 rows; got {n1}"
+    assert n1 == 12, f"first call should insert 12 rows; got {n1}"
     n2 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
     assert n2 == 0, f"second call should be idempotent; got {n2} new rows"
 
     con = sqlite3.connect(db)
     total = con.execute("SELECT COUNT(*) FROM strategy_eval").fetchone()[0]
     con.close()
-    assert total == 11
+    assert total == 12
 
 
 def test_settle_returns_only_settles_unsettled_rows(tmp_path):
