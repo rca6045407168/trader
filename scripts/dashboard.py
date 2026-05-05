@@ -1,4 +1,24 @@
-"""Live local dashboard for the trader (v3.73.2).
+"""Live local dashboard for the trader (v3.73.3).
+
+v3.73.3 — Risk roadmap dashboard view. Surfaces the 6 Round-2
+advisory-swarm docs (RISK_FRAMEWORK / ADVERSARIAL_THREAT_MODEL /
+TAIL_RISK_PLAYBOOK / FUND_FAILURE_CASE_STUDIES /
+INFORMATION_THEORY_ALPHA + the synthesis) inside the dashboard,
+and tracks the prioritized Block A pre-LIVE TODO list with auto-
+resolved 'shipped / pending' status — each Block A item checks
+for an implementation artifact (file existence, function presence,
+constant value) so future commits flip status without editing this
+view.
+
+Block A status today:
+  ✅ #2 hash-pinned deps (resolved by detecting --hash=sha256: in
+        requirements.txt)
+  ⬜ #3 four-threshold drawdown protocol (✓ shipped in v3.73.2 —
+        flips to ✅ on next dashboard reload)
+  ⬜ #6 cron heartbeat (✓ shipped in v3.73.0)
+  Other items pending or v5-specific.
+
+Adds 🛡️ Risk roadmap to the Diagnostics nav group.
 
 v3.73.2 — Four-threshold drawdown protocol (Round-2 Block A item #3).
 Per docs/RISK_FRAMEWORK.md §6, extends the existing single -8% kill
@@ -817,7 +837,7 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.2 · chat-first AI dashboard")
+    st.caption("v3.73.3 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the
@@ -1014,6 +1034,7 @@ with st.sidebar:
             ("📜 Postmortems", "postmortems"),
             ("📄 Reports", "reports"),
             ("🧰 World-class gaps", "world_class"),
+            ("🛡️ Risk roadmap", "risk_roadmap"),
         ]),
         ("⚙️ System", None, [
             ("🔧 Manual triggers", "manual"),
@@ -6214,6 +6235,275 @@ def view_manual_override():
 # View: World-class gaps (v3.58.0) — surfaces every item from the
 # "if you were a world-class trader, what's still missing" review.
 # ============================================================
+def view_risk_roadmap():
+    """v3.73.3: surface the Round-2 advisory swarm's 6 docs +
+    Block A/B/C status. The user asked me to integrate the docs that
+    got swept into the v3.72.1 commit; this is their landing page.
+
+    Each Block A item is checked off as the corresponding code lands.
+    Block B is "strongly recommended pre-LIVE" — those need the v5
+    multi-sleeve work before they make sense. Block C is post-LIVE
+    polish.
+
+    Status flags resolve dynamically by checking for the
+    implementation artifact (file existence, function presence,
+    constant values). When a future commit ships an item, the status
+    flips automatically without needing to edit this view.
+    """
+    st.title("🛡️ Risk roadmap")
+    st.caption(
+        "Round-2 advisory swarm output (May 2026), routed into the "
+        "trader's existing build sequence. Synthesizes CRO / red-team "
+        "/ catastrophe-modeler / historian / information-theorist "
+        "lenses into one prioritized to-do list. "
+        "[ROUND_2_SYNTHESIS.md](../docs/ROUND_2_SYNTHESIS.md) is the "
+        "anchor doc; the other five are referenced from it."
+    )
+
+    base = ROOT / "docs"
+    docs = [
+        {
+            "title": "Round-2 synthesis",
+            "lens": "Cross-cutting",
+            "file": "ROUND_2_SYNTHESIS.md",
+            "summary": "Routes the five expert-lens docs into the "
+                       "existing v5 build sequence. Resolves three "
+                       "Round-1 / Round-2 contradictions. Single "
+                       "prioritized TODO list.",
+        },
+        {
+            "title": "Risk framework",
+            "lens": "CRO / risk officer",
+            "file": "RISK_FRAMEWORK.md",
+            "summary": "Per-sleeve gross caps, factor exposure budgets, "
+                       "scenario-conditional sizing, four-threshold "
+                       "drawdown protocol, time-under-water tracking.",
+        },
+        {
+            "title": "Adversarial threat model",
+            "lens": "Red-team / offensive security",
+            "file": "ADVERSARIAL_THREAT_MODEL.md",
+            "summary": "PyPI supply chain as the realistic attack chain, "
+                       "prompt injection on LLM-in-path, mitigation "
+                       "order with ~25 hours of free tooling.",
+        },
+        {
+            "title": "Tail risk playbook",
+            "lens": "Catastrophe modeler / actuary",
+            "file": "TAIL_RISK_PLAYBOOK.md",
+            "summary": "EVT / GPD / POT for VRP sizing. Return-period "
+                       "thinking. Ergodicity argument. Recommends "
+                       "tightening VRP from 15% → 10-12% baseline.",
+        },
+        {
+            "title": "Fund failure case studies",
+            "lens": "Financial historian",
+            "file": "FUND_FAILURE_CASE_STUDIES.md",
+            "summary": "12 case studies (LTCM, Amaranth, ARKK, Tiger, "
+                       "GLG, etc.) mapped to mechanism classes. Five "
+                       "lessons most applicable to v5 retail scale.",
+        },
+        {
+            "title": "Information theory of alpha",
+            "lens": "Information theorist / Bayesian",
+            "file": "INFORMATION_THEORY_ALPHA.md",
+            "summary": "Mutual-information pre-screen for sleeves. "
+                       "McLean-Pontiff Bayesian prior for promotion. "
+                       "MI half-life decay tracking as the missing "
+                       "alpha-decay gate.",
+        },
+    ]
+
+    st.subheader("📚 Source docs")
+    for d in docs:
+        path = base / d["file"]
+        size_kb = (path.stat().st_size / 1024) if path.exists() else 0
+        with st.expander(
+            f"**{d['title']}** ({d['lens']}) · "
+            f"{d['file']} · {size_kb:.0f}KB",
+        ):
+            st.markdown(f"_TL;DR: {d['summary']}_")
+            if path.exists():
+                # v3.73.3: render the doc inline so the user reads it
+                # without leaving the dashboard. Large docs (>1500
+                # lines) get truncated with a hint to open the file
+                # directly; tighter render keeps Streamlit responsive.
+                try:
+                    text = path.read_text()
+                    if len(text) > 60_000:
+                        text = (text[:60_000]
+                                + "\n\n_...[truncated; "
+                                f"{(len(path.read_text())-60_000)/1024:.0f}KB more "
+                                f"in the file]._")
+                    st.markdown(text)
+                except Exception as e:
+                    st.caption(f"_render failed: {e}_")
+            else:
+                st.caption(
+                    f"_{d['file']} not found at {path} — the docs/ "
+                    f"directory may not have been copied into the "
+                    f"container at image build (Dockerfile.dashboard "
+                    f"line: `COPY --chown=trader:trader docs/ ./docs/`)_"
+                )
+
+    st.divider()
+
+    # Block A — pre-LIVE mandatory
+    st.subheader("🚧 Block A — pre-LIVE mandatory (~30h total)")
+    block_a_items = _resolve_roadmap_status_block_a()
+    rows_a = [
+        {
+            "✓": "✅" if it["done"] else "⬜",
+            "item": it["title"],
+            "hours": it["hours"],
+            "status": it["status"],
+        }
+        for it in block_a_items
+    ]
+    st.dataframe(rows_a, use_container_width=True, hide_index=True)
+    n_done_a = sum(1 for it in block_a_items if it["done"])
+    st.caption(f"_{n_done_a} of {len(block_a_items)} items shipped._")
+
+    st.divider()
+
+    # Block B — strongly recommended (v5-multi-sleeve specific, mostly)
+    st.subheader("📋 Block B — strongly recommended pre-LIVE (~30h)")
+    st.markdown(
+        "Most items here are v5 multi-sleeve work (per-sleeve gross "
+        "caps, factor exposure budgets, MI cross-sleeve check). "
+        "They make sense AFTER v5 lands its first live sleeve.\n\n"
+        "- Per-sleeve gross caps + factor exposure budgets (8h)\n"
+        "- Scenario-conditional sizing rules (6h + 6h CPCV)\n"
+        "- Tier 1 stress regimes — expand REGIMES tuple from 5 to 9 (varies)\n"
+        "- Knight-Capital deployment gate (4h)\n"
+        "- MI cross-sleeve independence check (6h)"
+    )
+
+    st.divider()
+
+    # Block C — post-LIVE
+    st.subheader("📅 Block C — post-LIVE polish (~50h)")
+    st.markdown(
+        "- Pairwise MI half-life monitoring weekly (6h)\n"
+        "- Tier 2 + Tier 3 + scripted scenarios from SCENARIO_LIBRARY (12h)\n"
+        "- Property-based testing on VRP invariants via Hypothesis (8h)\n"
+        "- TCA / live fill audit on momentum sleeve (6h)\n"
+        "- Mutation testing baseline via mutmut (4h)\n"
+        "- Schema-strict Pandera validation (8h)\n"
+        "- External human review of methodology (4h)\n"
+        "- Public pre-registration of v5 results (2h)"
+    )
+
+    st.divider()
+
+    # Honest framing
+    st.subheader("📐 Honest framing")
+    st.markdown(
+        "_From [ROUND_2_SYNTHESIS.md](../docs/ROUND_2_SYNTHESIS.md):_\n\n"
+        "> 127 hours on a $10k Roth at +0.4 expected Sharpe lift "
+        "produces ~$400-800/year of additional return. The same "
+        "hours on FlexHaul GTM at pre-seed produce orders of "
+        "magnitude more value. The honest framing of v5 remains: "
+        "this is a learning / discipline / hobby asset, valuable "
+        "for what it teaches but not a wealth-creation asset until "
+        "it scales beyond the IRA cap with multi-year LIVE Sharpe "
+        "evidence."
+    )
+
+
+def _resolve_roadmap_status_block_a() -> list[dict]:
+    """Map each Block A item to a 'shipped / pending' boolean by
+    checking for the implementation artifact. As future commits ship
+    items, this view auto-updates without manual edits."""
+    status: list[dict] = []
+
+    # Item 1: Days-1-3 security mitigations (operational, not code).
+    # No code artifact to check; mark as pending until manually flipped.
+    status.append({
+        "title": "1. Days-1-3 security mitigations (rotate keys, etc.)",
+        "hours": "3h",
+        "done": False,
+        "status": "operational task — no code artifact",
+    })
+
+    # Item 2: Hash-pinned dependencies. Check for requirements.txt
+    # with --require-hashes-style hashes.
+    req_file = ROOT / "requirements.txt"
+    has_hashes = False
+    if req_file.exists():
+        text = req_file.read_text()
+        has_hashes = "--hash=sha256:" in text
+    status.append({
+        "title": "2. Hash-pinned dependencies (`pip-tools --require-hashes`)",
+        "hours": "2h",
+        "done": has_hashes,
+        "status": "✓ shipped" if has_hashes else "pending",
+    })
+
+    # Item 3: Four-threshold drawdown protocol (v3.73.2)
+    rm_file = ROOT / "src" / "trader" / "risk_manager.py"
+    has_4tier = (rm_file.exists()
+                 and "DRAWDOWN_ESCALATION_PCT" in rm_file.read_text())
+    status.append({
+        "title": "3. Four-threshold drawdown protocol "
+                 "(-5/-8/-12/-15 + response actions)",
+        "hours": "4h",
+        "done": has_4tier,
+        "status": "✓ shipped in v3.73.2" if has_4tier else "pending",
+    })
+
+    # Item 4: GPD tail-VaR gate. v5-specific (VRP sleeve).
+    has_gpd = (ROOT / "src" / "trader" / "tail_var.py").exists()
+    status.append({
+        "title": "4. GPD tail-VaR gate (`pyextremes` / scipy GPD)",
+        "hours": "10h",
+        "done": has_gpd,
+        "status": ("✓ shipped" if has_gpd
+                   else "pending — v5-specific (gates VRP entry)"),
+    })
+
+    # Item 5: MI pre-screen for candidate sleeves
+    has_mi = (ROOT / "src" / "trader" / "mi_screen.py").exists()
+    status.append({
+        "title": "5. MI pre-screen (mutual information on signal/return)",
+        "hours": "4h",
+        "done": has_mi,
+        "status": ("✓ shipped" if has_mi
+                   else "pending — v5-specific (kills sleeves before CPCV)"),
+    })
+
+    # Item 6: Cron heartbeat alert (v3.73.0)
+    has_heartbeat = (ROOT / "scripts"
+                     / "check_daily_heartbeat.py").exists()
+    status.append({
+        "title": "6. Cron heartbeat alert (daily run actually fired?)",
+        "hours": "2h",
+        "done": has_heartbeat,
+        "status": "✓ shipped in v3.73.0" if has_heartbeat else "pending",
+    })
+
+    # Item 7: VRP allocation reduction. v5-specific config.
+    status.append({
+        "title": "7. VRP allocation reduction to 12% baseline + regime taper",
+        "hours": "1h",
+        "done": False,
+        "status": "pending — v5-specific (VRP sleeve config)",
+    })
+
+    # Item 8: LLM input sanitization
+    copilot_file = ROOT / "src" / "trader" / "copilot.py"
+    has_sanitize = (copilot_file.exists()
+                    and "sanitize" in copilot_file.read_text().lower())
+    status.append({
+        "title": "8. LLM input sanitization (prompt-injection regex guard)",
+        "hours": "4h",
+        "done": has_sanitize,
+        "status": "✓ shipped" if has_sanitize else "pending",
+    })
+
+    return status
+
+
 def view_world_class():
     st.title("🧰 World-class gaps — what's still missing")
     st.caption(
@@ -6340,6 +6630,7 @@ VIEW_DISPATCH = {
     "manual": view_manual,
     "manual_override": view_manual_override,
     "world_class": view_world_class,
+    "risk_roadmap": view_risk_roadmap,
     "earnings_reactor": view_earnings_reactor,
     "filings_archive": view_filings_archive,
     "settings": view_settings,
