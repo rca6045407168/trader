@@ -837,7 +837,7 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.7 · chat-first AI dashboard")
+    st.caption("v3.73.10 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the
@@ -5381,6 +5381,117 @@ See `docs/BEST_PRACTICES.md` § 3 for the full narrative.
 # View: Earnings reactor (v3.68.0) — Claude-flagged signals from
 # newly-filed 8-Ks for our LIVE positions
 # ============================================================
+def _render_reactor_validation_panel() -> None:
+    """v3.73.10: Show forward-return outcomes for every reactor signal.
+    Reads from reactor_signal_outcomes (populated by validate_reactor.py).
+    Honest sample-size warnings when n<10 per direction.
+
+    Closes the v3.73.4 DD's gap: "reactor signals haven't been
+    measured against forward returns. We have 13 signals, 1 M3 — but
+    no test or measurement that verifies the M3 was *correct*."
+    """
+    import sqlite3
+    from pathlib import Path
+    db = Path(__file__).resolve().parent.parent / "data" / "journal.db"
+
+    st.subheader("✅ Signal validation")
+    st.caption(
+        "Per-signal forward returns vs SPY. The reactor is the "
+        "load-bearing test of \"event-driven alpha\" — without "
+        "measuring this, we can't tell whether to flip the rule "
+        "from SHADOW to LIVE."
+    )
+
+    try:
+        con = sqlite3.connect(db)
+        rows = con.execute(
+            """SELECT symbol, filed_at, direction, materiality,
+                      ret_1d, ret_5d, ret_20d, active_5d, active_20d
+               FROM reactor_signal_outcomes ORDER BY filed_at DESC"""
+        ).fetchall()
+        con.close()
+    except Exception as e:
+        st.caption(f"_outcomes table unavailable: {e} — "
+                   f"run `python scripts/validate_reactor.py` to populate_")
+        return
+
+    if not rows:
+        st.info(
+            "No outcomes yet. Run `python scripts/validate_reactor.py` "
+            "to populate the outcomes table from earnings_signals."
+        )
+        return
+
+    # Aggregate by direction
+    from collections import defaultdict
+    agg5: dict[str, list[float]] = defaultdict(list)
+    for r in rows:
+        direction, _mat, _r1, _r5, _r20, a5, _a20 = r[2:]
+        if a5 is not None:
+            agg5[direction].append(a5)
+
+    # Top KPI: per-direction mean active 5d
+    if agg5:
+        cols = st.columns(len(agg5))
+        for col, (direction, vals) in zip(cols, agg5.items()):
+            n = len(vals); mean = sum(vals) / n
+            pos = sum(1 for v in vals if v > 0)
+            with col:
+                st.metric(
+                    f"{direction} (5d)",
+                    f"{mean:+.2f}pp vs SPY",
+                    delta=f"{pos}/{n} positive",
+                    delta_color="off",
+                )
+
+    # Sample-size warning
+    total_settled = sum(len(v) for v in agg5.values())
+    if total_settled < 10:
+        st.warning(
+            f"⚠️ Only {total_settled} signals have settled 5d returns. "
+            "Far below the minimum for a statistical claim about the "
+            "reactor's edge. **Keep the rule in SHADOW**; let the "
+            "table accumulate before considering a flip."
+        )
+
+    # Per-signal table (recent first)
+    rows_data = [
+        {
+            "symbol": r[0],
+            "filed": r[1][:10] if r[1] else "?",
+            "direction": r[2],
+            "M": r[3] if r[3] is not None else "?",
+            "1d": f"{r[4]:+.2f}%" if r[4] is not None else "—",
+            "5d": f"{r[5]:+.2f}%" if r[5] is not None else "—",
+            "20d": f"{r[6]:+.2f}%" if r[6] is not None else "—",
+            "alpha 5d": f"{r[7]:+.2f}pp" if r[7] is not None else "—",
+            "alpha 20d": f"{r[8]:+.2f}pp" if r[8] is not None else "—",
+        }
+        for r in rows
+    ]
+    with st.expander(f"Per-signal outcomes ({len(rows)} signals)"):
+        st.dataframe(rows_data, use_container_width=True, hide_index=True)
+
+    # Refresh button
+    col_a, _ = st.columns([1, 3])
+    with col_a:
+        if st.button("Re-validate reactor signals"):
+            import subprocess
+            from pathlib import Path
+            with st.spinner("Running validation..."):
+                root = Path(__file__).resolve().parent.parent
+                result = subprocess.run(
+                    [str(root / ".venv" / "bin" / "python"),
+                     str(root / "scripts" / "validate_reactor.py")],
+                    capture_output=True, text=True, timeout=120,
+                )
+            if result.returncode == 0:
+                st.success(result.stdout.strip().split("\n")[-1])
+            else:
+                st.error(result.stderr[-500:])
+            st.rerun()
+
+
 def view_earnings_reactor():
     st.title("📞 Earnings reactor")
     st.caption(
@@ -5389,6 +5500,13 @@ def view_earnings_reactor():
         "100-page-doc → structured-thesis time. **Decision still human.** "
         "See [GLOSSARY.md](../docs/GLOSSARY.md) for the workflow."
     )
+
+    # v3.73.10: signal-validation panel. Closes the v3.73.4 DD's named
+    # gap ("reactor signals un-validated against forward returns").
+    # Reads reactor_signal_outcomes (populated by scripts/validate_reactor.py)
+    # and shows aggregate stats by direction × materiality.
+    _render_reactor_validation_panel()
+    st.divider()
 
     try:
         from trader.earnings_reactor import recent_signals
