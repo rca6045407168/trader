@@ -1,6 +1,16 @@
-"""Strategy orchestrator. Combines momentum (trend-riding) with bottom-catching."""
+"""Strategy orchestrator. Combines momentum (trend-riding) with bottom-catching.
+
+v3.73.5: adds rank_vertical_winner — selects the top-1 momentum name
+within each sector, gated by an absolute-momentum floor (don't own a
+sector if its winner has negative trailing return). Per the v3.73.4
+DD analysis, vertical-winner produced Sharpe 1.54 vs cross-sectional
+XS top-15's 1.15 on 18 months of our universe — the edge is dominantly
+vol reduction (3.91% monthly stdev vs 5.34%), not return. We ship it
+as a feature-flagged second mode so we can collect 90 days of in-prod
+comparison before any switch.
+"""
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Optional
 import pandas as pd
 
 from .data import fetch_history, fetch_ohlcv
@@ -83,6 +93,105 @@ def rank_momentum(
                 rationale={"trailing_return": round(m, 4),
                             "lookback_months": lookback_months,
                             "as_of": end_str},
+                atr_pct=atr_pct,
+            )
+        )
+    return out
+
+
+def rank_vertical_winner(
+    universe: list[str],
+    lookback_months: int = 12,
+    skip_months: int = 1,
+    absolute_momentum_floor: float = 0.0,
+    end_date: pd.Timestamp | str | None = None,
+) -> list[Candidate]:
+    """v3.73.5 — Select the top-1 momentum name within each sector.
+
+    Selection rule:
+      1. Score every name in the universe with the same 12-1 momentum
+         signal as rank_momentum.
+      2. Group by sector (via trader.sectors.get_sector).
+      3. Within each sector, pick the highest-scoring name.
+      4. Apply the absolute-momentum floor: if the picked name's score
+         is below `absolute_momentum_floor`, skip the sector. This is
+         the "don't own a broken sector" guard — the difference between
+         this rule and a naive sector-rotation that's always 100%
+         invested.
+
+    Returns a list of Candidate (one per sector that passed the floor).
+
+    The empirical result on our universe (18 months, 2024-10 → 2026-04):
+      - Sharpe 1.54 (XS top-15: 1.15)
+      - Max monthly DD -6.79% (XS top-15: -10.54%)
+      - Cumulative return 34.56% (XS top-15: 34.30%)
+
+    Caveat: 18 obs, single regime. We feature-flag this mode behind
+    STRATEGY_MODE=VERTICAL_WINNER for in-prod comparison. See
+    docs/DUE_DILIGENCE_2026_05_05.md §"What I think we should actually
+    ship" for the analysis.
+    """
+    from .sectors import get_sector  # avoid circular import on package init
+
+    if end_date is None:
+        end = pd.Timestamp.today()
+    else:
+        end = pd.Timestamp(end_date) if not isinstance(end_date, pd.Timestamp) else end_date
+    start = (end - pd.DateOffset(months=lookback_months + skip_months + 2)).strftime("%Y-%m-%d")
+    end_str = end.strftime("%Y-%m-%d")
+
+    prices = fetch_history(universe, start=start)
+    if end_date is not None and not prices.empty:
+        prices = prices[prices.index <= end]
+
+    # Score all names
+    scored: list[tuple[str, float, str]] = []
+    for t in universe:
+        if t not in prices.columns:
+            continue
+        s = prices[t].dropna()
+        m = momentum_score(s, lookback_months, skip_months)
+        if not pd.isna(m):
+            scored.append((t, float(m), get_sector(t)))
+
+    # Within each sector, pick the highest-scoring name above the floor
+    best_per_sector: dict[str, tuple[str, float]] = {}
+    for ticker, score, sector in scored:
+        if score < absolute_momentum_floor:
+            continue
+        if sector not in best_per_sector or score > best_per_sector[sector][1]:
+            best_per_sector[sector] = (ticker, score)
+
+    # Build Candidate objects (with ATR like rank_momentum)
+    out: list[Candidate] = []
+    for sector, (ticker, score) in sorted(
+        best_per_sector.items(), key=lambda x: -x[1][1]
+    ):
+        atr_pct = 0.0
+        try:
+            ohlc = fetch_ohlcv(ticker, start=start)
+            if end_date is not None and not ohlc.empty:
+                ohlc = ohlc[ohlc.index <= end]
+            if not ohlc.empty:
+                a = atr(ohlc)
+                last_close = float(ohlc["Close"].iloc[-1])
+                atr_pct = a / last_close if last_close else 0.0
+        except Exception:
+            pass
+        out.append(
+            Candidate(
+                ticker=ticker,
+                action="BUY",
+                style="MOMENTUM",
+                score=score,
+                rationale={
+                    "trailing_return": round(score, 4),
+                    "lookback_months": lookback_months,
+                    "as_of": end_str,
+                    "selection": "vertical_winner",
+                    "sector": sector,
+                    "absolute_momentum_floor": absolute_momentum_floor,
+                },
                 atr_pct=atr_pct,
             )
         )

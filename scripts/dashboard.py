@@ -837,7 +837,7 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.4 · chat-first AI dashboard")
+    st.caption("v3.73.5 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the
@@ -1736,6 +1736,113 @@ def _render_drawdown_protocol_panel() -> None:
         )
 
 
+def _render_portfolio_caps_panel() -> None:
+    """v3.73.5: surface whether the 8% single-name + 25% sector caps
+    are binding on the live book right now. Reads the live portfolio,
+    computes weights, and applies the caps as if rebalancing today —
+    without actually mutating anything. Output:
+
+      - Pre-cap top-3 names + top-3 sectors
+      - Which cap (if any) bound, and on what
+      - Post-cap deltas
+
+    The DD analysis (v3.73.4) showed the sector cap is binding (Tech
+    @ 28-29% in our universe; cap at 25%); the name cap was claimed
+    non-binding at top-15 equal-weight, but on the LIVE book it IS
+    binding because positions drift past their initial weights via
+    market action. CAT is currently 10.9% — over the 8% cap.
+    """
+    st.subheader("📐 Concentration caps")
+    st.caption(
+        "8% single-name cap, 25% sector cap. Applied at score-to-"
+        "weight conversion. Per the v3.73.4 DD: the sector cap is the "
+        "binding one and primarily reduces vol/DD without sacrificing "
+        "return; the name cap is defensive against future weight drift."
+    )
+
+    try:
+        from trader.positions_live import fetch_live_portfolio
+        from trader.portfolio_caps import (
+            apply_portfolio_caps,
+            SINGLE_NAME_CAP_PCT, SECTOR_CAP_PCT,
+        )
+        from trader.sectors import get_sector
+    except Exception as e:
+        st.caption(f"_panel unavailable: {e}_")
+        return
+
+    p = fetch_live_portfolio()
+    if not p.positions or not p.equity:
+        st.caption("_no live positions to evaluate_")
+        return
+
+    pre = {
+        pos.symbol: (pos.market_value or 0) / p.equity
+        for pos in p.positions
+        if pos.market_value
+    }
+    res = apply_portfolio_caps(pre, get_sector,
+                                name_cap=SINGLE_NAME_CAP_PCT,
+                                sector_cap=SECTOR_CAP_PCT)
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric(
+            "Max single name",
+            f"{res.pre_cap_max_name*100:.1f}%",
+            delta=(f"{(res.post_cap_max_name - res.pre_cap_max_name)*100:+.1f}pp"
+                   if res.name_cap_bound else None),
+            delta_color="inverse" if res.name_cap_bound else "off",
+        )
+    with c2:
+        st.metric(
+            "Max sector",
+            f"{res.pre_cap_max_sector*100:.1f}% ({res.pre_cap_max_sector_name})",
+            delta=(f"{(res.post_cap_max_sector - res.pre_cap_max_sector)*100:+.1f}pp"
+                   if res.sector_cap_bound else None),
+            delta_color="inverse" if res.sector_cap_bound else "off",
+        )
+    with c3:
+        binding = []
+        if res.name_cap_bound: binding.append("name")
+        if res.sector_cap_bound: binding.append("sector")
+        st.metric(
+            "Caps binding",
+            ", ".join(binding) if binding else "none",
+            delta=(f"{res.redistributed_pct*100:.1f}pp redistributed"
+                   if binding else None),
+            delta_color="off",
+        )
+
+    if res.name_cap_bound or res.sector_cap_bound:
+        st.info(f"**Cap result:** {res.summary()}")
+    else:
+        st.success(
+            "**No cap binding.** The book is currently within the "
+            "8% / 25% limits."
+        )
+
+    # Show top names that would change at the next rebalance
+    deltas = {
+        t: res.targets[t] - pre[t]
+        for t in pre
+        if abs(res.targets[t] - pre[t]) > 1e-4
+    }
+    if deltas:
+        rows = [
+            {
+                "ticker": t,
+                "sector": get_sector(t),
+                "current %": f"{pre[t]*100:.2f}%",
+                "post-cap %": f"{res.targets[t]*100:.2f}%",
+                "Δ pp": f"{(res.targets[t] - pre[t])*100:+.2f}",
+            }
+            for t in sorted(deltas, key=lambda x: -abs(deltas[x]))
+        ]
+        with st.expander("Per-name change at next rebalance"):
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
 def view_overview():
     st.title("🏠 Overview")
     st.caption("Headline metrics + sector heatmap + last 5 runs.")
@@ -1752,6 +1859,15 @@ def view_overview():
     # without mutating targets. Caller flips to ENFORCING via env when
     # comfortable.
     _render_drawdown_protocol_panel()
+
+    st.divider()
+
+    # v3.73.5: portfolio concentration caps panel. Surfaces whether
+    # the 8% single-name cap and 25% sector cap are binding RIGHT NOW
+    # on the live book (vs. the equal-weighted top-15 the strategy
+    # would produce on the next rebalance). Without this surface, the
+    # operator can't tell whether the cap is doing real work.
+    _render_portfolio_caps_panel()
 
     st.divider()
 

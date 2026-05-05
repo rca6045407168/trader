@@ -126,13 +126,46 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
             live = None
 
     if live is None or not momentum_targets:
-        # Fallback: legacy TOP_N path
-        if momentum:
+        # Fallback: legacy TOP_N path. v3.73.5 adds STRATEGY_MODE env
+        # selection (XS = cross-sectional top-N, the default; or
+        # VERTICAL_WINNER = top-1-per-sector with absolute-momentum
+        # floor). Vertical-winner is feature-flagged for production
+        # A/B per the v3.73.4 DD recommendation.
+        import os
+        strategy_mode = os.environ.get("STRATEGY_MODE", "XS").upper()
+        if strategy_mode == "VERTICAL_WINNER":
+            from .strategy import rank_vertical_winner
+            vw_picks = rank_vertical_winner(universe)
+            print(f"  -> STRATEGY_MODE=VERTICAL_WINNER selected "
+                  f"{len(vw_picks)} sector-winners: "
+                  f"{[c.ticker for c in vw_picks]}")
+            if vw_picks:
+                per = momentum_alloc / len(vw_picks)
+                for c in vw_picks:
+                    momentum_targets[c.ticker] = momentum_targets.get(c.ticker, 0) + per
+                    log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None,
+                                 final=f"AUTO_BUY @ {per*100:.1f}% (vertical_winner)")
+        elif momentum:
             per = momentum_alloc / len(momentum)
             for c in momentum:
                 momentum_targets[c.ticker] = momentum_targets.get(c.ticker, 0) + per
                 log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None,
                              final=f"AUTO_BUY @ {per*100:.1f}%")
+
+    # v3.73.5: apply portfolio caps (8% single-name, 25% sector). Per
+    # the DD analysis, the sector cap is the binding one today (live
+    # book is 28.4% Tech). The name cap is defensive for any future
+    # move to top-N < 12 or score-weighted sizing. apply_portfolio_caps
+    # is a no-op when no cap binds.
+    if momentum_targets:
+        from .portfolio_caps import apply_portfolio_caps
+        from .sectors import get_sector
+        cap_result = apply_portfolio_caps(
+            momentum_targets, get_sector,
+        )
+        if cap_result.name_cap_bound or cap_result.sector_cap_bound:
+            print(f"  -> portfolio caps: {cap_result.summary()}")
+            momentum_targets = cap_result.targets
 
     approved_bottoms: list[dict] = []
     for c in bottoms[:MAX_BOTTOMS_TO_DEBATE]:
