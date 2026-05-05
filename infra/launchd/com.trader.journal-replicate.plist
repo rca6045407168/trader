@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  v3.73.9 — Daily journal replication to iCloud Drive.
+
+  Closes the v3.73.4 DD's Tier-1 ops gap: "if the laptop dies, the
+  journal dies with it." Backs up data/journal.db to iCloud Drive
+  daily at 23:00 local (after the daily orchestrator has written
+  its row), keeps 7 daily + 4 weekly snapshots.
+
+  Pairs StartCalendarInterval with StartInterval (1hr) for sleep-
+  resilience per the FlexHaul launchd lesson. Uses sqlite3 .backup
+  command for transactional consistency — safe even while the
+  dashboard or daily orchestrator is mid-write.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trader.journal-replicate</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/richardchen/trader/scripts/replicate_journal.sh</string>
+  </array>
+
+  <!-- Fire daily at 23:00 local. Daily orchestrator runs at 13:10
+       UTC = 9:10 ET, so by 23:00 ET we have today's row to back up. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>23</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <!-- v3.73.9 sleep-resilience (FlexHaul lesson): pair calendar with
+       interval. The script is idempotent (overwrites today's snapshot)
+       so over-firing is harmless. -->
+  <key>StartInterval</key>
+  <integer>3600</integer>
+
+  <!-- Backfill on boot if we missed last night -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/richardchen/Library/Logs/trader-journal-replicate.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/richardchen/Library/Logs/trader-journal-replicate.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/richardchen</string>
+    <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/richardchen/trader</string>
+
+  <key>ProcessType</key>
+  <string>Adaptive</string>
+</dict>
+</plist>

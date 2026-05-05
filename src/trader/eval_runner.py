@@ -48,6 +48,14 @@ import pandas as pd
 
 DEFAULT_JOURNAL_DB = Path(__file__).resolve().parent.parent.parent / "data" / "journal.db"
 
+# v3.73.9 — Transaction-cost model. Charges per rebalance based on
+# turnover (= sum of |new_weight - prior_weight|). 5bps round-trip
+# per dollar of turnover is the typical model for liquid US large-caps
+# at retail size. SPY ETF charges ~0bps (it's the benchmark; assume
+# costless). This makes the leaderboard apples-to-apples — strategies
+# that trade more pay more.
+DEFAULT_TURNOVER_COST_BPS = 5.0
+
 
 # ============================================================
 # Schema
@@ -128,10 +136,35 @@ def evaluate_at(
 # ============================================================
 # Settle returns
 # ============================================================
+def _prior_picks(cur, strategy: str, asof: str) -> dict:
+    """Return the most-recent prior picks dict for `strategy` strictly
+    before `asof`. Used to compute turnover for the cost model."""
+    row = cur.execute(
+        "SELECT picks_json FROM strategy_eval WHERE strategy=? AND asof<? "
+        "ORDER BY asof DESC LIMIT 1",
+        (strategy, asof),
+    ).fetchone()
+    if not row:
+        return {}
+    try:
+        prior = json.loads(row[0])
+        return {k: v for k, v in prior.items() if not k.startswith("_")}
+    except Exception:
+        return {}
+
+
+def _turnover(prior: dict, current: dict) -> float:
+    """Sum of |new_weight - prior_weight| across all tickers (one-side
+    turnover). Range: [0, 2 * gross]."""
+    syms = set(prior) | set(current)
+    return sum(abs(current.get(s, 0.0) - prior.get(s, 0.0)) for s in syms)
+
+
 def settle_returns(
     period_end: pd.Timestamp,
     prices: Optional[pd.DataFrame] = None,
     spy_close: Optional[float] = None,
+    cost_bps: float = DEFAULT_TURNOVER_COST_BPS,
     db_path: Path = DEFAULT_JOURNAL_DB,
 ) -> int:
     """Settle the period_return + spy_return + active_return for every
@@ -224,12 +257,21 @@ def settle_returns(
             if not priced_any and not spy_priced:
                 continue
 
-            active = port_ret - spy_ret
+            # v3.73.9: charge transaction cost based on turnover from
+            # prior picks. cost_bps applied to one-side turnover (5bps
+            # round-trip on US large caps is conservative-realistic).
+            # SPY assumed costless (it's the benchmark via ETF).
+            prior = _prior_picks(cur, strategy, asof)
+            turnover = _turnover(prior, picks)
+            net_cost = turnover * (cost_bps / 10000.0)
+            net_port_ret = port_ret - net_cost
+
+            active = net_port_ret - spy_ret
 
             cur.execute(
                 "UPDATE strategy_eval SET period_end=?, period_return=?, "
                 "spy_return=?, active_return=? WHERE id=?",
-                (end_str, port_ret, spy_ret, active, row_id),
+                (end_str, net_port_ret, spy_ret, active, row_id),
             )
             n += 1
         except Exception:
