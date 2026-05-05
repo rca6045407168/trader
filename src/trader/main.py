@@ -363,6 +363,35 @@ def main(force: bool = False) -> dict:
     except Exception as e:
         print(f"  EarningsRule check failed (non-fatal): {type(e).__name__}: {e}")
 
+    # v3.69.0 — ReactorSignalRule: trim positions when the v3.68.x earnings
+    # reactor flagged a high-materiality BEARISH event in the last 14 days.
+    # Default status SHADOW (logs would-be trims; caller flips to LIVE via
+    # REACTOR_RULE_STATUS=LIVE env when ready). Direction-gated (BULLISH
+    # never auto-boosts), materiality-gated (M≥4 default), and bounded
+    # (trim to 50% of target — never to 0).
+    try:
+        from .reactor_rule import ReactorSignalRule
+        rsr = ReactorSignalRule()
+        if rsr.status() != "INERT" and final_targets:
+            new_targets, trims = rsr.apply(final_targets)
+            if trims:
+                action = ("TRIMMED" if rsr.status() == "LIVE"
+                          else "would trim (SHADOW)")
+                print(f"  ReactorSignalRule {action} {len(trims)} positions:")
+                for sym, d in trims.items():
+                    print(f"    {sym}: {d.old_weight:.3f} → {d.new_weight:.3f}  "
+                          f"({d.reason})")
+                    print(f"      summary: {d.summary[:100]}")
+                if rsr.status() == "LIVE":
+                    final_targets = new_targets
+            else:
+                # Quiet log when nothing matches — keeps the run output clean
+                pass
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"  ReactorSignalRule check failed (non-fatal): {type(e).__name__}: {e}")
+
     # v0.9: validate targets before any order leaves the system
     try:
         target_check = validate_targets(final_targets)

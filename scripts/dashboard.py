@@ -1,4 +1,23 @@
-"""Live local dashboard for the trader (v3.68.4).
+"""Live local dashboard for the trader (v3.69.0).
+
+v3.69.0 — ReactorSignalRule wires the v3.68.x earnings reactor into
+the rebalance gate. When a held name has a recent (≤14d) M≥4 BEARISH
+signal, the rule trims that position's target weight to 50% of
+original at the next monthly rebalance.
+
+Default status: SHADOW (logs would-be trims without executing). User
+flips to LIVE via REACTOR_RULE_STATUS=LIVE env when comfortable.
+Direction-gated (BULLISH never auto-boosts); materiality-gated
+(M≥4 = "warrants position adjustment", M3 too low for auto-cut);
+recency-gated (only signals from last 14d).
+
+This crosses the analysis→decision boundary deliberately. The trim is
+bounded (50% reduction max) and the rule status is single-flag-revertible
+so the user keeps a stop-button.
+
+  - new trader/reactor_rule.py with ReactorSignalRule class
+  - wired into main.py after EarningsRule, before validate_targets
+  - 📞 Earnings reactor view shows rule status + would-trim list
 
 v3.68.4 — Robustness pass on the v3.68.x earnings stack:
   - **Bug fix:** ProcessType=Background in the launchd plist let
@@ -519,7 +538,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.68.4 · chat-first AI dashboard")
+    st.caption("v3.69.0 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -4468,9 +4487,64 @@ def view_earnings_reactor():
     try:
         from trader.earnings_reactor import recent_signals
         from trader import filings_archive
+        from trader.reactor_rule import ReactorSignalRule
     except Exception as e:
         st.error(f"earnings_reactor module unavailable: {e}")
         return
+
+    # v3.69.0: status + would-trim panel for the rebalance gate
+    try:
+        rsr = ReactorSignalRule()
+        rstat = rsr.status()
+        with st.expander(
+            f"⚖️ Rebalance gate · status **{rstat}** · "
+            f"M≥{rsr.min_materiality} → trim to {rsr.trim_to_pct*100:.0f}%",
+            expanded=(rstat == "LIVE"),
+        ):
+            st.caption(rsr.describe())
+            st.markdown(
+                "- **INERT**: rule disabled, no logging\n"
+                "- **SHADOW** (default): computes + logs would-trim list "
+                "without modifying targets\n"
+                "- **LIVE**: actually trims target weights at next "
+                "rebalance — set `REACTOR_RULE_STATUS=LIVE` env to flip"
+            )
+            # Show the would-trim list against the LIVE positions
+            try:
+                from trader.positions_live import fetch_live_portfolio
+                pf = fetch_live_portfolio()
+                if pf.error:
+                    st.caption(f"_broker unavailable: {pf.error}_")
+                elif pf.positions:
+                    targets = {p.symbol: (p.weight_of_book or 0)
+                               for p in pf.positions}
+                    decisions = rsr.compute_trims(targets)
+                    if decisions:
+                        rows = [{
+                            "symbol": d.symbol,
+                            "current_weight": f"{d.old_weight*100:.2f}%",
+                            "would_trim_to": f"{d.new_weight*100:.2f}%",
+                            "M": d.materiality,
+                            "direction": d.direction,
+                            "filed": d.filed_at,
+                            "reason": d.reason,
+                        } for d in decisions.values()]
+                        st.warning(
+                            f"⚠️ {len(decisions)} position(s) "
+                            f"{'WILL be trimmed' if rstat == 'LIVE' else 'would be trimmed (SHADOW)'} "
+                            f"at next rebalance:")
+                        st.dataframe(rows, use_container_width=True,
+                                      hide_index=True)
+                    else:
+                        st.caption(
+                            f"_no held positions match a trim-worthy signal "
+                            f"in the last {rsr.lookback_days}d_")
+                else:
+                    st.caption("_no live positions_")
+            except Exception as e:
+                st.caption(f"_could not check live positions: {e}_")
+    except Exception as e:
+        st.caption(f"_rebalance-gate panel unavailable: {e}_")
 
     cc = st.columns([1, 1, 1, 2])
     sym_filter = cc[0].text_input(
