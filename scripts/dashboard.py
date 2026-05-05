@@ -1,4 +1,20 @@
-"""Live local dashboard for the trader (v3.71.0).
+"""Live local dashboard for the trader (v3.72.0).
+
+v3.72.0 — Backtest harness for the v3.69.0 ReactorSignalRule. Answers
+"if I'd flipped REACTOR_RULE_STATUS=LIVE on day X, what would the
+cumulative P&L impact have been?" via:
+  - Replay of every historical rebalance × every earnings_signal in
+    the journal
+  - Counterfactual target weights for each trim-worthy event
+  - yfinance forward-price pulls (T+5/10/20) to compute saved/lost
+    dollars per trim
+  - Parameter sweep across (min_materiality × trim_pct) grid
+
+Honest behavior on sparse data: when no rebalance has 20 forward days
+yet (current: May 1 rebalance, only 3 forward days exist), the
+harness reports "fwd=n/a, impact=n/a" rather than silently returning 0.
+
+Added "📊 Rule backtest" panel inside the 📞 Earnings reactor view.
 
 v3.71.0 — Parallel reactor + 10-Q/10-K archiving. User feedback:
 "things should be as parallelized as possible. for example, getting
@@ -596,7 +612,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.71.0 · chat-first AI dashboard")
+    st.caption("v3.72.0 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -4592,6 +4608,48 @@ def view_earnings_reactor():
                                   hide_index=True)
     except Exception as e:
         st.caption(f"_polling-schedule panel unavailable: {e}_")
+
+    # v3.72.0: backtest summary — replays the rule across history so
+    # the user has objective evidence before flipping SHADOW → LIVE.
+    try:
+        from trader import reactor_backtest as rbt
+        with st.expander(
+            "📊 Rule backtest · would the rule have helped?",
+            expanded=False,
+        ):
+            st.caption(
+                "Replays the ReactorSignalRule against every historical "
+                "rebalance + earnings_signal in the journal. When the "
+                "data is sparse (early days), the answer is honestly "
+                "'not enough yet — keep collecting'."
+            )
+            @st.cache_data(ttl=900, show_spinner="📊 Replaying rule history…")
+            def _cached_sweep():
+                return [r.to_dict() for r in rbt.parameter_sweep(
+                    pull_forward_prices=True,
+                )]
+            try:
+                sweep = _cached_sweep()
+                rows = []
+                for r in sweep:
+                    cfg = r["config"]
+                    rows.append({
+                        "M_threshold": f"≥{cfg['min_materiality']}",
+                        "trim_to": f"{cfg['trim_pct']*100:.0f}%",
+                        "trims_fired": r["n_trims_triggered"],
+                        "P&L_impact": (
+                            f"{r['total_pnl_impact_pct']*100:+.2f}%"
+                            if r["total_pnl_impact_pct"] is not None
+                            else "n/a"
+                        ),
+                        "summary": r["summary"][:80],
+                    })
+                st.dataframe(rows, use_container_width=True,
+                              hide_index=True)
+            except Exception as e:
+                st.caption(f"_backtest sweep failed: {e}_")
+    except Exception as e:
+        st.caption(f"_backtest panel unavailable: {e}_")
 
     # v3.69.0: status + would-trim panel for the rebalance gate
     try:
