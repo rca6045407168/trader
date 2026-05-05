@@ -1,4 +1,22 @@
-"""Live local dashboard for the trader (v3.72.0).
+"""Live local dashboard for the trader (v3.72.1).
+
+v3.72.1 — Structured "Why we own it" panel in the per-symbol modal.
+Replaces the old single-line `12-1 mom +35.5%` rationale with four
+explicit sections answering the questions every position implies:
+
+  📐 The case            12-1 score, rank in universe, top-15 cutoff
+                          buffer, strategy lineage
+  🧮 Weight math         score-shifted normalization derivation that
+                          produces the actual weight (not a black box)
+  👁️ Recent disclosures   reactor signals from last 30d + rule-action
+                          implication ("would trim" / "no trim" / why)
+  🚪 What drops this     score threshold, risk gates, reactor rule,
+                          earnings rule — explicit list of exit
+                          conditions
+
+Renders ABOVE the HANK interpretive summary because this content is
+deterministic + recomputable; HANK is narrative on top of grounded
+structured data.
 
 v3.72.0 — Backtest harness for the v3.69.0 ReactorSignalRule. Answers
 "if I'd flipped REACTOR_RULE_STATUS=LIVE on day X, what would the
@@ -612,7 +630,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.72.0 · chat-first AI dashboard")
+    st.caption("v3.72.1 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top
@@ -4107,6 +4125,192 @@ def _hank_symbol_summary(symbol: str, pos: dict | None) -> str:
     return _hank_symbol_summary_cached(symbol, sig)
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_universe_momentum(_seed: str = ""):
+    """Score every symbol in DEFAULT_LIQUID_50 by 12-1 momentum.
+    Cached 5 min so opening multiple symbol modals doesn't re-fetch
+    yfinance. The `_seed` arg lets callers force a refresh."""
+    try:
+        from trader.universe import DEFAULT_LIQUID_50
+        from trader.strategy import rank_momentum
+        # rank_momentum returns ALL ranked candidates if we ask for the
+        # whole universe. Pull the full ranked list so we can compute
+        # this symbol's rank and the #15 cutoff.
+        cands = rank_momentum(DEFAULT_LIQUID_50, top_n=len(DEFAULT_LIQUID_50))
+        return [(c.ticker, float(c.score)) for c in cands]
+    except Exception as e:
+        return [("__error__", str(e))]
+
+
+def _render_position_why(symbol: str, pos: dict | None) -> None:
+    """v3.72.1 — structured 'why we own it' panel.
+
+    Answers the four questions every position implies but the prior
+    UI buried:
+      1. CASE: what's the score and where does it rank?
+      2. WEIGHT MATH: why this specific %?
+      3. WHAT WE WATCH: recent reactor signals + rule action
+      4. WHAT DROPS US: score / rule conditions that would exit
+
+    Shown above the HANK summary because this content is deterministic
+    (recomputable from raw data); HANK is interpretive narrative on top.
+    """
+    sym_u = symbol.upper()
+
+    # ---- 1. CASE — score + rank ----
+    ranked = _cached_universe_momentum()
+    if ranked and ranked[0][0] == "__error__":
+        st.caption(f"_momentum data unavailable: {ranked[0][1]}_")
+        return
+
+    rank = None
+    score = None
+    cutoff_15 = None
+    universe_size = len(ranked)
+    for i, (t, s) in enumerate(ranked):
+        if t == sym_u:
+            rank = i + 1
+            score = s
+            break
+    if len(ranked) >= 15:
+        cutoff_15 = ranked[14][1]  # the #15-place score
+
+    st.markdown("**📐 The case**")
+    if score is not None and rank is not None:
+        in_basket = rank <= 15
+        verdict = ("✓ inside top-15 (currently held)" if in_basket
+                   else "✗ outside top-15 (would not be in book)")
+        margin = ""
+        if cutoff_15 is not None and rank <= 15:
+            buffer = (score - cutoff_15) * 100
+            margin = (f" · buffer over #15 cutoff ({cutoff_15*100:+.1f}%): "
+                      f"+{buffer:.1f}pp")
+        st.markdown(
+            f"- 12-1 momentum score: **{score*100:+.1f}%** (trailing "
+            f"12-month return ending 1 month ago)\n"
+            f"- Rank in {universe_size}-name universe: "
+            f"**#{rank} of {universe_size}**  ·  {verdict}{margin}\n"
+            f"- Strategy: `momentum_top15_mom_weighted_v1` (LIVE since "
+            f"v3.42; PIT Sharpe +0.95)"
+        )
+    elif rank is None:
+        st.markdown(
+            f"- {sym_u} not in `DEFAULT_LIQUID_50` universe — held via "
+            f"manual override or legacy decision\n"
+            f"- Strategy variant: `momentum_top15_mom_weighted_v1`"
+        )
+
+    # ---- 2. WEIGHT MATH ----
+    st.markdown("**🧮 Weight math**")
+    if score is not None and rank is not None and rank <= 15:
+        # Replicate the variant's weighting:
+        #   shifted = score - min_top15_score + 0.01
+        #   weight  = 0.80 × shifted / sum_of_shifted
+        top15 = [s for _, s in ranked[:15]]
+        min_s = min(top15)
+        shifted = [s - min_s + 0.01 for s in top15]
+        total = sum(shifted)
+        idx_in_top15 = rank - 1
+        sym_shifted = shifted[idx_in_top15]
+        sym_weight = 0.80 * (sym_shifted / total) if total > 0 else 0
+        st.markdown(
+            f"- Score-shift: {score*100:+.1f}% − min_top15 "
+            f"({min_s*100:+.1f}%) + 0.01 = **{sym_shifted:.4f}**\n"
+            f"- Sum of shifted top-15 scores: {total:.4f}\n"
+            f"- Target weight: 0.80 × ({sym_shifted:.4f} / {total:.4f}) "
+            f"= **{sym_weight*100:.2f}%** of book\n"
+            f"- Per-position cap: 16% (this position is "
+            f"{'under' if sym_weight < 0.16 else 'AT/over'})"
+        )
+    elif pos and pos.get("weight_pct"):
+        st.markdown(
+            f"- Current actual weight: **{pos['weight_pct']:.2f}%**\n"
+            f"- Variant weighting math n/a — symbol is below #15 in "
+            f"current ranking, so this is a stale position waiting for "
+            f"the next rebalance to drop it."
+        )
+    else:
+        st.caption("_weight math unavailable_")
+
+    # ---- 3. WHAT WE WATCH — reactor signals + rule action ----
+    st.markdown("**👁️ Recent material disclosures (last 30d)**")
+    try:
+        from trader.earnings_reactor import recent_signals
+        sigs = recent_signals(symbol=sym_u, since_days=30, limit=5)
+    except Exception as e:
+        sigs = []
+        st.caption(f"_signal lookup failed: {e}_")
+
+    if not sigs:
+        st.markdown("- _no reactor signals in the last 30 days_")
+    else:
+        for s in sigs:
+            mat = s.get("materiality") or 0
+            arrow = {"BEARISH": "🔴", "BULLISH": "🟢",
+                      "SURPRISE": "⚡"}.get(s.get("direction", ""), "⚪")
+            st.markdown(
+                f"- {arrow} **M{mat}/5 {s['direction']}** filed "
+                f"{s['filed_at']}: {s.get('summary', '')[:140]}"
+            )
+
+    # ---- Rule action implication for the most recent signal ----
+    if sigs:
+        try:
+            from trader.reactor_rule import ReactorSignalRule
+            rsr = ReactorSignalRule()
+            top_sig = sigs[0]  # most recent
+            mat = top_sig.get("materiality") or 0
+            direction = top_sig.get("direction", "")
+            sd = top_sig.get("surprise_direction", "")
+            triggers = (
+                direction == "BEARISH"
+                or (direction == "SURPRISE" and sd == "MISSED")
+            )
+            crosses_threshold = mat >= rsr.min_materiality
+            if triggers and crosses_threshold:
+                if rsr.status() == "LIVE":
+                    action = (f"**Will trim** to {rsr.trim_to_pct*100:.0f}% "
+                              f"of target weight at next rebalance")
+                else:
+                    action = (f"**Would trim** to {rsr.trim_to_pct*100:.0f}% "
+                              f"(rule status SHADOW — would fire if LIVE)")
+            elif triggers and not crosses_threshold:
+                action = (f"No trim — M{mat} below threshold "
+                          f"M≥{rsr.min_materiality}")
+            else:
+                action = (f"No trim — direction {direction} is not "
+                          f"trim-eligible (only BEARISH and "
+                          f"SURPRISE/MISSED trigger)")
+            st.markdown(f"- Rule action: {action}")
+        except Exception:
+            pass
+
+    # ---- 4. WHAT WOULD DROP US ----
+    st.markdown("**🚪 What would drop this position**")
+    drop_conditions = []
+    if cutoff_15 is not None and score is not None:
+        drop_conditions.append(
+            f"Next monthly rebalance: 12-1 momentum drops below "
+            f"**{cutoff_15*100:+.1f}%** (current #15 cutoff). "
+            f"Today {sym_u} is at {score*100:+.1f}%."
+        )
+    drop_conditions.append(
+        "Risk gate trip: deployment-DD < -25% (30d freeze) or < -33% "
+        "(liquidation gate); daily loss > -6% (48h freeze)."
+    )
+    drop_conditions.append(
+        "Reactor rule (LIVE): M≥4 BEARISH / SURPRISE-MISSED 8-K "
+        "in last 14d → 50% weight trim at next rebalance "
+        "(NOT a full exit)."
+    )
+    drop_conditions.append(
+        "EarningsRule: T-1 day before earnings → trim to 50% of "
+        "target until T+1 day after print."
+    )
+    for c in drop_conditions:
+        st.markdown(f"- {c}")
+
+
 @st.dialog("🔍 Symbol detail")
 def _symbol_detail_modal(symbol: str):
     """Per-symbol drill-down: AI summary + recent decisions, lots, events, slippage, news."""
@@ -4131,8 +4335,18 @@ def _symbol_detail_modal(symbol: str):
     except Exception:
         pass
 
+    # v3.72.1: structured "why we own it" — deterministic, recomputable,
+    # answers the four questions every position implies. Renders ABOVE
+    # the HANK summary because this content is grounded; HANK is
+    # interpretive narrative on top of it.
+    with st.expander("🔍 Why we own it (structured)", expanded=True):
+        try:
+            _render_position_why(symbol, pos)
+        except Exception as e:
+            st.caption(f"_why panel failed: {type(e).__name__}: {e}_")
+
     # v3.64.0: HANK summary — Bloomberg-style AI synthesis at top of drill-down
-    with st.expander("🧠 HANK summary", expanded=True):
+    with st.expander("🧠 HANK summary (interpretive)", expanded=False):
         summary = _hank_symbol_summary(symbol, pos)
         if summary:
             st.markdown(summary)
