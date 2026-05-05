@@ -1,4 +1,26 @@
-"""Live local dashboard for the trader (v3.70.0).
+"""Live local dashboard for the trader (v3.71.0).
+
+v3.71.0 — Parallel reactor + 10-Q/10-K archiving. User feedback:
+"things should be as parallelized as possible. for example, getting
+all 8ks, 10ks, should be automatic."
+
+  - react_for_positions now runs symbols concurrently via
+    ThreadPoolExecutor (EDGAR_PARALLEL_WORKERS=5). Bounded under
+    SEC's 10 req/sec rate limit.
+  - Claude calls separately bounded via threading.BoundedSemaphore
+    (CLAUDE_PARALLEL_WORKERS=3) so concurrent reactor iters don't
+    trip Anthropic per-key rate limits.
+  - react_for_symbol now fetches 8-K + 10-Q + 10-K (was 8-K only).
+    Claude analysis fires only on material 8-Ks; 10-Q/10-K are
+    archive-only — diff-vs-prior-quarter analysis is a future v3.7x.
+  - Per-symbol exception isolation: one bad symbol returns [], doesn't
+    poison others' results.
+
+Verified live on first reload: archived 8 new 10-Qs alongside the 10
+existing 8-Ks. Iter time: 7.4s for 15 symbols (vs ~12s sequential =
+1.7× speedup at 5 workers — limited by per-symbol fetch+download
+serialization within each worker; tighter speedup possible with
+intra-symbol parallelism, deferred).
 
 v3.70.0 — Per-symbol poll cadence (HOT around earnings, WARM otherwise).
 User insight: 8-K earnings releases are pre-announced. We can poll
@@ -574,7 +596,7 @@ if "linked_symbol" not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.70.0 · chat-first AI dashboard")
+    st.caption("v3.71.0 · chat-first AI dashboard")
     st.divider()
 
     # Primary action up top

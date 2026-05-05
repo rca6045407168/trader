@@ -167,13 +167,32 @@ If you see no clear bullish or bearish signal, leave the quote arrays empty.
 Never invent a quote — only direct text from the document."""
 
 
+import threading
+
+# v3.71.0: bounded parallelism (defined here so module-level
+# initializers below can reference them).
+EDGAR_PARALLEL_WORKERS = 5
+CLAUDE_PARALLEL_WORKERS = 3
+
+# Bounded parallel Claude calls. When multiple symbols' 8-Ks drop
+# the same minute (e.g. earnings clustering at 4:05pm ET on a busy
+# reporting day), we serialize through this semaphore so we don't
+# trip Anthropic's per-key rate limit. Bounded at 3 concurrent calls
+# — safe under tier-1 rate limits + leaves headroom for HANK chat
+# which uses the same key.
+_CLAUDE_SEMAPHORE = threading.BoundedSemaphore(value=CLAUDE_PARALLEL_WORKERS)
+
+
 def _analyze_filing_with_claude(
     symbol: str, meta: sec_filings.FilingMetadata,
     text: str, model: str = DEFAULT_MODEL,
 ) -> ReactionResult:
     """Run Claude over one filing. Returns a populated ReactionResult.
     Falls back to a NEUTRAL stub on any error so the caller doesn't
-    have to special-case."""
+    have to special-case.
+
+    v3.71.0: serialized through _CLAUDE_SEMAPHORE so concurrent reactor
+    iters don't hammer Anthropic. Cap = CLAUDE_PARALLEL_WORKERS (3)."""
     r = ReactionResult(
         symbol=symbol, accession=meta.accession, filed_at=meta.filed_at,
         items=meta.items, model=model,
@@ -197,12 +216,16 @@ def _analyze_filing_with_claude(
             f"Items: {', '.join(meta.items) or '(none)'}\n"
             f"---\n\n{text}"
         )
-        resp = client.messages.create(
-            model=model,
-            max_tokens=2000,
-            system=CLAUDE_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_msg}],
-        )
+        # v3.71.0: serialize concurrent Claude calls under bounded
+        # semaphore. The `with` block releases on exit, including on
+        # exception, so a 503 from Anthropic doesn't leak slots.
+        with _CLAUDE_SEMAPHORE:
+            resp = client.messages.create(
+                model=model,
+                max_tokens=2000,
+                system=CLAUDE_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_msg}],
+            )
         raw = resp.content[0].text if resp.content else ""
         r.raw_response = raw
 
@@ -478,6 +501,36 @@ def _alert_threshold() -> int:
         return 3
 
 
+def _archive_filing_if_new(symbol: str,
+                             meta: sec_filings.FilingMetadata,
+                             archive_root: Optional[Path]) -> bool:
+    """Download + archive one filing if not already stored. Returns
+    True if newly archived, False if already in archive or fetch
+    failed. Used by both 8-K (analyzed) and 10-Q/10-K (archive-only)
+    paths so the disk layout stays consistent."""
+    if filings_archive.exists(meta.accession, root=archive_root):
+        return False
+    body = sec_filings.download_filing(meta)
+    if body is None:
+        return False
+    if ("<html" in body[:500].lower()
+            or "<!doctype" in body[:200].lower()):
+        body = sec_filings.strip_html(body)
+    filings_archive.store(
+        symbol=symbol,
+        form_type=meta.form_type,
+        accession=meta.accession,
+        filed_at=meta.filed_at,
+        url=meta.archive_url,
+        text=body,
+        items=meta.items,
+        source="sec_edgar",
+        title=meta.primary_doc_description,
+        root=archive_root,
+    )
+    return True
+
+
 def react_for_symbol(
     symbol: str,
     since_days: int = 14,
@@ -487,49 +540,47 @@ def react_for_symbol(
     model: str = DEFAULT_MODEL,
     alert: bool = True,
 ) -> list[ReactionResult]:
-    """Fetch + archive + analyze recent 8-Ks for one symbol.
+    """Fetch + archive + analyze recent filings for one symbol.
+
+    v3.71.0: now archives 10-Q + 10-K alongside 8-K. Claude analysis
+    fires only on material 8-Ks (the existing event-driven flow);
+    10-Q/10-K are archive-only — diff-vs-prior-quarter analysis is a
+    future v3.7x release.
 
     Idempotent on accession: if a filing is already archived AND
     already analyzed (signal row present), it's skipped."""
     since_iso = (datetime.utcnow().date() - timedelta(days=since_days)).isoformat()
+    # v3.71.0: pull all three core form types
     metas = sec_filings.fetch_recent_filings(
-        symbol, form_types=("8-K",), since=since_iso, limit=20,
+        symbol, form_types=("8-K", "10-Q", "10-K"),
+        since=since_iso, limit=40,
     )
     results: list[ReactionResult] = []
+
     for meta in metas:
+        if meta.form_type in ("10-Q", "10-K"):
+            # Archive-only path — no Claude, no signal row. The
+            # archive layer is now richer; future analysis (cross-
+            # quarter diff) will read from here.
+            _archive_filing_if_new(symbol, meta, archive_root)
+            continue
+
+        # 8-K path (existing event-driven flow)
         if only_material and not sec_filings.is_material_8k(meta):
             continue
-        # Already analyzed?
         if _signal_exists(journal_db, symbol, meta.accession):
             continue
-        # Archive if not yet stored
-        if not filings_archive.exists(meta.accession, root=archive_root):
-            body = sec_filings.download_filing(meta)
-            if body is None:
-                continue
-            if "<html" in body[:500].lower() or "<!doctype" in body[:200].lower():
-                body = sec_filings.strip_html(body)
-            filings_archive.store(
-                symbol=symbol,
-                form_type=meta.form_type,
-                accession=meta.accession,
-                filed_at=meta.filed_at,
-                url=meta.archive_url,
-                text=body,
-                items=meta.items,
-                source="sec_edgar",
-                title=meta.primary_doc_description,
-                root=archive_root,
-            )
-        # Read text from archive (might've just been stored, or already there)
-        text = filings_archive.read_text(meta.accession, root=archive_root) or ""
+        _archive_filing_if_new(symbol, meta, archive_root)
+        text = filings_archive.read_text(meta.accession,
+                                           root=archive_root) or ""
         if not text:
             continue
         r = _analyze_filing_with_claude(symbol, meta, text, model=model)
         _persist_signal(journal_db, r)
         if alert:
             try:
-                _maybe_alert(r, journal_db, min_materiality=_alert_threshold())
+                _maybe_alert(r, journal_db,
+                              min_materiality=_alert_threshold())
             except Exception as e:
                 print(f"  ! alert send failed for {symbol} {r.accession}: "
                       f"{type(e).__name__}: {e}")
@@ -593,6 +644,13 @@ def alert_unsent_signals(
     return sent
 
 
+# v3.71.0: bounded parallelism. SEC EDGAR rate limit is 10 req/sec;
+# we stay well under at EDGAR_PARALLEL_WORKERS=5 × ~2 req/sec = 10
+# req/sec peak when all symbols have new filings. Anthropic API also
+# rate-limits at the tier level, so Claude calls separately cap at
+# CLAUDE_PARALLEL_WORKERS=3 via _CLAUDE_SEMAPHORE inside
+# _analyze_filing_with_claude. Both constants defined at module top.
+
 def react_for_positions(
     symbols: list[str],
     since_days: int = 14,
@@ -601,20 +659,52 @@ def react_for_positions(
     only_material: bool = True,
     model: str = DEFAULT_MODEL,
     alert: bool = True,
+    max_workers: int = EDGAR_PARALLEL_WORKERS,
 ) -> dict[str, list[ReactionResult]]:
-    """Run the reactor across many symbols. Returns {symbol: [results]}."""
-    out: dict[str, list[ReactionResult]] = {}
-    for sym in symbols:
+    """Run the reactor across many symbols, in parallel (v3.71.0).
+
+    Bounded concurrency:
+      - EDGAR fetches: max_workers (default 5). SEC's 10 req/sec rate
+        limit is the ceiling; 5 workers × ~2 req/sec/worker = ~10
+        req/sec peak. Well-behaved.
+      - Claude calls: separately bounded inside the analysis path
+        (CLAUDE_PARALLEL_WORKERS = 3) so we don't hit Anthropic's
+        per-key rate limits when many filings drop the same minute.
+
+    Idempotency holds across parallel workers — the (symbol,
+    accession) UNIQUE constraint in earnings_signals + the archive's
+    accession key make double-processing harmless."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    out: dict[str, list[ReactionResult]] = {sym: [] for sym in symbols}
+    if not symbols:
+        return out
+
+    # Cap workers at len(symbols) — no point launching 5 threads for
+    # 1 symbol. Floor at 1 in case caller passes 0.
+    workers = max(1, min(max_workers, len(symbols)))
+
+    def _react(sym: str) -> tuple[str, list[ReactionResult] | Exception]:
         try:
-            out[sym] = react_for_symbol(
+            return sym, react_for_symbol(
                 sym, since_days=since_days, journal_db=journal_db,
                 archive_root=archive_root, only_material=only_material,
                 model=model, alert=alert,
             )
         except Exception as e:
-            out[sym] = []
-            # We don't raise — one bad symbol shouldn't stop the others
-            print(f"  ! {sym} reactor error: {type(e).__name__}: {e}")
+            return sym, e
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = [ex.submit(_react, sym) for sym in symbols]
+        for fut in as_completed(futures):
+            sym, payload = fut.result()
+            if isinstance(payload, Exception):
+                # One bad symbol must not poison the others
+                print(f"  ! {sym} reactor error: "
+                      f"{type(payload).__name__}: {payload}")
+                out[sym] = []
+            else:
+                out[sym] = payload
     return out
 
 
