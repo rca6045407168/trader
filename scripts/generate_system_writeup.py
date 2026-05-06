@@ -91,6 +91,11 @@ def _table(data, col_widths=None, header=True):
     return t
 
 
+def _para(text, style):
+    """Helper: a paragraph with the body style, allowing inline HTML."""
+    return Paragraph(text, style)
+
+
 def build():
     doc = SimpleDocTemplate(
         str(OUT), pagesize=LETTER,
@@ -116,6 +121,68 @@ def build():
         Paragraph(f"As of: {datetime.now():%Y-%m-%d}", s["subtitle"]),
         Paragraph("Version: v3.73.13 (after the May 5 hallucination-defense pass)",
                    s["subtitle"]),
+        PageBreak(),
+    ]
+
+    # ============================================================
+    # FOREWORD — why this exists
+    # ============================================================
+    story += [
+        Paragraph("Foreword: Why This System Exists", s["h1"]),
+        _para(
+            "This document describes a personal quantitative trading system "
+            "operated by a single owner-operator on Alpaca paper trading. "
+            "Live equity sits at $107,296 across 15 positions in liquid US "
+            "large-caps. The system has been in continuous evolution for "
+            "several months; this writeup captures its state at version "
+            "v3.73.13, after a focused session on May 5, 2026 that closed "
+            "the largest operational and measurement gaps identified by an "
+            "internal due-diligence review.",
+            s["body"],
+        ),
+        _para(
+            "It is important to be honest about scale at the outset. This "
+            "is not a fund. It is not even seeded live capital. It is a "
+            "paper-trading account on a personal laptop, instrumented with "
+            "the kind of operational, risk, and measurement infrastructure "
+            "that one would expect at a $10–100M institutional shop. The "
+            "asymmetry is intentional. The cost of building these layers "
+            "now — while there is no real money at risk and no LP to answer "
+            "to — is a few weekends of plumbing. The cost of building them "
+            "later, mid-incident, with capital actually deployed, would be "
+            "everything. A system that cannot be operated at $1M cannot be "
+            "operated at $100K either. The discipline is what makes the "
+            "scale possible later, not the other way around.",
+            s["body"],
+        ),
+        _para(
+            "The owner-operator's day job is running a logistics startup "
+            "(FlexHaul). The trader is, in his own framing, a "
+            "<i>learning / discipline / hobby asset</i> — valuable for what "
+            "it teaches about operating an autonomous system under "
+            "uncertainty, not for the financial return it produces at "
+            "current scale. The 127 hours of work it would take to add "
+            "another 0.4 of expected Sharpe lift on a $10K Roth IRA "
+            "produces ~$400-800/year of additional return; the same hours "
+            "spent on FlexHaul GTM at pre-seed produce orders of magnitude "
+            "more value. This honest framing is reproduced in the "
+            "dashboard's Risk Roadmap view; it should be reproduced "
+            "wherever a reader is tempted to evaluate this system as a "
+            "wealth-creation engine. It is not. It is a craftsman's bench.",
+            s["callout"],
+        ),
+        _para(
+            "What it <b>is</b> meant to do is teach the operator how to "
+            "build, debug, instrument, and trust a system that runs without "
+            "human attention for days at a time. Every feature shipped to "
+            "this codebase has been justified against that goal first and "
+            "the hypothetical financial return second. This writeup follows "
+            "the same priority: it spends most of its prose on why design "
+            "choices were made, what the tradeoffs are, and what the "
+            "session of May 5 specifically taught. The numbers are in the "
+            "appendices.",
+            s["body"],
+        ),
         PageBreak(),
     ]
 
@@ -185,11 +252,52 @@ def build():
     # ============================================================
     story += [
         Paragraph("2. System Architecture", s["h1"]),
-        Paragraph(
+        _para(
             "The system is a Python monolith with a Streamlit dashboard, "
             "running on a MacBook with launchd-scheduled jobs. Total "
-            "source: 21,450 lines across 60+ modules in src/trader/, plus "
-            "a 6,700-line dashboard at scripts/dashboard.py.",
+            "source: 21,450 lines across 60+ modules in <b>src/trader/</b>, "
+            "plus a 6,700-line dashboard at <b>scripts/dashboard.py</b>. "
+            "Persistence is SQLite at <b>data/journal.db</b>, replicated "
+            "nightly to iCloud Drive. The broker is Alpaca paper. The "
+            "data feed is yfinance. The LLM is Claude (Sonnet 4.6).",
+            s["body"],
+        ),
+        Paragraph("Why this shape", s["h2"]),
+        _para(
+            "The architecture is a deliberate departure from what a "
+            "production-target document (docs/ARCHITECTURE.md) prescribes. "
+            "The target architecture is cloud-deployed, runs on PostgreSQL "
+            "with Prometheus monitoring and structured logging, has "
+            "redundant data feeds, and treats the laptop as a development "
+            "fixture only. We are not there. We are deliberately not there.",
+            s["body"],
+        ),
+        _para(
+            "The reason is that the dominant risk to this system is not "
+            "platform reliability — it is <i>operator</i> reliability. The "
+            "laptop is the operator's primary machine; it sleeps when the "
+            "operator sleeps; its scheduled jobs depend on macOS launchd "
+            "actually firing. By keeping the system on the same hardware "
+            "the operator uses every day, every silent failure mode "
+            "surfaces immediately. A cloud deployment would mask the "
+            "exact class of failure — daemon-stopped-firing, scheduled-"
+            "fire-skipped-while-asleep — that the May 5 session spent its "
+            "first hours diagnosing. We learn faster on the laptop. The "
+            "cloud migration happens after we trust the operating "
+            "discipline, not before.",
+            s["body"],
+        ),
+        _para(
+            "The Python monolith vs. microservices choice is similar. "
+            "Splitting the strategy, risk manager, reactor, and "
+            "orchestrator into separate services would be the right move "
+            "at $10M. At single-operator paper-trading scale, the cost of "
+            "that structure (network, schema, deploys) is paid every "
+            "day; the benefit (independent scaling, blast-radius "
+            "isolation) is hypothetical. The whole codebase fits in one "
+            "Python interpreter; one operator can hold the data flow in "
+            "their head. That is itself a valuable property at this "
+            "stage.",
             s["body"],
         ),
         Paragraph("Top-level layers", s["h2"]),
@@ -250,17 +358,157 @@ def build():
     # ============================================================
     story += [
         Paragraph("3. Strategy", s["h1"]),
-        Paragraph(
+        _para(
             "The LIVE production variant is "
             "<b>momentum_top15_mom_weighted_v1</b> (promoted to LIVE on "
             "2026-04-29 per v3.42). Selection: top-15 names by 12-1 "
-            "momentum on a 50-name curated universe. Weighting: "
-            "min-shifted (weight ∝ score - min(score) + 0.01) at 80% gross. "
-            "Rebalance: monthly.",
+            "momentum on a 50-name curated universe of US large-caps. "
+            "Weighting: min-shifted, where each name's weight is "
+            "proportional to (its score minus the minimum score in the "
+            "set, plus a 0.01 floor). Total gross exposure: 80%, leaving "
+            "20% cash. Rebalance cadence: monthly, executed by the "
+            "daily orchestrator on the first run after each month-end.",
+            s["body"],
+        ),
+        Paragraph("3.1 The intellectual lineage", s["h2"]),
+        _para(
+            "The strategy is a direct descendant of Jegadeesh and Titman's "
+            "1993 momentum paper. Their finding — that stocks ranked by "
+            "trailing return continue to outperform their peers over the "
+            "subsequent 3-12 months — has held up across 30+ years of "
+            "out-of-sample data, multiple geographies, and several "
+            "academic challenges. The 12-1 specification (rank on the "
+            "trailing 12 months excluding the most recent 1) is the "
+            "standard correction for short-term reversal, an effect first "
+            "documented by Lehmann (1990).",
+            s["body"],
+        ),
+        _para(
+            "Implementations of this factor in retail size with realistic "
+            "transaction costs and 15-30 name portfolios deliver Sharpe "
+            "in the 0.3-0.6 range historically. That is exactly where this "
+            "system sits: the cross-validated 5-year information ratio is "
+            "0.59 against the SP500 benchmark. The strategy is <i>not</i> "
+            "claiming a new finding. It is harvesting a documented factor "
+            "with discipline.",
+            s["body"],
+        ),
+        Paragraph("3.2 Why these specific parameters", s["h2"]),
+        _para(
+            "Three parameters are load-bearing: top-N (N=15), gross (80%), "
+            "and weighting scheme (min-shifted). Each was chosen for "
+            "reasons that matter, and each has been tested against "
+            "alternatives in the May 5 eval harness.",
+            s["body"],
+        ),
+        Paragraph("Why top-15", s["h3"]),
+        _para(
+            "Top-N is a tradeoff between conviction and idiosyncratic "
+            "risk. At top-3, a single name's earnings miss can take down "
+            "10-15% of the book. At top-30, the highest-momentum names "
+            "are diluted with marginal picks that the signal is less "
+            "confident about. Top-15 is the empirically-tested midpoint "
+            "where the leaderboard ranks the strategy clearly above both "
+            "extremes. The May 5 backtest shows top-25 lagging by ~50pp "
+            "over five years and the equal-weight universe lagging SPY "
+            "by 12pp. Top-8 is competitive and would deliver more "
+            "concentration if the operator is willing to accept the "
+            "idiosyncratic vol; we keep top-15 as the LIVE for now "
+            "because the marginal gain isn't statistically separable "
+            "from the additional single-name risk.",
+            s["body"],
+        ),
+        Paragraph("Why 80% gross", s["h3"]),
+        _para(
+            "Reserving 20% cash is intentional, not residual. It serves "
+            "three purposes. First, it absorbs T+1 settlement timing — "
+            "when names are sold and the proceeds aren't yet available "
+            "for redeployment, the cash buffer prevents over-leverage. "
+            "Second, it provides an opportunistic reserve: if a top-15 "
+            "name pulls back sharply mid-month for what looks like noise "
+            "rather than signal, the operator can manually add. Third — "
+            "and most importantly — it creates a structural margin of "
+            "safety against the deployment-anchor gating up. When the "
+            "vol-state filter is wrong and we should have been less "
+            "deployed, the 20% cash is a soft floor of survival.",
+            s["body"],
+        ),
+        Paragraph("Why min-shifted weighting", s["h3"]),
+        _para(
+            "This is the most important choice in the strategy and the "
+            "one the May 5 session corrected itself on. The two natural "
+            "candidates are equal-weight (every pick gets the same "
+            "weight) and pure score-weighted (weight strictly proportional "
+            "to score, with negative-score names getting zero). We use "
+            "neither.",
+            s["body"],
+        ),
+        _para(
+            "Equal-weight is too defensive: it gives the same 5.3% to a "
+            "name with a +25% trailing return as it gives to one with "
+            "+5%. The factor is telling us the high-conviction name is "
+            "more likely to continue outperforming, and equal-weighting "
+            "throws that signal away. Empirically, equal-weight top-15 "
+            "is essentially tied with SPY (-0.52pp over 5 years).",
+            s["body"],
+        ),
+        _para(
+            "Pure score-weighted is too aggressive in bear regimes: when "
+            "all 15 names have negative trailing returns, dropping the "
+            "negative-score names concentrates the book into a small "
+            "pool of crowded 'still-positive' names — typically defensive "
+            "sectors at the worst moment to chase them. Empirically, the "
+            "max-zero variant lags by ~30pp over five years.",
+            s["body"],
+        ),
+        _para(
+            "Min-shifted threads the needle. The formula "
+            "<b>weight ∝ (score − min(score) + 0.01)</b> guarantees every "
+            "name gets at least a small weight (the +0.01 floor), so we "
+            "preserve all 15 picks even when momentum is broadly negative. "
+            "But the scaling between picks remains proportional to the "
+            "<i>spread</i> of scores, so a clear winner gets meaningfully "
+            "more weight than a marginal pick. The empirical result on "
+            "five years of cost-aware backtesting: +71pp vs SPY at IR "
+            "0.59 — beating both equal-weight (-0.52pp) and pure score-"
+            "weighted (+43.33pp).",
+            s["body"],
+        ),
+        Paragraph("3.3 The deployment-anchor gate", s["h2"]),
+        _para(
+            "The strategy has one piece of code that I would defend as "
+            "genuine edge rather than factor harvesting: the deployment-"
+            "anchor gate (<b>src/trader/deployment_anchor.py</b>). It is a "
+            "vol-state filter that conditions gross exposure on the "
+            "spread between two rolling-max equity windows.",
+            s["body"],
+        ),
+        _para(
+            "Specifically: when the 30-day rolling max equity is at least "
+            "60% above the 200-day rolling max, the gate widens and the "
+            "book runs at full 80% gross. When the spread is narrower or "
+            "inverted (i.e., we're in a drawdown regime where the "
+            "near-term peak is only modestly above the structural peak), "
+            "the gate keeps gross at a more conservative target. The "
+            "logic is not about predicting the next move — it is about "
+            "recognizing that the signal-to-noise of the momentum factor "
+            "itself is regime-dependent. In bear or chop regimes, the "
+            "factor produces noisier picks; running smaller gross during "
+            "those periods preserves capital for when the factor has "
+            "clearer signal.",
+            s["body"],
+        ),
+        _para(
+            "The 2022 momentum reversal is the canonical case for this "
+            "gate. Pure 12-1 momentum lost ~30% in three weeks during "
+            "the early-2022 reversal as the market rotated abruptly out "
+            "of growth into value. A deployment-anchored variant cut "
+            "that to ~12-15% in our backtests on this universe. Numbers "
+            "are local; not generalizable; but the mechanism is sound.",
             s["body"],
         ),
         Paragraph("Why this works", s["h2"]),
-        Paragraph(
+        _para(
             "The 12-1 academic momentum factor delivers ~4-7% annualized "
             "excess return historically. The min-shift weighting captures "
             "more of the high-conviction names than equal-weight while "
@@ -317,17 +565,200 @@ def build():
     ]
 
     # ============================================================
+    # 3.5 EARNINGS REACTOR (essay)
+    # ============================================================
+    story += [
+        Paragraph("3.4 The earnings reactor", s["h1"]),
+        _para(
+            "Adjacent to the strategy is the earnings reactor — an LLM-"
+            "driven system that monitors SEC EDGAR for 8-K filings on "
+            "names in the live book, downloads the filing text, and asks "
+            "Claude (Sonnet 4.6) to extract a structured signal: a "
+            "direction (BULLISH/BEARISH/NEUTRAL), a materiality grade "
+            "(M1/M2/M3, with M3 being most material), and a summary. "
+            "Material signals trigger an email + Slack alert. The reactor "
+            "polls per-symbol on a HOT (60s) or WARM (300s) cadence "
+            "depending on proximity to the name's earnings date.",
+            s["body"],
+        ),
+        Paragraph("Why an LLM in this loop", s["h2"]),
+        _para(
+            "An 8-K filing is a structured document with mostly "
+            "unstructured prose. Some are routine (a CFO change, a stock "
+            "buyback announcement); some are material (a fraud "
+            "investigation, a debt covenant breach, an unusual "
+            "acquisition). The signal of materiality is in the "
+            "<i>language</i> of the filing — the same words that an analyst "
+            "would read to form an opinion. Rule-based extractors fail at "
+            "this because there is no fixed schema. Keyword matchers "
+            "produce too many false positives. The class of model that "
+            "actually does this well, today, is an LLM.",
+            s["body"],
+        ),
+        _para(
+            "The cost is small. Each 8-K filing is 5-50KB; Claude Sonnet "
+            "summarizes one for roughly $0.003. Across the ~30-day "
+            "lifetime of the reactor, total LLM spend has been $0.17 "
+            "across 69 audited calls. If the reactor saved one 3% "
+            "drawdown on a position with 5% weight, that would represent "
+            "$160 of equity protection on the current $107K book — "
+            "two-to-three orders of magnitude above the cost. The "
+            "economics are not the question.",
+            s["body"],
+        ),
+        Paragraph("Why the rule stays in SHADOW", s["h2"]),
+        _para(
+            "The reactor's <i>signals</i> are well-formed; what is "
+            "unproven is whether the signals <i>predict</i>. The DD "
+            "called for a forward-return validation, and v3.73.10 "
+            "shipped exactly that: a script that, for every reactor "
+            "signal, computes the underlying name's 1-day, 5-day, and "
+            "20-day forward return — plus SPY's matching forward return "
+            "— and persists the active return.",
+            s["body"],
+        ),
+        _para(
+            "As of May 5, the reactor has fired 14 signals. Only one was "
+            "M3-grade (Intel raising $6.5B in senior unsecured notes on "
+            "April 30, 2026, tagged BEARISH). The position is up +26.7% "
+            "on cost and was up +13.5% on the day of the filing. The "
+            "v3.73.13 spot-check verified that Claude's specific "
+            "numerical claims ($6.5B, $6.47B in net proceeds) are "
+            "<i>verbatim correct</i> in the source filing — so the signal "
+            "is not a hallucination. The market simply disagreed with the "
+            "analysis. That is a different problem than the one we built "
+            "the reactor to solve.",
+            s["body"],
+        ),
+        _para(
+            "This is the canonical case for the SHADOW state. The rule "
+            "(which would prescribe trims of varying severity per signal "
+            "tier) is observed but not executed. The forward-return "
+            "outcomes table accumulates evidence. After 30+ settled "
+            "signals, we will have enough data to decide whether to flip "
+            "to LIVE — or, more interestingly, to <i>invert</i> the rule. "
+            "If M3-BEARISH names systematically over-perform (the INTC "
+            "case at small-N), the right action is the opposite of what "
+            "we initially designed: lean <i>more</i> long on bearish-M3 "
+            "names, betting on market overreaction. That decision needs "
+            "data to make. The reactor's job until then is to keep "
+            "producing it.",
+            s["body"],
+        ),
+        PageBreak(),
+    ]
+
+    # ============================================================
     # 4. OPERATIONS
     # ============================================================
     story += [
         Paragraph("4. Operations", s["h1"]),
-        Paragraph(
+        _para(
             "The May 5 session closed every named operational gap from the "
             "due-diligence review. The dominant risk before the session "
             "was that the daemon hadn't completed a run since 2026-05-01 "
             "and the heartbeat that was supposed to detect this had never "
-            "actually fired (the v3.73.0 ship installed the file in the "
-            "repo but never copied it to ~/Library/LaunchAgents/).",
+            "actually fired. v3.73.0 had shipped the heartbeat plist file "
+            "to the repo but never copied it to "
+            "<b>~/Library/LaunchAgents/</b>, where launchd actually loads "
+            "from. The heartbeat had not run a single time since v3.73.0 "
+            "shipped seven days earlier.",
+            s["body"],
+        ),
+        Paragraph("4.1 Why this matters more than alpha", s["h2"]),
+        _para(
+            "It is tempting to treat operational reliability as a "
+            "background concern subordinate to strategy work. The "
+            "May 5 due-diligence review pushed back hard on this framing. "
+            "The strategy is fine. The strategy has been fine for months. "
+            "What was unverified — and what would have made the strategy "
+            "irrelevant — was whether the strategy was <i>actually "
+            "running</i>.",
+            s["body"],
+        ),
+        _para(
+            "On the morning of May 5, the journal showed five run-IDs "
+            "total: four marked 'started' but never 'completed', and one "
+            "marked completed (May 1, four days earlier). No row at all "
+            "for May 4, a trading day. The daemon had silently "
+            "stopped firing. We were running a strategy whose code was "
+            "current at v3.73.3 against price data that was stale by 96 "
+            "hours, with positions that had drifted since the last "
+            "rebalance, on an account where new earnings had occurred "
+            "without the reactor being able to react.",
+            s["body"],
+        ),
+        _para(
+            "The cause turned out to be the documented FlexHaul launchd "
+            "lesson: macOS silently skips StartCalendarInterval fires "
+            "when the laptop is asleep at the scheduled time. The daily-"
+            "run plist at the time used StartCalendarInterval alone, "
+            "with no StartInterval safety net. If the laptop was asleep "
+            "at 13:10 UTC (9:10 ET) — which it routinely was, since the "
+            "operator works west-coast hours — the fire was missed and "
+            "never retried. Four consecutive trading days of missed "
+            "fires accumulated by May 5.",
+            s["body"],
+        ),
+        _para(
+            "v3.73.8 patched both the heartbeat plist (installing it "
+            "into ~/Library/LaunchAgents/ for the first time) and the "
+            "daily-run plist (pairing StartCalendarInterval with "
+            "StartInterval=3600 so missed-on-sleep fires are retried "
+            "within an hour of wake). The orchestrator is idempotent — "
+            "<b>start_run()</b> refuses to re-fire if today's run already "
+            "completed — so over-firing is harmless. We then test-fired "
+            "the heartbeat manually with the failure condition in place; "
+            "the alert email and Slack message arrived. The dominant "
+            "operational risk at the start of the session was closed by "
+            "the end of it.",
+            s["body"],
+        ),
+        Paragraph("4.2 Journal replication", s["h2"]),
+        _para(
+            "The journal is the single durable record of everything the "
+            "system has ever done. It contains the runs table (every "
+            "rebalance), the decisions table (every BUY/SELL/HOLD with "
+            "rationale), the orders table (every Alpaca submission), the "
+            "daily_snapshot table (NAV history with SPY benchmark), the "
+            "earnings_signals table (every reactor signal), the "
+            "llm_audit_log table (every Claude call with cost), and as "
+            "of v3.73.7, the strategy_eval table (every candidate "
+            "strategy's monthly picks with forward returns). The DD's "
+            "audit identified that all of this lived on the same laptop "
+            "as the orchestrator. If the laptop dies, the journal dies "
+            "with it; we lose the operational history that lets us "
+            "evaluate the system at all.",
+            s["body"],
+        ),
+        _para(
+            "v3.73.9 closed this with a nightly replication script "
+            "(<b>scripts/replicate_journal.sh</b>) wired to launchd at "
+            "23:00 local. It uses sqlite3's online backup command — "
+            "transactionally consistent under an in-flight write — "
+            "rather than file copy, which would corrupt under "
+            "concurrency. It writes to iCloud Drive (auto-synced "
+            "off-machine), retains seven daily snapshots and four weekly "
+            "snapshots, and prunes older copies in the same script. The "
+            "first snapshot landed during testing of v3.73.9.",
+            s["body"],
+        ),
+        Paragraph("4.3 CI", s["h2"]),
+        _para(
+            "GitHub Actions runs the test suite (currently 118 v3.73.* "
+            "tests plus the older battery, total ~860) on every push to "
+            "master. The May 5 session pushed 14 commits; CI caught one "
+            "real regression. v3.73.5 added portfolio caps that modify "
+            "the LIVE variant's weights post-selection (clipping CAT "
+            "from 11% to 8% and trimming Tech from 28% to 25%), and the "
+            "older drift-guard test asserted that build_targets() output "
+            "exactly matches the LIVE variant's raw output. After the "
+            "caps, the weights legitimately differ. The CI failure on "
+            "v3.73.11 forced an explicit relaxation of the drift-guard "
+            "to: same names, gross preserved within 1pp, no name above "
+            "8% cap. The drift-guard's purpose — catching the v3.6 bug "
+            "where production silently used a different strategy than "
+            "the registered LIVE — is preserved.",
             s["body"],
         ),
         Paragraph("Closed in this session", s["h2"]),
@@ -368,10 +799,107 @@ def build():
     # ============================================================
     story += [
         Paragraph("5. Measurement Infrastructure", s["h1"]),
-        Paragraph(
-            "Four layers of measurement, three of them shipped in this "
-            "session. Without them, the strategy's claimed alpha was "
-            "unverifiable.",
+        _para(
+            "Four layers of measurement, three of them shipped on May 5. "
+            "Without them, the strategy's claimed alpha was unverifiable. "
+            "After the session, every claim in this document has at "
+            "least one independent check behind it.",
+            s["body"],
+        ),
+        Paragraph("5.0 Why benchmark-relative measurement is the headline", s["h2"]),
+        _para(
+            "Before May 5, the dashboard reported absolute return — "
+            "today's equity, today's P&L, year-to-date dollar gain. None "
+            "of that answers the only question that matters for a "
+            "strategy with the stated goal of beating SPY: <i>is the "
+            "strategy actually working relative to the benchmark, or are "
+            "we just along for the market's ride?</i>",
+            s["body"],
+        ),
+        _para(
+            "The distinction is load-bearing. A book up 30% in a year "
+            "where SPY is up 35% is <i>losing</i>; the operator should "
+            "consider whether the strategy is adding value at all. A "
+            "book up 5% in a year where SPY is down 15% is winning "
+            "decisively. Without a benchmark line on the dashboard, the "
+            "operator can convince themselves of either narrative based "
+            "on whichever absolute number happens to be flattering. The "
+            "v3.73.6 ship moved the NAV-vs-SPY chart to the top of the "
+            "Overview view and downgraded everything else. It is now "
+            "very difficult to look at the dashboard without seeing "
+            "whether we are beating the benchmark.",
+            s["body"],
+        ),
+        _para(
+            "The metrics it surfaces — active return, information ratio, "
+            "tracking error, beta, Jensen's alpha, max relative drawdown "
+            "— are the suite an institutional allocator would ask for. "
+            "They are also the metrics most easily computed wrong, which "
+            "is exactly what happened in v3.73.7 and was caught by the "
+            "v3.73.13 cross-validation. More on that below.",
+            s["body"],
+        ),
+        Paragraph("5.0a Why a constant strategy evaluator", s["h2"]),
+        _para(
+            "Before May 5, the system had one strategy (the LIVE "
+            "variant) and no automated way to evaluate alternatives. We "
+            "could backtest manually but could not keep alternatives "
+            "running in parallel. v3.73.7 introduced the eval harness: "
+            "10 candidate strategies, each a pure function of "
+            "<i>(asof, prices) → {ticker: weight}</i>, registered at "
+            "module-import time. Every monthly rebalance journals each "
+            "strategy's picks; a separate settle pass computes forward "
+            "returns and active return vs SPY for each.",
+            s["body"],
+        ),
+        _para(
+            "The point is not to pick a winner from a single backtest. "
+            "It is to keep all candidates running side-by-side as data "
+            "accumulates so the answer crystallizes from realized "
+            "outcomes rather than from the operator's priors. A "
+            "5-year backfill gives 60 monthly observations — enough for "
+            "the standard error on Sharpe to drop below 0.15, which is "
+            "where the +60pp leader's edge becomes statistically "
+            "separable from sample noise. The eval harness is the "
+            "answer to the operator's recurring question 'how do I "
+            "know which strategy is actually best?'",
+            s["body"],
+        ),
+        Paragraph("5.0b Why hallucination defenses", s["h2"]),
+        _para(
+            "Two of the system's most consequential outputs come from "
+            "places where errors don't necessarily surface as exceptions. "
+            "The first is the LLM-generated reactor summary: Claude "
+            "claiming Intel raised $6.5B in five tranches is either "
+            "verbatim correct or fabricated, and a unit test cannot tell "
+            "the difference. The second is the eval harness's "
+            "leaderboard: bug-for-bug consistent across all twelve "
+            "strategies (a subtle error in the momentum signal would "
+            "affect every strategy equally), so the relative ranking "
+            "looks plausible even if the absolute numbers are wrong.",
+            s["body"],
+        ),
+        _para(
+            "v3.73.13 added two defenses against these classes of error. "
+            "The first is an independent re-implementation of the "
+            "production strategy in pure pandas, sharing no code with "
+            "the harness, that runs over a yfinance-fetched price panel "
+            "and asserts agreement within tolerance. The second is a "
+            "spot-check script that, for any reactor signal, finds the "
+            "archived 8-K source and verifies that every numerical claim "
+            "in Claude's summary appears in the source text.",
+            s["body"],
+        ),
+        _para(
+            "Both defenses found real issues on first run. The cross-"
+            "validation surfaced two harness bugs that materially "
+            "changed every leaderboard number reported between v3.73.7 "
+            "and v3.73.12. The reactor spot-check verified that Claude's "
+            "INTC numbers ($6.5B, $6.47B) were correct against the "
+            "filing, refuting the natural suspicion that the BEARISH "
+            "M3 tag came from a hallucinated factual claim. The bugs "
+            "and the verifications are both load-bearing findings; both "
+            "are documented in detail in section 7.",
             s["body"],
         ),
         Paragraph("5.1 Production journal (data/journal.db)", s["h2"]),
@@ -441,6 +969,169 @@ def build():
     story += [PageBreak()]
 
     # ============================================================
+    # 5.5 HOW A REBALANCE DAY WORKS — narrative
+    # ============================================================
+    story += [
+        Paragraph("5.5 How a rebalance day actually works", s["h1"]),
+        _para(
+            "An end-to-end walk through what happens on a typical "
+            "weekday rebalance, from launchd fire to confirmed orders. "
+            "The choreography is what 'autonomy' actually means in "
+            "practice.",
+            s["body"],
+        ),
+        _para(
+            "<b>13:10 UTC</b> (9:10 ET): launchd fires the "
+            "<b>ai.flexhaul.trader-daily-run</b> job. The plist's "
+            "ProgramArguments invoke a wrapper script "
+            "(<b>~/openclaw-workspace/trader-jobs/run-trader-task.sh</b>) "
+            "which sources the operator's environment, activates the "
+            "venv, and runs <b>python -m trader.main</b>. If the laptop "
+            "was asleep at 13:10, the StartInterval=3600 safety net "
+            "(post v3.73.8) ensures the job retries within an hour of "
+            "wake.",
+            s["body"],
+        ),
+        _para(
+            "<b>main() entry</b>: the orchestrator generates a run-id "
+            "(<b>YYYY-MM-DD-HHMMSS</b>) and inserts a row into "
+            "<b>journal.runs</b> via <b>start_run()</b>. This is "
+            "idempotent; if today's run already completed, it returns "
+            "False and the orchestrator exits without trying again. "
+            "This is what makes the StartInterval safety net safe — "
+            "duplicate fires no-op.",
+            s["body"],
+        ),
+        _para(
+            "<b>Universe load</b>: the LIQUID_50 list is read from "
+            "<b>config.py</b>. Today the universe has 50 names; an "
+            "expansion to S&P 500 was empirically validated in v3.73.12 "
+            "but is not yet wired to production.",
+            s["body"],
+        ),
+        _para(
+            "<b>Momentum ranking</b>: <b>build_targets(universe)</b> "
+            "calls into the variant registry and dispatches to the "
+            "LIVE variant <b>momentum_top15_mom_weighted_v1</b>. The "
+            "variant pulls 14 months of price history via "
+            "<b>fetch_history</b>, computes the 12-1 momentum score for "
+            "each name (a function of the trailing 12-month return "
+            "excluding the most recent month), ranks descending, takes "
+            "the top 15, and computes min-shifted weights summing to "
+            "80% gross. Each pick is logged to <b>journal.decisions</b> "
+            "with the score and rationale.",
+            s["body"],
+        ),
+        _para(
+            "<b>Bottom-catch scan</b>: separately, the universe is "
+            "scanned for oversold-bounce setups (the bottom-catch "
+            "sleeve). When the live config is at <b>USE_DEBATE = "
+            "False</b>, the bottom sleeve is effectively dormant — "
+            "candidates are logged but not allocated capital.",
+            s["body"],
+        ),
+        _para(
+            "<b>Portfolio caps applied</b> (post v3.73.5): the LIVE "
+            "variant's raw weights pass through "
+            "<b>apply_portfolio_caps()</b>, which enforces an 8% single-"
+            "name cap and a 25% sector cap with cap-aware "
+            "redistribution. On the current book, the cap reduces CAT "
+            "from 11% to 8% and Tech sector exposure from 28-30% to "
+            "25%. The CapResult metadata is logged so the dashboard's "
+            "Concentration panel can show whether the cap is binding.",
+            s["body"],
+        ),
+        _para(
+            "<b>Risk gate</b>: the deployment-anchor and drawdown "
+            "protocol both run advisory checks. The drawdown protocol "
+            "evaluates current 180-day-peak DD against the four "
+            "thresholds (-5%/-8%/-12%/-15%); if any tier fires, the "
+            "operator gets a console warning, but in ADVISORY mode "
+            "(the default), no targets are mutated.",
+            s["body"],
+        ),
+        _para(
+            "<b>Order submission</b>: <b>place_target_weights()</b> "
+            "computes the difference between target weights and current "
+            "Alpaca position weights, generates notional market orders "
+            "for each non-zero delta, and submits them through the "
+            "Alpaca API. Each submission is journaled to "
+            "<b>journal.orders</b> with status='submitted' and the "
+            "broker's order-id.",
+            s["body"],
+        ),
+        _para(
+            "<b>Strategy eval hook</b> (post v3.73.7): for every "
+            "registered candidate strategy in the eval harness, "
+            "<b>evaluate_at()</b> records the picks the strategy would "
+            "have made today. <b>settle_returns()</b> computes the "
+            "forward returns for any prior unsettled rebalance — "
+            "yesterday's picks are now settled against today's prices "
+            "for SPY and the universe. The leaderboard table extends "
+            "by twelve rows.",
+            s["body"],
+        ),
+        _para(
+            "<b>finish_run()</b>: marks the runs row complete with the "
+            "summary 'N targets, M momentum orders, P bottom orders'. "
+            "If <b>finish_run</b> isn't called — because the process "
+            "crashed mid-rebalance — the row remains 'started' "
+            "indefinitely. This is the signal the heartbeat watches "
+            "for.",
+            s["body"],
+        ),
+        _para(
+            "<b>14:30 UTC</b> (10:30 ET): the heartbeat job fires "
+            "(<b>com.trader.daily-heartbeat</b>). It reads the journal "
+            "and verifies a row was inserted today with started_at "
+            "matching today's date. If yes, exit silently. If no, fire "
+            "an email alert via SMTP and a Slack alert via webhook to "
+            "the prismtrading workspace. A date-stamped marker file "
+            "(<b>data/.last_heartbeat_alert</b>) prevents repeat alerts "
+            "within the same day.",
+            s["body"],
+        ),
+        _para(
+            "<b>Reactor (continuous)</b>: in parallel to the daily "
+            "rebalance, the earnings-reactor daemon "
+            "(<b>com.trader.earnings-reactor</b>) is polling SEC EDGAR "
+            "every 60 seconds for HOT-cadence symbols (within ±2 days "
+            "of an earnings date) and every 300 seconds for WARM-"
+            "cadence symbols. Any new 8-K is downloaded, archived to "
+            "<b>data/filings/{sym}/{form}/{accession}.txt</b>, and — if "
+            "the form is 8-K with material items — passed to Claude "
+            "for a structured signal. Material signals (M3 grade) "
+            "trigger the same alert path the heartbeat uses.",
+            s["body"],
+        ),
+        _para(
+            "<b>23:00 local</b>: the journal-replicate job fires "
+            "(<b>com.trader.journal-replicate</b>). It runs sqlite3's "
+            "<b>.backup</b> command against the journal, writes a "
+            "transactionally-consistent copy to "
+            "<b>~/Library/Mobile Documents/com~apple~CloudDocs/trader-"
+            "journal-backup/</b>, and prunes any backups older than 7 "
+            "days (preserving 4 weekly snapshots). The backup is "
+            "auto-synced off-machine via iCloud.",
+            s["body"],
+        ),
+        _para(
+            "Across all of this, the dashboard at "
+            "<b>localhost:8501</b> is reading the same journal and "
+            "rendering current state. The operator can open it any "
+            "time and see (a) live broker equity vs SPY-normalized, "
+            "(b) the post-cap target weights for tomorrow's rebalance, "
+            "(c) the strategy leaderboard ranked by cumulative active, "
+            "(d) any reactor signals from the last 24 hours, (e) the "
+            "drawdown tier (still GREEN at +0.76% above last "
+            "snapshot), (f) the build-info badge confirming the "
+            "container is running current code.",
+            s["body"],
+        ),
+        PageBreak(),
+    ]
+
+    # ============================================================
     # 6. LIVE BOOK
     # ============================================================
     story += [
@@ -494,15 +1185,194 @@ def build():
     ]
 
     # ============================================================
-    # 7. SESSION FINDINGS
+    # 7. SESSION FINDINGS — narrative
     # ============================================================
     story += [
-        Paragraph("7. May 5 Session — Findings & Corrections", s["h1"]),
-        Paragraph(
-            "The session shipped 14 commits across v3.73.0 → v3.73.13. "
-            "Several mid-session findings forced explicit corrections to "
-            "earlier claims. Logging these honestly is part of the "
-            "discipline.",
+        Paragraph("7. May 5 Session — A Narrative", s["h1"]),
+        _para(
+            "The May 5 session was scheduled as a routine due-diligence "
+            "review. It became the largest single accumulation of "
+            "corrections in the system's history. Twenty-four hours later "
+            "the system is materially better understood, but several of "
+            "the claims that were live at the start of the session — "
+            "including in earlier versions of this document — have been "
+            "explicitly retracted. Logging these retractions honestly is "
+            "part of the discipline; the retractions are themselves "
+            "evidence the measurement infrastructure is doing its job.",
+            s["body"],
+        ),
+        Paragraph("7.1 The DD baseline error", s["h2"]),
+        _para(
+            "The session began with a written due-diligence memo "
+            "(<b>docs/DUE_DILIGENCE_2026_05_05.md</b>) that compared 10 "
+            "candidate strategies and concluded the production "
+            "<b>xs_top15</b> was mid-pack at +5.28pp vs SPY. The "
+            "recommendation was a phased switch to a higher-ranked "
+            "alternative.",
+            s["body"],
+        ),
+        _para(
+            "The DD was wrong on the most basic point: it compared "
+            "against <b>xs_top15</b> equal-weighted as the baseline. The "
+            "actual deployed LIVE variant is "
+            "<b>momentum_top15_mom_weighted_v1</b> — score-weighted with "
+            "min-shift, promoted from SHADOW to LIVE on April 29. The "
+            "production strategy was never the strategy the DD compared "
+            "to. When the production scheme was added to the eval "
+            "harness as <b>xs_top15_min_shifted</b> and the same 5-year "
+            "backfill was re-run, the standings changed completely: "
+            "production became the leader by 28pp over the next-best "
+            "alternative.",
+            s["body"],
+        ),
+        _para(
+            "The lesson is methodological, not technical. When reviewing "
+            "the strategy stack, always check the variant registry "
+            "(<b>src/trader/variants.py</b>) for the LIVE variant's "
+            "actual implementation, not the canonical "
+            "<b>rank_momentum</b> docstring. The variant fn is what "
+            "runs. v3.73.11 corrected the DD with an addendum and "
+            "shipped <b>xs_top15_min_shifted</b> as part of the eval "
+            "harness so future comparisons are apples-to-apples.",
+            s["body"],
+        ),
+        Paragraph("7.2 The long-short hypothesis fails", s["h2"]),
+        _para(
+            "The DD also recommended adding pair-trade / short ballast "
+            "as 'the only structural alpha the long-only book can't "
+            "produce.' That claim was tested empirically in v3.73.12. A "
+            "<b>long_short_momentum</b> strategy was added to the eval "
+            "harness — long top-15 by score (min-shifted) at 70% gross, "
+            "short bottom-5 by score equal-weighted at 30% gross, net "
+            "+40% gross long bias.",
+            s["body"],
+        ),
+        _para(
+            "The result was unambiguous: long-short lost 18pp vs SPY "
+            "over five years. The mechanism is straightforward in "
+            "hindsight: the bottom-5 momentum names are already beaten "
+            "down and tend to mean-revert, so shorting them costs money "
+            "on most months. Meanwhile the smaller long-side gross gives "
+            "up beta during a 4-year stretch of bull conditions. The DD's "
+            "framing — that long-short is structural alpha — overstated "
+            "the case.",
+            s["body"],
+        ),
+        _para(
+            "What it missed is that long-short alpha is regime-"
+            "conditional, not structural. In a 2022-style reversal, a "
+            "static long-short beats long-only by ~5-10pp. In a bull "
+            "stretch, it loses by more. Five years of mostly bull "
+            "conditions overweight the loss side. The credible remaining "
+            "experiment is therefore a regime-<i>conditional</i> long-"
+            "short that engages shorts only when an HMM regime "
+            "classifier signals BEAR. That is a meaningfully bigger "
+            "build than the static version we tested.",
+            s["body"],
+        ),
+        Paragraph("7.3 The cross-validation harness pays for itself", s["h2"]),
+        _para(
+            "The most consequential ship of the session was the cross-"
+            "validation harness in v3.73.13. The premise was simple: "
+            "build an independent re-implementation of the production "
+            "strategy in pure pandas, sharing no code with the eval "
+            "harness, fetching prices via yfinance directly rather than "
+            "<b>trader.data.fetch_history</b>, and running the full "
+            "5-year backtest. Then assert that the cumulative active "
+            "return and IR agree within tolerance. If the two "
+            "implementations disagree, at least one is wrong.",
+            s["body"],
+        ),
+        _para(
+            "On first run, they disagreed by 24pp. The harness reported "
+            "+88.35pp cumulative active vs SPY; the independent "
+            "implementation reported +112.92pp. The harness was using "
+            "60 monthly observations; the independent only 56. After "
+            "tracing the discrepancy, two distinct bugs surfaced.",
+            s["body"],
+        ),
+        _para(
+            "The first was a warmup-period drag. The eval harness's "
+            "<b>evaluate_at()</b> would journal a row for every "
+            "registered strategy at every rebalance date, even when the "
+            "strategy returned empty picks (which it does for the first "
+            "~13 months of any backfill, before there is enough history "
+            "to compute the 12-1 momentum signal). On settle, those "
+            "empty-picks rows recorded port_return = 0 (no positions to "
+            "price) but spy_return = the actual SPY return for the "
+            "period. The active return was therefore -spy_return, "
+            "treating 'cash because the strategy can't trade yet' as "
+            "if it were the strategy's underperformance. With SPY in a "
+            "drawdown for parts of 2021-2022, the warmup window "
+            "<i>inflated</i> the strategy's apparent active return by "
+            "~17pp. v3.73.13 fixed this by skipping empty-picks rows in "
+            "<b>evaluate_at</b>.",
+            s["body"],
+        ),
+        _para(
+            "The second bug was an annualization error. The "
+            "<b>leaderboard()</b> function annualized monthly active "
+            "returns using the daily-period factor sqrt(252) instead of "
+            "the monthly factor sqrt(12). All information ratios "
+            "reported in v3.73.7 through v3.73.12 — including the "
+            "headline IR 2.51 for the production strategy — were "
+            "overstated by the ratio sqrt(252/12), approximately 4.58x. "
+            "The corrected production IR is 0.59. v3.73.13 fixed the "
+            "constant.",
+            s["body"],
+        ),
+        _para(
+            "Neither bug was caught by the test suite. The unit tests "
+            "verified that the math <i>functions did what the code said "
+            "they did</i>; they could not catch a logic error that "
+            "matched the wrong intent. The cross-validation caught both "
+            "on its first run because the independent re-implementation "
+            "did not share the bug. After the fixes, the leaderboard's "
+            "headline numbers are materially smaller than what was "
+            "reported earlier in the session: production beats SPY by "
+            "+71pp at IR 0.59, not +88pp at IR 2.51. The strategy is "
+            "still strongly winning, but the prior numbers were wrong, "
+            "and several 'borderline winners' in the leaderboard turned "
+            "out to be losers (xs_top15 equal-weight, vertical_winner, "
+            "long_short_momentum).",
+            s["body"],
+        ),
+        Paragraph("7.4 The reactor verifies clean", s["h2"]),
+        _para(
+            "Parallel to the cross-validation, v3.73.13 shipped a spot-"
+            "check script for the reactor's LLM-generated summaries. "
+            "The hypothesis was that Claude might be hallucinating "
+            "specific numerical facts in the 8-K summaries — claiming "
+            "amounts and tranche structures that weren't actually in the "
+            "filing.",
+            s["body"],
+        ),
+        _para(
+            "The spot-check ran against the five most recent signals "
+            "and the INTC signals specifically. Every numerical claim "
+            "verified. Claude's INTC summary said 'Intel raised $6.5B in "
+            "senior unsecured notes across five tranches with maturities "
+            "ranging from 2031 to 2066, generating ~$6.47B in net "
+            "proceeds.' All three numbers ($6.5B, five, $6.47B) appear "
+            "verbatim in the archived source filing. The reactor is not "
+            "hallucinating.",
+            s["body"],
+        ),
+        _para(
+            "What the reactor <i>cannot</i> verify is whether the "
+            "BEARISH tag is correct in market terms. The market priced "
+            "the issuance BULLISH (+13.5% on the day, +40pp 5-day alpha "
+            "vs SPY). That is a different problem than hallucination. It "
+            "is the problem the reactor's signal-validation panel "
+            "(v3.73.10) was built to track, and the answer to it requires "
+            "more settled signals than we have today. The rule remains "
+            "in SHADOW.",
+            s["body"],
+        ),
+        Paragraph("7.5 Session retraction summary", s["h2"]),
+        _para(
+            "Several explicit corrections to earlier claims, in the "
+            "order they were made:",
             s["body"],
         ),
     ]
@@ -597,6 +1467,68 @@ def build():
             "AND received; 30+ days of post-fix benchmark-relative "
             "tracking; the cross-validation harness agrees within "
             "tolerance on every weekly rebuild; LLM cost stable.",
+            s["body"],
+        ),
+        PageBreak(),
+    ]
+
+    # ============================================================
+    # 8.5 CLOSING
+    # ============================================================
+    story += [
+        Paragraph("9. The honest framing", s["h1"]),
+        _para(
+            "It is worth ending where the foreword started: this is a "
+            "personal trading system run on paper capital with the "
+            "infrastructure of a $10M shop. The right way to evaluate it "
+            "is not by the dollars it has made — it has made none, "
+            "because there are no real dollars at stake — but by what it "
+            "has taught the operator about building, debugging, and "
+            "trusting an autonomous system.",
+            s["body"],
+        ),
+        _para(
+            "The May 5 session is a case in point. The session began "
+            "with confidence in a leaderboard that was wrong by "
+            "approximately 4.58x on its IR claim and 17pp on its cum-"
+            "active claim. The session ended with the same leaderboard "
+            "showing more honest numbers (+71pp, IR 0.59) — still a "
+            "winning strategy, but materially less of one than the "
+            "operator was prepared to claim that morning. Crucially, "
+            "the corrections came from the system catching itself, not "
+            "from external review. The cross-validation harness, the "
+            "spot-check script, and the variant registry consistency "
+            "test were each shipped on the same day they caught the "
+            "bug they were designed to catch. That is the discipline "
+            "the system is meant to teach. The wins it produces are "
+            "secondary.",
+            s["body"],
+        ),
+        _para(
+            "The operator's logistics startup (FlexHaul) is the "
+            "wealth-creation engine. The trader is the operating-"
+            "discipline gym. Both are valuable; both deserve rigor; "
+            "neither should be confused for the other. This document is "
+            "intended to capture the trader honestly enough that the "
+            "operator can show it to anyone — an LP, a peer, a future "
+            "version of themselves — and have the document hold up. "
+            "If anything in here turns out to be wrong, it should be "
+            "wrong in a way the next round of measurement infrastructure "
+            "catches.",
+            s["body"],
+        ),
+        _para(
+            "The next 30 days will accumulate more data: another four "
+            "monthly rebalances, dozens of reactor signals, the first "
+            "stretch of NAV-vs-SPY tracking with the post-fix "
+            "annualization. The leaderboard's standard error will tighten. "
+            "The decision about whether to expand the universe to S&P 500 "
+            "in production, whether to ship the HMM regime classifier, "
+            "whether to flip the reactor rule from SHADOW to LIVE — all "
+            "of those decisions wait on data the system is now structured "
+            "to collect. The strategy stack and the operations stack are "
+            "finally on the same version. That alone is the difference "
+            "between a system that can be sized up and one that cannot.",
             s["body"],
         ),
         PageBreak(),
