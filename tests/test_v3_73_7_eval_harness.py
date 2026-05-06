@@ -142,15 +142,19 @@ def test_evaluate_at_inserts_rows_and_is_idempotent(tmp_path, monkeypatch):
 
     db = tmp_path / "j.db"
     asof = dates[-1]
+    # v3.73.13: evaluate_at now skips empty-picks strategies.
+    # long_short_momentum requires 20+ names (15 long + 5 short);
+    # the 5-name test panel produces empty picks for it. So we
+    # expect 11 inserts, not 12.
     n1 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
-    assert n1 == 12, f"first call should insert 12 rows; got {n1}"
+    assert n1 == 11, f"first call should insert 11 rows; got {n1}"
     n2 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
     assert n2 == 0, f"second call should be idempotent; got {n2} new rows"
 
     con = sqlite3.connect(db)
     total = con.execute("SELECT COUNT(*) FROM strategy_eval").fetchone()[0]
     con.close()
-    assert total == 12
+    assert total == 11
 
 
 def test_settle_returns_only_settles_unsettled_rows(tmp_path):

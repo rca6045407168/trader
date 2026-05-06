@@ -119,13 +119,22 @@ def evaluate_at(
             picks = spec.fn(asof, prices)
         except Exception as e:
             picks = {"_error": str(e)}
+        # v3.73.13 CORRECTNESS FIX: don't journal empty picks. Empty
+        # picks at the START of a backtest (before 12mo of history is
+        # available to score momentum) caused the leaderboard to count
+        # those periods as "0% portfolio vs SPY moving" — inflating
+        # cum_active by the SPY drag during the warmup window. Rows
+        # with errors (`_error`) are still journaled so the operator
+        # sees them.
+        n_real = len([t for t in picks if not t.startswith("_")])
+        if n_real == 0 and "_error" not in picks:
+            continue
         cur.execute(
             """INSERT OR IGNORE INTO strategy_eval
                (asof, strategy, picks_json, n_picks, created_at)
                VALUES (?, ?, ?, ?, ?)""",
             (asof_str, spec.name, json.dumps(picks),
-             len([t for t in picks if not t.startswith("_")]),
-             now),
+             n_real, now),
         )
         n += cur.rowcount
     con.commit()
@@ -329,7 +338,11 @@ def leaderboard(
             sd_a = (sum((a - mean_a) ** 2 for a in active) / (n - 1)) ** 0.5
         else:
             sd_a = 0
-        ir = (mean_active / sd_a * (252 ** 0.5)) if sd_a > 0 else 0
+        # v3.73.13 BUGFIX: monthly returns annualize with sqrt(12),
+        # NOT sqrt(252). Earlier code used sqrt(252) — overstated IR
+        # by sqrt(252/12) ≈ 4.58x for the entire v3.73.7 → v3.73.12
+        # leaderboard. Caught by the cross-validation harness.
+        ir = (mean_active / sd_a * (12 ** 0.5)) if sd_a > 0 else 0
         out.append({
             "strategy": strategy,
             "n_obs": n,

@@ -837,7 +837,7 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.12 · chat-first AI dashboard")
+    st.caption("v3.73.13 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the

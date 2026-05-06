@@ -70,7 +70,15 @@ def _equity_series(days: int = 252) -> pd.Series:
 
 
 def _spy_series(start: date, end: date) -> pd.Series:
-    """SPY adjusted close over the equity window. Cached at the dashboard layer."""
+    """SPY adjusted close over the equity window. Cached at the
+    dashboard layer.
+
+    v3.73.13 BUGFIX: yfinance auto_adjust=True returns a MultiIndex
+    DataFrame even for a single ticker. df["Close"] then returns a
+    single-column DataFrame, not a Series — and downstream code
+    (.iloc[-1]) returns a Series, breaking float() conversion. Force
+    a Series via .iloc[:,0] when MultiIndex is present.
+    """
     try:
         import yfinance as yf
         df = yf.download("SPY", start=start.strftime("%Y-%m-%d"),
@@ -78,7 +86,11 @@ def _spy_series(start: date, end: date) -> pd.Series:
                           progress=False, auto_adjust=True)
         if df is None or df.empty:
             return pd.Series(dtype=float)
-        return df["Close"].dropna().astype(float)
+        closes = df["Close"]
+        # Normalize: if multi-column DataFrame, take the first column
+        if isinstance(closes, pd.DataFrame):
+            closes = closes.iloc[:, 0]
+        return closes.dropna().astype(float)
     except Exception:
         return pd.Series(dtype=float)
 
