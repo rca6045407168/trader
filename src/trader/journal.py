@@ -178,17 +178,28 @@ def recent_snapshots(days: int = 7) -> list[dict]:
 
 
 def start_run(run_id: str, notes: str = "") -> bool:
-    """v1.3: insert a 'started' run sentinel. Returns False if a run for this date
-    is already started/completed (idempotency guard against B5 race condition)."""
+    """v1.3: insert a 'started' run sentinel. Returns False if a run for
+    this date is already started/completed (idempotency guard).
+
+    v3.73.16: run_ids ending in '-FORCE' bypass the idempotency check.
+    This lets `python -m trader.main --force` actually journal a row
+    when the original same-day run hit a HALT and we want to re-run
+    after manual intervention. Without this, the FORCE re-run would
+    do all its work but leave no runs-table evidence, making the
+    journal inconsistent with the orders/decisions/strategy_eval rows
+    it produced.
+    """
     init_db()
     today = datetime.utcnow().date().isoformat()
+    is_force = run_id.endswith("-FORCE")
     with _conn() as c:
-        existing = c.execute(
-            "SELECT run_id, status FROM runs WHERE run_id LIKE ? AND status IN ('started', 'completed')",
-            (f"{today}%",),
-        ).fetchone()
-        if existing:
-            return False
+        if not is_force:
+            existing = c.execute(
+                "SELECT run_id, status FROM runs WHERE run_id LIKE ? AND status IN ('started', 'completed')",
+                (f"{today}%",),
+            ).fetchone()
+            if existing:
+                return False
         c.execute(
             "INSERT INTO runs (run_id, started_at, status, notes) VALUES (?, ?, 'started', ?)",
             (run_id, datetime.utcnow().isoformat(), notes),
