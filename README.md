@@ -1,54 +1,83 @@
 # trader
 
-Personal automated equity trading system. Lives in `~/trader/` (not `~/trader/` — moved out 2025‑Q4). Goal: **maximize after‑tax CAGR in a Roth IRA** with auditable, defense‑in‑depth controls and ruthless honesty about what we know vs. what we hope.
+Personal automated equity trading system. Lives in `~/trader/`. Goal: **understand whether a disciplined long-only momentum book has durable edge against SP500**, run end-to-end against an Alpaca paper account with the operational stack of an institutional shop. The trader stands alone — see `CLAUDE.md` for the no-external-project-names rule.
 
-> **Standing directives from Richard:**
+> **Standing directives:**
 > 1. Iterate autonomously. Don't ask permission for reversible work.
-> 2. Use a swarm‑of‑agents approach for research, but **verify every agent's output** — they fabricate.
-> 3. **Goal = maximize profit.** Always remember that.
+> 2. Use a swarm-of-agents approach for research, but **verify every agent's output** — they fabricate.
+> 3. **Goal = beat SP500 on alpha-IR**, not just absolute return. The cum-active number can be leveraged-beta in disguise; the α-decomposition is the central scoreboard.
+> 4. **Try to kill the strategy.** Run it against harsher benchmarks, hostile regimes, time-correct universe. Trust comes from surviving adversarial validation, not from features.
 
 ---
 
-## Current state (snapshot — update on every push)
+## Current state (snapshot — updated 2026-05-06)
 
 | Field | Value |
 |---|---|
-| Version | **v3.49.2** |
-| LIVE variant | `momentum_top15_mom_weighted_v1` (top‑15 names, momentum‑weighted, 80% gross, 10% max single‑name) |
-| Brokerage (paper) | Alpaca paper — running ~daily since v3.x |
-| Brokerage (live, planned) | **Public.com Roth IRA** (NOT Alpaca — they don't sell IRAs to retail since Sept 2024) |
-| Paper account equity | ~$106k (+6.49%, +5.72pp vs SPY at last reconcile) |
-| Honest expectation | **PIT‑Sharpe ≈ +0.96, CAGR ≈ +19%, worst‑DD ≈ −33%** |
-| Tests | **141 unit (126 + 15 new v3.49)** + 10 chaos + 9 go‑live gates. **All 141 green in Docker container.** |
-| Days until live | ~85 paper days remain on the 90‑day clock |
-| Live armed? | **No.** `BROKER=alpaca_paper` everywhere. Flip is one GitHub variable change, gated by override‑delay. |
-| Live trigger (planned) | **GCP Cloud Run job + Cloud Scheduler** — see `docs/GCP_DEPLOYMENT.md`. Migrates same week as `BROKER=public_live`. ~$3‑6/mo. |
+| Version | **v3.73.19** |
+| LIVE variant | `momentum_top15_mom_weighted_v1` (top-15 by 12-1 momentum, min-shifted weights, 80% gross target × VIX-gate × deployment-anchor) |
+| Brokerage (paper) | Alpaca paper — actively running |
+| Paper account equity | **$109,789** (+9.79% since funding; +27pp vs SPY over the most recent 5y backfill window post-fix) |
+| 25y backtest (302 obs) | **+546pp cum-α / α-IR 0.70 / β 0.90** (long-window, see §3.5 in writeup) |
+| 5y backtest (47 obs) | +25.6pp cum-α / α-IR 0.46 / β 1.15 |
+| Tests | **149 v3.73.* + 800+ legacy = 950+ total**, all green in CI |
+| Strategies tracked | **25** in eval harness (12 active + 6 sizing-aware + 7 passive baselines) |
+| Live armed? | **No.** Paper only. The Tier-0 gates have not cleared (0/30 clean daily runs, 0/30 post-fix benchmark days, drawdown protocol still ADVISORY). |
+| Capital recommendation | **Paper + plumbing-test live ($500-$2,000) only.** Not for return generation. |
+| Full writeup | **`docs/TRADER_SYSTEM_WRITEUP_2026_05_05.pdf`** (31 pages) |
 
 ---
 
-## What it does (current LIVE behavior)
+## What it actually does (v3.73.19 LIVE behavior)
 
-1. **Monthly rebalance** to the top‑15 momentum names from a PIT‑honest S&P 500 universe (`universe_pit.py`), weighted by 12‑1 momentum z‑score (not equal weight). 80% gross. Single‑name cap 10%, sector cap 35%.
-2. **Daily anomaly scan** (`run_anomaly_scan.py`): looks for oversold reversals, PEAD candidates, activist 13D filings, merger‑arb spreads. Surfaces them; LIVE allocator does **not** auto‑execute these — they go into shadow variants.
-3. **Hourly reconciliation** (`run_reconcile.py`): journal expected vs Alpaca actual. HALT on mismatch.
-4. **Nightly post‑mortem** (`run_postmortem.py`): Claude reads yesterday's decisions + today's reaction; proposes one tweak. Logged, not auto‑applied.
-5. **Weekly digest** (`weekly_digest.py`): SPY‑relative perf, drawdown vs deployment anchor, peek counter, override‑delay state.
-6. **Continuous shadow tracking**: 10+ shadow variants run alongside LIVE; `strategy_decay_check.py` flags if any shadow significantly outperforms LIVE for ≥30 days (then promote via the 3‑gate pipeline).
+1. **Monthly rebalance** to the top-15 momentum names from a 50-name curated US large-cap universe, weighted via min-shift formula `weight ∝ (score - min(score) + 0.01)`, scaled to 80% gross.
+2. **Multiple vol-scaling layers stack** to produce the actual target gross:
+   `base 80% × deployment-anchor × VIX-gate × regime-overlay × drawdown-protocol = effective gross`. Currently effective ≈ 68% (80% × 0.85 VIX gate at VIX=17.4). All layers visible in the dashboard's effective-exposure-decomposition panel (v3.73.19).
+3. **Concentration caps** post-weighting: 8% single-name, 25% sector, with cap-aware redistribution (v3.73.5).
+4. **Earnings reactor** monitors SEC 8-K filings for live-book names; Claude tags severity (M1-M3) + direction. Currently SHADOW: signals are journaled and forward-return-validated, but the trim rule does NOT execute. INTC's $6.5B debt-raise BEARISH M3 signal is the canonical case — facts verified against source, market interpretation diverged.
+5. **Continuous strategy evaluator** journals 25 candidate strategies' picks every rebalance + settles forward returns. Surfaces a β-adjusted leaderboard (v3.73.15-18) with cum-α / α-IR / max-relative-DD per strategy.
+6. **Hourly reconciliation** (journal vs broker); HALT on drift. Lot-resync tool (`scripts/resync_lots_from_broker.py`) for recovery.
+7. **Heartbeat** detects silent daemon failures (Mon-Fri 14:30 UTC + 30min safety net + RunAtLoad backfill). Email + Slack alert.
+8. **Journal replication** to iCloud Drive nightly (sqlite3 .backup, transactionally consistent).
+9. **Build-info badge** + drift detector on the dashboard (v3.73.1) catches container-vs-host code drift.
 
 ---
 
-## Honest performance expectations
+## Honest performance expectations (v3.73.19 — corrected)
 
-These come from PIT‑corrected backtests, NOT from in‑sample optimizer numbers.
+These come from cross-validated backtests after caught-and-fixed bugs (warmup-drag, sqrt(252) IR overstatement); not from pre-fix overstated numbers.
 
-| Metric | PIT‑honest | In‑sample (DON'T TRUST) |
+| Window | n obs | Cum-α | α-IR | β | Cum-active |
+|---|---:|---:|---:|---:|---:|
+| **25y full (2001-2026)** | 302 | **+546pp** | **0.70** | 0.90 | (universe varies) |
+| Dot-com 2001-2003 | 24 | +31pp | **1.16** | **0.59** | (defensive!) |
+| GFC 2007-2010 | 24 | **-19pp** | **-0.93** | 0.90 | (real weakness) |
+| Long-bull 2010-2019 | 120 | +142pp | 0.86 | 0.90 | |
+| COVID 2020 | 12 | -3pp | -0.29 | 0.80 | |
+| Post-COVID 2021-2026 | 50 | +27pp | 0.46 | 1.07 | +77pp |
+
+**What this says, honestly:** The LIVE strategy survives 25 years with statistically meaningful α-IR (SE ≈ 0.06 at 302 obs; the 0.70 result is many sigmas above zero). It was *defensive* through dot-com (lower β AND higher α than the naive baseline). It *underperformed* through the GFC — a real, documented weakness. Over the full 25y, LIVE has 3x naive's cumulative alpha at essentially identical α-IR (0.70 vs 0.72).
+
+**The naive baseline check**: `naive_top15_12mo_return` (raw 12-month return, no Jegadeesh skip, no min-shift, no caps, equal-weight) is included as an adversarial active candidate. Over 25y, LIVE wins on cum-α 3x but ties on α-IR. Over the recent 5y, naive has slightly higher α-IR (0.60 vs 0.46) — regime-specific.
+
+**Survivorship caveat**: the 41-name 25y universe is the subset of our SECTORS that survived to 2026. Names that delisted 2000-2026 aren't there. True time-versioned universe construction (using historical SP500 constituent data) is open work.
+
+**The first 12 months of live trading have a real chance of underperforming SPY.** 90%+ of retail algo traders do. The thesis is multi-year, not multi-quarter.
+
+---
+
+## Tier-0 gates (must clear before meaningful capital)
+
+These six gates were prescribed by an internal due-diligence review (v3.73.4) and tightened by an adversarial critique (v3.73.17). Today **none have cleared**.
+
+| Gate | Status | What "cleared" looks like |
 |---|---|---|
-| Sharpe | **+0.96** | +1.16 |
-| CAGR | **+19%** | +30% |
-| Worst observed DD | **−33%** | −27% |
-| Expected DD ≥1×/5yr | **−25 to −35%** | — |
-
-**The first 12 months of live trading have a real chance of underperforming SPY.** 90% of retail algo traders do. The thesis is multi‑year, not multi‑quarter.
+| 30+ completed daily runs | 0 / 30 | Journal shows 30 consecutive weekday rows with status=completed, no missed-fire alerts. (Counter reset 2026-05-06 after manual lot-resync.) |
+| 30+ days post-fix benchmark tracking | 7 / 30 | daily_snapshot table has 30+ rows with non-zero SPY closes, all post-v3.73.13 (clean of the IR/warmup bugs) |
+| Caps verified live | PARTIAL | Today's broker positions all ≤ 8% (max GOOGL 6.82%); Tech 21.4% (under 25%). Cap math verified live; not yet verified through 30 consecutive rebalances. |
+| 80% target vs actual gross gap explained | DONE | Resolved 2026-05-06: VIX × 0.85 risk gate. Decomposition panel surfaces it permanently. |
+| Drawdown protocol enforced | OPEN | Currently DRAWDOWN_PROTOCOL_MODE=ADVISORY (warns only). Flip to ENFORCING is a deliberate operator decision, not yet made. |
+| GFC weakness postmortem | OPEN | LIVE -19pp vs naive -8.7pp during 2007-2010. Cause likely the min-shift weighting concentrating into financial-leverage names. Not yet investigated. |
 
 ---
 
