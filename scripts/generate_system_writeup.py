@@ -234,14 +234,40 @@ def build():
     story.append(Spacer(1, 0.2 * inch))
 
     story += [
-        Paragraph("2-line verdict", s["h3"]),
-        Paragraph(
-            "The strategy is honest momentum alpha (~0.6 IR) executed with "
-            "discipline. The operations stack is now caught up with the "
-            "strategy stack — heartbeat installed, journal replicated, "
-            "leaderboard cross-validated — making this the first time the "
-            "system is in a position to be sized up rather than continue "
-            "in paper.",
+        Paragraph("Verdict", s["h3"]),
+        _para(
+            "<b>What this is:</b> a disciplined, long-only, US-equity "
+            "momentum-enhancement strategy with institutional-grade "
+            "instrumentation built around it. The strategy harvests a "
+            "documented academic factor (12-1 momentum) with a thoughtful "
+            "weighting scheme and a vol-state gate. Empirical edge is real "
+            "but modest (IR 0.59, +71pp cum active over 5y, post-fix).",
+            s["callout"],
+        ),
+        _para(
+            "<b>What this is not:</b> a market-neutral, all-weather, "
+            "low-risk alpha machine. Beta to SPY runs around +1.7 in the "
+            "small live sample, factor exposure is concentrated in tech "
+            "and momentum-friendly cyclicals, and the 5-year backtest "
+            "window is dominated by post-COVID bull conditions. A 2008-"
+            "style sustained bear or 2000-style tech rotation is not in "
+            "the sample. The strategy is meant to make money <i>relative "
+            "to SPY</i> across most regimes, not to make money in "
+            "absolute terms during all of them.",
+            s["callout"],
+        ),
+        _para(
+            "<b>Sizing recommendation:</b> the system is qualified for "
+            "continued paper and small live trading. It is not yet "
+            "qualified for unconditional sizing-up. The gates that need "
+            "to clear before sized capital are concrete: 30+ completed "
+            "daily runs without manual intervention, 30+ days of post-fix "
+            "benchmark tracking, at least one rebalance where the "
+            "portfolio caps were verified to bind on the live book "
+            "(currently only verified on synthetic input), an "
+            "explanation of the persistent 12pp gap between target gross "
+            "(80%) and actual gross (68%), and at least one observed "
+            "regime change in the live data.",
             s["callout"],
         ),
         PageBreak(),
@@ -1169,6 +1195,180 @@ def build():
     story += [Spacer(1, 0.2 * inch)]
 
     story += [
+        Paragraph("6.1 Risk concentration in the live book", s["h2"]),
+        _para(
+            "Looking at the live book through a risk lens, three "
+            "concentrations stand out, and a fourth latent risk is "
+            "implicit in the construction:",
+            s["body"],
+        ),
+        _para(
+            "<b>Sector concentration in tech.</b> Pre-cap exposure to the "
+            "Tech sector is 28-30% of book (AMD + NVDA + AVGO + INTC). "
+            "Post-cap, this is clipped to 25%. Either way, this is a "
+            "concentrated bet on the same sector being asked to lead the "
+            "market for the same reasons (AI capex cycle, secular "
+            "compute demand). If that thesis cracks — for any reason — "
+            "the book takes a sector hit out of proportion to its "
+            "single-name exposures.",
+            s["body"],
+        ),
+        _para(
+            "<b>Single-name concentration in industrials.</b> CAT alone "
+            "is 11% of book pre-cap (8% post-cap). Industrials at the "
+            "single-name level is the second-largest concentration after "
+            "tech. This is the momentum factor doing what it was designed "
+            "to do — leaning into the strongest-trending name — but the "
+            "operator should be aware that a CAT-specific bad headline "
+            "(a guidance miss, a tariff surprise, a labor action) takes "
+            "an outsized chunk of the book down with it.",
+            s["body"],
+        ),
+        _para(
+            "<b>Beta to SPY of approximately +1.7.</b> The 7-day live "
+            "sample shows beta +1.72; the 5-year backtest shows "
+            "comparable amplification. This is <i>expected</i> for a "
+            "concentrated long-only momentum book on growth-tilted US "
+            "large-caps; it is also a real risk. A book with beta 1.7 "
+            "rises 17% when SPY rises 10% but falls 17% when SPY falls "
+            "10%. The strategy's claim is to <i>beat</i> SPY on a risk-"
+            "adjusted basis, not to provide downside protection. The "
+            "deployment-anchor gate is meant to throttle gross down in "
+            "high-vol regimes, but it does not turn a beta-1.7 book into "
+            "a beta-1.0 book.",
+            s["body"],
+        ),
+        _para(
+            "<b>Latent: factor crowding.</b> Every momentum-following "
+            "strategy in the market is, definitionally, holding similar "
+            "names at similar weights. When momentum reverses (the 2022 "
+            "episode is canonical), the unwind is sharp because every "
+            "momentum strategy is selling the same names at the same "
+            "time. The DD-recommended response is the deployment-anchor "
+            "gate (which does help) and the four-threshold drawdown "
+            "protocol (which sets explicit pre-committed actions at "
+            "-5/-8/-12/-15% portfolio DD). Both exist; the protocol is "
+            "in ADVISORY mode.",
+            s["body"],
+        ),
+        Paragraph("6.2 The 5-year sample regime bias", s["h2"]),
+        _para(
+            "The headline backtest result (+71pp vs SPY at IR 0.59 over "
+            "60 monthly observations) covers May 2021 through May 2026. "
+            "It is essential to note what regimes that window does and "
+            "does not contain.",
+            s["body"],
+        ),
+        _para(
+            "<b>What the window contains:</b> the post-COVID re-opening "
+            "rally (2021 H2), the 2022 momentum reversal and growth "
+            "drawdown (a real but ~6-month episode), the 2023 AI-led "
+            "tech recovery, the 2024 broad bull market, and 2025-26 "
+            "consolidation. Approximately 4 of the 5 years are "
+            "growth-and-tech-favorable. The one bear-like episode "
+            "(2022) was brief and was followed by an unusually fast "
+            "recovery led by exactly the names a momentum book holds. "
+            "This is approximately the most-favorable possible regime "
+            "for cross-sectional momentum on US large-caps.",
+            s["body"],
+        ),
+        _para(
+            "<b>What the window does not contain:</b> a sustained "
+            "multi-year bear (2000-02 dotcom unwind, 2007-09 financial "
+            "crisis), a value rotation that lasts more than a few months "
+            "(the 2000-2007 period when value beat growth by ~50pp "
+            "cumulatively), or a stagflation regime (1970s). The "
+            "strategy has not been backtested through any of these. "
+            "It is reasonable to expect that the +71pp lead would be "
+            "materially smaller, possibly negative, in a regime that "
+            "doesn't reward momentum or doesn't reward tech.",
+            s["body"],
+        ),
+        _para(
+            "The right framing of the 5-year cum-active number is "
+            "therefore: this is the strategy's performance in a friendly "
+            "regime, not its expected performance across all regimes. "
+            "The IR 0.59 is more honest as a long-run estimate, but "
+            "even that is fitted to a friendly window. A reasonable "
+            "real-world expectation is IR 0.3-0.5 across full cycles, "
+            "with multi-year drawdowns relative to SPY during value-"
+            "rotation regimes. That is still positive, still worth "
+            "running, but not 'institutional-grade' alpha.",
+            s["body"],
+        ),
+        Paragraph("6.3 The 80% gross vs 68% actual gap", s["h2"]),
+        _para(
+            "The strategy's design target is 80% gross exposure, 20% "
+            "cash. The current live book is at 68% gross — a 12pp gap "
+            "that has been visible in the dashboard since the May 5 "
+            "session began. Three plausible explanations, in order of "
+            "decreasing innocence:",
+            s["body"],
+        ),
+        _para(
+            "(1) <b>T+1 settlement timing.</b> Sells settle T+1; "
+            "proceeds aren't immediately redeployable. If a recent "
+            "rebalance trimmed several names, the cash from those "
+            "trims sits in the buying-power column for one trading day "
+            "before being available. This explains a few percent at "
+            "most.",
+            s["body"],
+        ),
+        _para(
+            "(2) <b>Stale rebalance.</b> The pre-May 5 finding was that "
+            "the daily orchestrator hadn't completed a full rebalance "
+            "since 2026-05-01. If positions drift via market action "
+            "since then (some names up, some down) and no rebalance has "
+            "fully executed, the realized gross can drift below target. "
+            "This is the most likely explanation for the bulk of the "
+            "12pp gap.",
+            s["body"],
+        ),
+        _para(
+            "(3) <b>The deployment-anchor is gating.</b> If the "
+            "30/200-day spread has narrowed enough to put the gate in "
+            "conservative mode, the system would intentionally run "
+            "below 80%. This should be visible in the deployment-anchor "
+            "dashboard panel; if the gate is in conservative mode, the "
+            "panel should show the multiplier explicitly.",
+            s["body"],
+        ),
+        _para(
+            "Resolving the gap is operational hygiene that the next "
+            "completed rebalance (post v3.73.8 fix) should accomplish. "
+            "Until that happens, the dashboard's claimed 80%-gross "
+            "design and the broker's 68% reality are inconsistent, "
+            "and any reader of this document should treat the strategy "
+            "performance numbers as 'what the strategy would do at "
+            "design-target gross,' not 'what the live book is actually "
+            "doing today.'",
+            s["body"],
+        ),
+        Paragraph("6.4 Cap execution: shipped vs verified live", s["h2"]),
+        _para(
+            "v3.73.5 shipped the 8% single-name and 25% sector caps. "
+            "Unit tests verify the cap math is correct (17 tests in "
+            "<b>test_v3_73_5_portfolio_caps.py</b>). The daily-run "
+            "orchestrator imports <b>apply_portfolio_caps</b> "
+            "immediately before placing orders. The dashboard's "
+            "Concentration panel shows the cap result on the live book.",
+            s["body"],
+        ),
+        _para(
+            "What is <i>not</i> yet verified is that an actual rebalance "
+            "run has used the caps to mutate weights, submitted those "
+            "modified weights to the broker, and resulted in the live "
+            "book actually reflecting the cap. The most recent completed "
+            "run (May 1) preceded the cap ship. Until the next clean "
+            "rebalance fires, runs to completion, and we observe CAT "
+            "trimmed from 11% to 8% in the broker's position list, the "
+            "cap's live behavior is asserted-but-unverified. This is "
+            "low-risk (the unit tests are real) but worth marking "
+            "explicitly: the system has not yet executed a single "
+            "real-money trade with the post-v3.73.5 caps in effect.",
+            s["body"],
+        ),
+        PageBreak(),
         Paragraph("The INTC paradox", s["h2"]),
         Paragraph(
             "INTC's 8.8% position is up +26.7% on cost despite a BEARISH "
@@ -1422,7 +1622,46 @@ def build():
     # ============================================================
     story += [
         Paragraph("8. Recommendations & Next Steps", s["h1"]),
-        Paragraph("Tier 1 — actionable now", s["h2"]),
+        _para(
+            "The recommendations below reflect the corrected (post-v3.73.13) "
+            "view: a strategy with honest but modest alpha that has been "
+            "tested only in a friendly regime, with several open "
+            "operational questions, and one important asymmetry — the "
+            "downside of expanding capital before the gates clear is much "
+            "larger than the downside of waiting another 30-60 days.",
+            s["body"],
+        ),
+        Paragraph("Tier 0 — must clear before any real-money sizing", s["h2"]),
+    ]
+    tier0 = [
+        ["Gate", "Status", "What 'cleared' looks like"],
+        ["30+ completed daily runs", "0 / 30",
+         "Journal shows 30 consecutive weekday rows with status=completed, no missed-fire alerts"],
+        ["30+ days post-fix benchmark tracking", "0 / 30",
+         "daily_snapshot table has 30+ rows with non-zero SPY closes, "
+         "all post-v3.73.13 (clean of the IR/warmup bugs)"],
+        ["Caps verified live", "Asserted, not verified",
+         "Next completed rebalance shows CAT trimmed from 11% → 8%, Tech from 28% → 25% in broker positions"],
+        ["80% target vs 68% gross gap", "Open",
+         "Either book reaches 78-80% gross post-rebalance, or the "
+         "deployment-anchor gate is documented as the cause"],
+        ["Beta reasonably below 1.5", "+1.7 (current)",
+         "Either accept the beta and document the implication, or "
+         "explicitly target lower via a vol-targeting overlay"],
+        ["At least one regime change", "0 (sample is bull-only)",
+         "A multi-month episode in the live data where SPY "
+         "drawdown > 5% and the strategy's response is observed"],
+    ]
+    story.append(_table(tier0, col_widths=[2.0 * inch, 1.5 * inch, 3.2 * inch]))
+    story += [
+        Spacer(1, 0.15 * inch),
+        _para(
+            "Until <b>all six</b> Tier 0 gates clear, the right action is "
+            "to keep running paper. Any earlier sized-capital move is "
+            "based on a hope rather than a measurement.",
+            s["callout"],
+        ),
+        Paragraph("Tier 1 — actionable now (operational + measurement)", s["h2"]),
     ]
     tier1 = [
         ["Priority", "Action", "Cost", "Why"],
