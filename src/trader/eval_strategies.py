@@ -362,6 +362,110 @@ def simple_60_40(asof, prices):
 
 
 # ============================================================
+# v3.73.18 — HARSHER PASSIVE BASELINES
+#
+# Per the v3.73.17 critique: "beating a Boglehead 3-fund over a
+# US-tech-led period is not informative. The real passive benchmark
+# is SPY, QQQ, MTUM, SCHG, VUG, XLK, equal-weight S&P 500."
+# These add the appropriate-difficulty passive comparisons.
+# ============================================================
+@register("buy_and_hold_qqq",
+          "100% QQQ (Nasdaq-100). Beats most strategies during US-tech-led "
+          "regimes; the test of whether our momentum book actually beats "
+          "the simplest mega-cap-tech bet.")
+def buy_and_hold_qqq(asof, prices):
+    if "QQQ" in prices.columns:
+        return {"QQQ": 1.00}
+    return {"SPY": 1.00}  # safe fallback
+
+
+@register("buy_and_hold_mtum",
+          "100% MTUM (iShares MSCI USA Momentum Factor ETF). The "
+          "honest factor-ETF benchmark — if our active strategy "
+          "doesn't beat the canned momentum factor, the active "
+          "book isn't earning its complexity.")
+def buy_and_hold_mtum(asof, prices):
+    if "MTUM" in prices.columns:
+        return {"MTUM": 1.00}
+    return {"SPY": 1.00}
+
+
+@register("buy_and_hold_schg",
+          "100% SCHG (Schwab US Large-Cap Growth ETF). Growth-tilt "
+          "passive baseline.")
+def buy_and_hold_schg(asof, prices):
+    if "SCHG" in prices.columns:
+        return {"SCHG": 1.00}
+    return {"SPY": 1.00}
+
+
+@register("buy_and_hold_vug",
+          "100% VUG (Vanguard Growth ETF). Vanguard's large-cap-"
+          "growth alternative to SCHG.")
+def buy_and_hold_vug(asof, prices):
+    if "VUG" in prices.columns:
+        return {"VUG": 1.00}
+    return {"SPY": 1.00}
+
+
+@register("buy_and_hold_xlk",
+          "100% XLK (SPDR Tech Select Sector). Pure-tech sector ETF — "
+          "the 'just buy the sector' test for a momentum book that "
+          "happens to be Tech-heavy.")
+def buy_and_hold_xlk(asof, prices):
+    if "XLK" in prices.columns:
+        return {"XLK": 1.00}
+    return {"SPY": 1.00}
+
+
+@register("equal_weight_sp500",
+          "100% RSP (Invesco S&P 500 Equal Weight ETF). Removes "
+          "the cap-weighting bias of SPY; tests whether our "
+          "selection adds value vs. naive 1/N over the index.")
+def equal_weight_sp500(asof, prices):
+    if "RSP" in prices.columns:
+        return {"RSP": 1.00}
+    return {"SPY": 1.00}
+
+
+# ============================================================
+# Naive top-15 12-month return (no min-shift, no caps, no skip)
+#
+# The "what if we just bought last year's winners equal-weight"
+# strategy. Tests whether our sophistication (12-1 skip,
+# min-shift, caps) adds anything over a college-freshman version.
+# ============================================================
+@register("naive_top15_12mo_return",
+          "Top-15 by trailing 12-month return (NO 1-month skip), "
+          "equal-weight at 80% gross. The 'college-freshman momentum' "
+          "baseline — tests whether our 12-1 skip + min-shift + caps "
+          "actually add anything.")
+def naive_top15_12mo_return(asof, prices):
+    import pandas as pd
+    p = _stock_panel(prices)
+    p = p[p.index <= asof]
+    if len(p) < 252:
+        return {}
+    cutoff = asof - pd.DateOffset(months=12)
+    scored = []
+    for sym in p.columns:
+        s = p[sym].dropna()
+        s_then = s[s.index <= cutoff]
+        s_now = s[s.index <= asof]
+        if s_then.empty or s_now.empty:
+            continue
+        p0 = float(s_then.iloc[-1]); p1 = float(s_now.iloc[-1])
+        if p0 > 0:
+            scored.append((sym, p1 / p0 - 1))
+    scored.sort(key=lambda x: -x[1])
+    picks = scored[:15]
+    if not picks:
+        return {}
+    w = 0.80 / len(picks)
+    return {t: w for t, _ in picks}
+
+
+# ============================================================
 # 15. Vol-targeted production (v3.73.17)
 #
 #     Same picks + min-shift weights as the production LIVE

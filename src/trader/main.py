@@ -697,7 +697,14 @@ def main(force: bool = False) -> dict:
         import pandas as pd
         end = pd.Timestamp.today()
         start = (end - pd.DateOffset(months=18)).strftime("%Y-%m-%d")
-        ETF_TICKERS = ["SPY", "VTI", "VXUS", "BND", "AGG"]
+        ETF_TICKERS = [
+            # Original passive baselines
+            "SPY", "VTI", "VXUS", "BND", "AGG",
+            # v3.73.18 harsher-baselines: tech, growth, momentum,
+            # equal-weight, sector-pure. Tests our active edge against
+            # appropriate-difficulty passive alternatives.
+            "QQQ", "MTUM", "SCHG", "VUG", "XLK", "RSP",
+        ]
         prices = fetch_history(universe + ETF_TICKERS, start=start)
         prices = prices.dropna(axis=1, how="any")
         if not prices.empty:

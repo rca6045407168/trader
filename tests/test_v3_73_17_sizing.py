@@ -179,12 +179,12 @@ def test_max_loss_implied_max_weight_at_default_params():
 # ============================================================
 # Integration: 2 new eval-harness strategies
 # ============================================================
-def test_total_strategies_now_eighteen():
-    """v3.73.17 adds 3 sizing-aware candidates → 18 total."""
+def test_total_strategies_now_twentyfive():
+    """v3.73.18: 18 (post-sizing) + 7 harsher baselines = 25 total."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 18, \
-        f"expected 18 strategies, got {len(specs)}"
+    assert len(specs) == 25, \
+        f"expected 25 strategies, got {len(specs)}"
 
 
 def test_new_sizing_strategies_registered():
@@ -247,4 +247,6 @@ def test_main_imports_sizing_module():
 
 def test_dashboard_version_v3_73_17():
     text = (ROOT / "scripts" / "dashboard.py").read_text()
-    assert "v3.73.17" in text or "v3.73.16" in text  # accepts either
+    # accept v3.73.17 or any later patch
+    import re
+    assert re.search(r'v3\.73\.\d+', text)

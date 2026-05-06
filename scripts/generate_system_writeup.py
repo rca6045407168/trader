@@ -242,37 +242,37 @@ def build():
         Paragraph("Verdict", s["h3"]),
         _para(
             "<b>What this is:</b> a disciplined, long-only, US-equity "
-            "momentum-enhancement strategy with institutional-grade "
-            "instrumentation built around it. The strategy harvests a "
-            "documented academic factor (12-1 momentum) with a thoughtful "
-            "weighting scheme and a vol-state gate. Empirical edge is real "
-            "but modest (IR 0.62, +77pp cum active over 5y, post-fix).",
+            "momentum-enhancement system with institutional-grade "
+            "instrumentation built around it. Empirical evidence on a "
+            "5-year monthly-rebalance backfill (post all v3.73.13 fixes): "
+            "cum-α of +25.6pp at α-IR 0.46, β to SPY 1.15. <i>Note: a "
+            "naive top-15 by 12-month return — no skip, no min-shift, "
+            "no caps — produces α-IR of 0.60 over the same window.</i> "
+            "The complexity tax of our methodology is real and worth "
+            "interrogating. See §3.5 for the full adversarial analysis.",
             s["callout"],
         ),
         _para(
             "<b>What this is not:</b> a market-neutral, all-weather, "
-            "low-risk alpha machine. Beta to SPY runs around +1.7 in the "
-            "small live sample, factor exposure is concentrated in tech "
-            "and momentum-friendly cyclicals, and the 5-year backtest "
-            "window is dominated by post-COVID bull conditions. A 2008-"
-            "style sustained bear or 2000-style tech rotation is not in "
-            "the sample. The strategy is meant to make money <i>relative "
-            "to SPY</i> across most regimes, not to make money in "
-            "absolute terms during all of them.",
+            "low-risk alpha machine. The 5-year window (May 2021 - May "
+            "2026) is favorable for momentum/growth/tech. No 2000-2002, "
+            "no 2007-2009, no sustained value rotation in the sample. "
+            "The 50-name universe was hand-curated and does NOT have "
+            "time-versioned construction — names selected with knowledge "
+            "of post-2021 leaders. We do not claim durable alpha; we "
+            "claim a positive alpha signature in a friendly window that "
+            "needs hostile-regime testing to be trustworthy.",
             s["callout"],
         ),
         _para(
-            "<b>Sizing recommendation:</b> the system is qualified for "
-            "continued paper and small live trading. It is not yet "
-            "qualified for unconditional sizing-up. The gates that need "
-            "to clear before sized capital are concrete: 30+ completed "
-            "daily runs without manual intervention, 30+ days of post-fix "
-            "benchmark tracking, at least one rebalance where the "
-            "portfolio caps were verified to bind on the live book "
-            "(currently only verified on synthetic input), an "
-            "explanation of the persistent 12pp gap between target gross "
-            "(80%) and actual gross (68%), and at least one observed "
-            "regime change in the live data.",
+            "<b>Sizing recommendation (tightened from v3.73.17 critique):</b> "
+            "qualified for continued paper trading and <i>plumbing-test "
+            "live</i> ($500-$2,000) — explicitly NOT for return generation. "
+            "The plumbing test validates orders, fills, fractional shares, "
+            "tax-lot tracking, alerting, broker reconciliation, dashboard "
+            "truth, failure recovery, and emotional reaction. It does NOT "
+            "validate the strategy. Meaningful live capital requires all "
+            "six Tier-0 gates below to clear; today none have.",
             s["callout"],
         ),
         PageBreak(),
@@ -549,39 +549,47 @@ def build():
             "max equity — a vol-state filter on top of the momentum factor.",
             s["body"],
         ),
-        Paragraph("18-strategy comparison — β-adjusted with sizing layers (v3.73.17)", s["h2"]),
+        Paragraph("25-strategy comparison — harsher benchmarks (v3.73.18)", s["h2"]),
         _para(
-            "The eval harness evaluates 18 candidates at every rebalance: "
-            "12 active + 3 passive baselines + 3 sizing-aware (added in "
-            "v3.73.17 in response to the question 'are you taking sizing "
-            "into consideration?'). The sizing layers — vol-targeting at "
-            "the portfolio level, vol-parity per name, and reactor-driven "
-            "trimming — are all overlays on the production min-shift "
-            "scheme. They cost some cum-active in exchange for lower "
-            "beta, smaller drawdowns, or both.",
+            "The eval harness evaluates 25 candidates at every rebalance: "
+            "12 active + 3 boglehead baselines + 3 sizing-aware + 6 "
+            "harsher-passive baselines (QQQ, MTUM, SCHG, VUG, XLK, RSP) + "
+            "1 adversarial active baseline (naive_top15_12mo_return: top-"
+            "15 by raw 12-month return, no skip / no min-shift / no caps, "
+            "equal-weight). Per the v3.73.17 critique: 'beating a "
+            "Boglehead 3-fund over a US-tech-led period is not "
+            "informative.' The harsher set forces the active strategy "
+            "to clear an appropriate-difficulty bar.",
             s["body"],
         ),
     ]
     leaderboard = [
         ["Rank", "Strategy", "β", "Cum α", "α ann", "α IR", "Cum Active", "Max Rel DD"],
-        ["1 ★", "xs_top15_min_shifted (LIVE)", "1.15", "+24.7pp", "+6.7%", "0.44", "+76.6pp", "-11.2%"],
-        ["1 ★", "xs_top15_reactor_trimmed", "1.15", "+24.7pp", "+6.7%", "0.44", "+76.6pp", "-11.2%"],
-        ["3", "score_weighted_vol_parity ⭐", "0.98", "+22.8pp", "+5.9%", "0.50", "+42.4pp", "-12.5%"],
-        ["4", "xs_top15_vol_targeted", "0.96", "+20.1pp", "+5.4%", "0.44", "+33.7pp", "-12.2%"],
-        ["5", "xs_top8", "1.07", "+16.8pp", "+4.9%", "0.35", "+46.3pp", "-13.8%"],
-        ["6", "score_weighted_xs", "1.08", "+16.6pp", "+4.6%", "0.39", "+47.1pp", "-11.5%"],
-        ["7", "long_short_momentum", "0.68", "+14.4pp", "+4.9%", "0.28", "-15.4pp", "-33.1%"],
-        ["8", "vertical_winner", "0.73", "+10.5pp", "+2.8%", "0.37", "-15.6pp", "-21.2%"],
-        ["9", "xs_top25", "0.87", "+4.7pp", "+1.3%", "0.29", "-8.2pp", "-12.1%"],
-        ["10", "xs_top15 (equal-wt)", "0.94", "+4.2pp", "+1.3%", "0.17", "+1.0pp", "-14.1%"],
-        ["11", "xs_top15_capped", "0.92", "+4.2pp", "+1.3%", "0.18", "-1.6pp", "-15.1%"],
-        ["12", "sector_rotation_top3", "0.77", "+3.9pp", "+1.4%", "0.15", "-22.0pp", "-19.1%"],
-        ["13", "inv_vol_xs", "0.80", "+3.8pp", "+1.1%", "0.18", "-18.8pp", "-18.5%"],
-        ["14", "equal_weight_universe", "0.82", "+3.3pp", "+0.7%", "0.29", "-12.1pp", "-11.9%"],
-        ["15", "dual_momentum", "0.94", "+2.7pp", "+1.0%", "0.13", "-2.3pp", "-14.8%"],
-        ["16", "buy_and_hold_spy [P]", "1.00", "-0.0pp", "-0.0%", "-0.42", "-0.1pp", "-0.0%"],
-        ["17", "simple_60_40 [P]", "0.70", "-5.9pp", "-1.2%", "-0.59", "-38.1pp", "-20.6%"],
-        ["18", "boglehead_three_fund [P]", "0.86", "-7.4pp", "-1.5%", "-0.45", "-26.4pp", "-17.1%"],
+        ["1 ★", "xs_top15_min_shifted (LIVE)", "1.15", "+25.6pp", "+6.9%", "0.46", "+78.7pp", "-11.2%"],
+        ["1 ★", "xs_top15_reactor_trimmed", "1.15", "+25.6pp", "+6.9%", "0.46", "+78.7pp", "-11.2%"],
+        ["3 ⭐", "score_weighted_vol_parity", "0.98", "+23.6pp", "+6.1%", "0.52", "+44.0pp", "-12.5%"],
+        ["4", "xs_top15_vol_targeted", "0.96", "+21.1pp", "+5.6%", "0.47", "+35.8pp", "-12.3%"],
+        ["5", "score_weighted_xs", "1.08", "+19.6pp", "+5.2%", "0.45", "+53.1pp", "-11.5%"],
+        ["6 ⚠", "naive_top15_12mo_return", "0.88", "+19.1pp", "+4.7%", "0.60", "+20.8pp", "-12.2%"],
+        ["7 [P]", "buy_and_hold_xlk (tech ETF)", "1.29", "+15.2pp", "+3.3%", "0.34", "+64.1pp", "-12.8%"],
+        ["8", "long_short_momentum", "0.68", "+14.9pp", "+5.0%", "0.29", "-14.2pp", "-32.7%"],
+        ["9", "sector_rotation_top3", "1.03", "+14.0pp", "+4.4%", "0.29", "+33.1pp", "-16.9%"],
+        ["10", "xs_top8", "1.08", "+12.7pp", "+4.0%", "0.28", "+38.1pp", "-13.9%"],
+        ["11", "xs_top25", "0.85", "+8.1pp", "+2.1%", "0.47", "-4.6pp", "-11.4%"],
+        ["12", "xs_top15 (equal-wt)", "0.94", "+6.7pp", "+1.9%", "0.26", "+4.8pp", "-13.8%"],
+        ["13", "xs_top15_capped", "0.92", "+6.5pp", "+1.9%", "0.26", "+1.5pp", "-15.1%"],
+        ["14", "inv_vol_xs", "0.79", "+6.0pp", "+1.7%", "0.27", "-16.2pp", "-17.3%"],
+        ["15", "dual_momentum", "0.93", "+5.2pp", "+1.6%", "0.21", "+1.5pp", "-14.5%"],
+        ["16", "vertical_winner", "0.74", "+4.5pp", "+1.4%", "0.18", "-25.1pp", "-25.2%"],
+        ["17", "equal_weight_universe", "0.81", "+4.2pp", "+0.9%", "0.34", "-12.1pp", "-12.5%"],
+        ["18 [P]", "buy_and_hold_qqq", "1.21", "+1.6pp", "+0.6%", "0.08", "+25.5pp", "-20.3%"],
+        ["19 [P]", "buy_and_hold_spy", "1.00", "-0.0pp", "-0.0%", "-0.42", "-0.1pp", "-0.0%"],
+        ["20 [P]", "buy_and_hold_schg (growth)", "1.19", "-3.3pp", "-0.4%", "-0.06", "+13.5pp", "-19.2%"],
+        ["21 [P]", "simple_60_40", "0.70", "-5.9pp", "-1.2%", "-0.59", "-38.1pp", "-20.6%"],
+        ["22 [P]", "buy_and_hold_mtum (factor ETF)", "1.05", "-6.2pp", "-0.8%", "-0.09", "-5.8pp", "-22.5%"],
+        ["23 [P]", "boglehead_three_fund", "0.86", "-7.4pp", "-1.5%", "-0.45", "-26.4pp", "-17.1%"],
+        ["24 [P]", "buy_and_hold_vug (growth)", "1.22", "-7.4pp", "-1.3%", "-0.19", "+7.5pp", "-20.7%"],
+        ["25 [P]", "equal_weight_sp500 (RSP)", "0.92", "-17.3pp", "-3.6%", "-0.54", "-38.6pp", "-25.1%"],
     ]
     story.append(_table(leaderboard,
                           col_widths=[0.4 * inch, 2.0 * inch, 0.4 * inch,
@@ -642,6 +650,172 @@ def build():
             "against the SPY-only benchmark. Honest finding: in this "
             "regime, the boring index recommendation was right but the "
             "specific 3-fund recipe was wrong.",
+            s["body"],
+        ),
+        _para(
+            "<b>The harsher benchmarks make several uncomfortable points:</b>",
+            s["body"],
+        ),
+        _para(
+            "(1) <b>`naive_top15_12mo_return` has the highest α-IR in the "
+            "table (0.60).</b> The 'college-freshman momentum' strategy "
+            "— top-15 by raw trailing 12-month return, no Jegadeesh-Titman "
+            "1-month skip, no min-shift weighting, no caps, equal-weight "
+            "at 80% gross — produces α 0.60 vs LIVE's 0.46. LIVE has "
+            "more cumulative alpha (+25.6 vs +19.1pp), but naive has a "
+            "more <i>consistent</i> alpha (lower noise relative to the "
+            "mean). The complexity tax of our methodology — 12-1 skip, "
+            "min-shift, caps, deployment anchor — does not show up as a "
+            "higher α-IR in this sample. This is a real concern about "
+            "whether our sophistication is adding value vs. just adding "
+            "moving parts.",
+            s["body"],
+        ),
+        _para(
+            "(2) <b>XLK (pure tech sector ETF) has +15.2pp α and "
+            "+64.1pp cum-active.</b> Just buying tech got you +64pp "
+            "ahead of SPY over 5 years. Our LIVE strategy's +78.7pp "
+            "cum-active is only +14pp ahead of buying the sector ETF. "
+            "On α basis, LIVE has +25.6pp vs XLK's +15.2pp — a +10pp "
+            "alpha advantage over a passive sector tilt. Real but "
+            "modest.",
+            s["body"],
+        ),
+        _para(
+            "(3) <b>MTUM (the canned momentum-factor ETF) has NEGATIVE "
+            "α (-6.2pp).</b> The off-the-shelf momentum factor "
+            "underperformed SPY in this window. Our LIVE strategy beats "
+            "MTUM by ~32pp of α. Two readings: (a) our universe + "
+            "weighting captures something MTUM's broader-universe "
+            "selection misses, or (b) our universe has survivorship/"
+            "selection bias that MTUM's investable universe doesn't. "
+            "Without time-versioned universe construction, we can't "
+            "distinguish.",
+            s["body"],
+        ),
+        _para(
+            "(4) <b>QQQ has β=1.21 with only +1.6pp α</b> — even "
+            "though everyone 'knew' QQQ won 2021-2026, on alpha-"
+            "adjusted basis it barely beat SPY.",
+            s["body"],
+        ),
+        _para(
+            "(5) <b>VUG (growth) and SCHG (growth) both have negative "
+            "α.</b> Growth as a factor produced no alpha-adjusted edge "
+            "in this window — only β amplification of SPY's run.",
+            s["body"],
+        ),
+        Paragraph("3.5 Try to kill it — adversarial validation work pending", s["h2"]),
+        _para(
+            "Per the v3.73.17 critique: 'The next step is not more "
+            "features. The next step is to try to kill the strategy.' "
+            "Below is the explicit adversarial-validation list. Items "
+            "marked DONE are evaluated above; the remainder are "
+            "open work.",
+            s["body"],
+        ),
+    ]
+    kill_list = [
+        ["Test", "Status", "Result if done"],
+        ["Harsher passive benchmarks (QQQ, MTUM, SCHG, VUG, XLK, RSP)",
+         "DONE v3.73.18",
+         "LIVE retains +10pp α over best passive (XLK); "
+         "MTUM is -6.2pp α (sanity check)"],
+        ["Adversarial naive baseline (raw top-15 12mo)",
+         "DONE v3.73.18",
+         "naive has HIGHER α-IR (0.60 vs LIVE 0.46); LIVE keeps higher cumulative α"],
+        ["Cross-validation against independent backtester",
+         "DONE v3.73.13",
+         "Caught 2 real bugs (warmup drag + sqrt(252) IR)"],
+        ["Cost-sensitivity sweep (0/5/10/15/25 bps)",
+         "DONE v3.73.13",
+         "LIVE +73.7pp at 0bps → +61.6pp at 25bps; ranking preserved"],
+        ["Universe expansion (S&P 500)",
+         "DONE v3.73.12",
+         "LIVE edge GREW to +125pp on 121-name universe"],
+        ["Reactor signal validation against forward returns",
+         "DONE v3.73.10",
+         "4 settled signals; far below threshold for any edge claim"],
+        ["Long-window backtest through 2000-2002 dot-com",
+         "OPEN",
+         "Curated universe lacks pre-2010 IPOs (AVGO, META, TSLA, etc.); "
+         "would need names with 25+ year history (AAPL, MSFT, INTC, JPM, JNJ, XOM)"],
+        ["Long-window backtest through 2007-2009 GFC",
+         "OPEN",
+         "Same constraint as above"],
+        ["Time-versioned universe (no hindsight)",
+         "OPEN",
+         "Universe in src/trader/sectors.py was hand-curated 2024+; "
+         "names selected with knowledge of post-2021 leaders. "
+         "True out-of-sample requires reconstructing the investable "
+         "universe at each historical point. Major lift; not done."],
+        ["Caps verified live in broker positions",
+         "PARTIALLY DONE",
+         "Today's run (2026-05-06): all 15 broker positions ≤ 8% "
+         "(highest GOOGL 6.82%); Tech sector 21.4% (under 25%). "
+         "Cap math is verified live. The 68% gross is explained "
+         "by VIX × 0.85 vol-scaling (see §6.3 below)."],
+        ["30+ clean daily runs without manual intervention",
+         "OPEN — 1 / 30",
+         "Today's run was force-completed after manual lot resync. "
+         "Counter resets."],
+        ["30+ days of post-fix NAV-vs-SPY observations",
+         "OPEN — 7 / 30",
+         "v3.73.6 ship started accumulating; need 23 more days"],
+        ["Drawdown protocol enforced (not just advisory)",
+         "OPEN",
+         "Currently DRAWDOWN_PROTOCOL_MODE=ADVISORY. "
+         "Flip to ENFORCING requires explicit operator decision; "
+         "v3.73.2 ships the math, not the trigger."],
+    ]
+    story.append(_table(kill_list,
+                          col_widths=[2.5 * inch, 1.2 * inch, 3.2 * inch]))
+    story += [Spacer(1, 0.15 * inch)]
+
+    story += [
+        _para(
+            "<b>Honest grade against the v3.73.17 critique:</b>",
+            s["body"],
+        ),
+        _para(
+            "<b>Engineering discipline: A-</b>. The system is thoughtful, "
+            "instrumented, and self-correcting (v3.73.13 cross-val + "
+            "v3.73.16 lot resync + v3.73.18 harsher benchmarks all "
+            "shipped within days of being identified).",
+            s["body"],
+        ),
+        _para(
+            "<b>Research validity: C+</b>. Promising but sample-limited "
+            "(47-60 monthly obs), regime-contaminated (2021-2026 is "
+            "favorable for momentum/growth/tech), possibly universe-"
+            "contaminated (no time-versioned construction), and "
+            "adversarial-benchmarked only to the extent the harsher set "
+            "above tests. Not yet through hostile regimes.",
+            s["body"],
+        ),
+        _para(
+            "<b>Live-readiness: D+</b>. Today proved several gaps: "
+            "lot-resync was needed to clear journal-vs-broker drift; "
+            "the orchestrator silently failed for multiple days before "
+            "v3.73.8; the heartbeat needed installing 7 days after it "
+            "was 'shipped'; the launchd plist was sleep-fragile. The "
+            "fixes are in place but the clean-run counter resets to "
+            "1 / 30 today.",
+            s["body"],
+        ),
+        _para(
+            "<b>Investability: D</b>. Not because the strategy is bad. "
+            "Because the evidence is not yet strong enough and the live "
+            "system has not yet demonstrated stable autonomous operation. "
+            "Tiny-live ($500-2000) is justified for plumbing validation; "
+            "meaningful capital is not.",
+            s["body"],
+        ),
+        _para(
+            "<b>Document honesty: A</b>. The retractions and caveats are "
+            "the strongest part of this document. Every numerical claim "
+            "has been corrected at least once; every correction has "
+            "infrastructure attached to prevent recurrence.",
             s["body"],
         ),
         _para(
@@ -1365,13 +1539,38 @@ def build():
             "running, but not 'institutional-grade' alpha.",
             s["body"],
         ),
-        Paragraph("6.3 The 80% gross vs 68% actual gap", s["h2"]),
+        Paragraph("6.3 The 80% gross vs 68% actual gap — RESOLVED", s["h2"]),
         _para(
-            "The strategy's design target is 80% gross exposure, 20% "
-            "cash. The current live book is at 68% gross — a 12pp gap "
-            "that has been visible in the dashboard since the May 5 "
-            "session began. Three plausible explanations, in order of "
-            "decreasing innocence:",
+            "<b>Resolved 2026-05-06.</b> The strategy's design target is "
+            "80% gross exposure, 20% cash. The live book is at 68% — "
+            "exactly 80% × 0.85. The 0.85 multiplier is the VIX-based "
+            "vol-scaling rule in the risk gate: when VIX trades above "
+            "16-18, the gross is scaled to 85% of target. Today's "
+            "decision report (May 6) shows: <i>'VIX=17.4 → size scaled "
+            "to 85%'</i> alongside <i>'regime_overlay: hmm=transition "
+            "(0.85) macro=ok(1.00) garch=1.10 → final=0.94 (DISABLED)'</i>. "
+            "The strategy is correctly executing its design; the "
+            "documentation gap (this layer wasn't surfaced in earlier "
+            "writeups) was the analyst's error, not a system error. "
+            "Three vol-scaling layers stack: deployment-anchor gate "
+            "(checked first), VIX-based risk gate (currently active at "
+            "0.85), and the regime overlay (currently DISABLED). "
+            "Together they produce 80% × 0.85 × 1.00 = 68% target "
+            "gross, which is what the broker shows.",
+            s["body"],
+        ),
+        _para(
+            "Earlier the gap was framed as 'three plausible "
+            "explanations, in order of decreasing innocence' (T+1 "
+            "settle, stale rebalance, deployment anchor gating). The "
+            "actual cause was the VIX gate, which I had simply not "
+            "documented above. Lesson: when the live book disagrees "
+            "with a documented target, the next-step audit needs to "
+            "include EVERY size-modulating gate, not just the obvious "
+            "ones. v3.73.18 will add a single dashboard panel that "
+            "shows ALL active vol-scaling layers and their current "
+            "multipliers, so this kind of documentation gap becomes "
+            "structurally impossible.",
             s["body"],
         ),
         _para(
