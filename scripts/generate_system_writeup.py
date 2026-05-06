@@ -1712,7 +1712,147 @@ def build():
     ]
 
     # ============================================================
-    # 8.5 CLOSING
+    # 8.5 REDDIT RESEARCH
+    # ============================================================
+    story += [
+        Paragraph("8.5 What the retail trading community actually says", s["h1"]),
+        _para(
+            "On May 6 we ran a systematic harvest of 15 trading subreddits "
+            "via the public Reddit JSON API. 899 unique top threads were "
+            "collected (titles, scores, comment counts, top-level text); "
+            "100 were enriched with full top-comment trees (553 comments "
+            "total); 80+ substantive threads were read in full text. The "
+            "subreddits sampled covered the full retail landscape: "
+            "r/algotrading, r/quantfinance, r/quant, r/Trading, "
+            "r/Daytrading, r/options, r/thetagang, r/SecurityAnalysis, "
+            "r/ValueInvesting, r/Bogleheads, r/investing, r/stocks, and "
+            "r/wallstreetbets as a cultural baseline.",
+            s["body"],
+        ),
+        _para(
+            "The full research summary is in "
+            "<b>docs/REDDIT_RESEARCH_2026_05_06.md</b>. Here are the "
+            "findings most consequential for evaluating this system.",
+            s["body"],
+        ),
+        Paragraph("8.5.1 Where the community's evidence supports the design", s["h2"]),
+        _para(
+            "<b>Discipline beats strategy.</b> The single most upvoted "
+            "\"how to trade\" thread in r/Trading (1284 upvotes, "
+            "\"5 years of trading, my best tips\") opens with risk "
+            "management as the inviolable rule. The same conclusion "
+            "appears in every substantive multi-year-experience thread "
+            "across every subreddit. Our system's structural choice — "
+            "code-enforced rebalance, pre-committed cap rules, idempotent "
+            "orchestrator with no override path — is doing exactly what "
+            "the community's hard-won consensus says is required.",
+            s["body"],
+        ),
+        _para(
+            "<b>Naked-position blow-up immunity.</b> The cautionary tales "
+            "with 5000+ upvotes ('Lost 100k in 3 minutes', 'Naked calls "
+            "100k → 600k loss', '590k loss in one day') universally "
+            "share two features: undefined-risk option positions and "
+            "concentrated single-name leverage. Our system is "
+            "structurally immune by design — long-only, no options, "
+            "8% single-name cap, four-threshold drawdown protocol. The "
+            "class of failure these reddit threads represent cannot "
+            "happen on this system as designed.",
+            s["body"],
+        ),
+        _para(
+            "<b>Operational reliability is universally undercounted.</b> "
+            "r/algotrading's most-upvoted purely-cautionary thread (1566) "
+            "is a production-failure story (algo crashed, accidentally "
+            "bought millions of shares of penny stocks before margin "
+            "call). The pattern in the comments: retail algorithmic "
+            "traders systematically underweight production reliability "
+            "vs backtest quality. The May 5 session's first hours were "
+            "spent on exactly these problems (heartbeat never installed, "
+            "sleep-fragile launchd plists, journal not replicated). The "
+            "community's warning is correct: ops > strategy at this stage.",
+            s["body"],
+        ),
+        Paragraph("8.5.2 Where the community's evidence challenges the design", s["h2"]),
+        _para(
+            "<b>The Bogleheads counter-argument deserves explicit "
+            "engagement.</b> r/Bogleheads's pinned reality is that ~85% "
+            "of active mutual funds underperform their benchmark over 10+ "
+            "years (SPIVA data); the community's confidence is in passive "
+            "simplicity. Our 5-year backtest shows +71pp active return "
+            "vs SPY at IR 0.59. After accounting for the regime-bias of "
+            "the sample, the time cost of operating the system "
+            "(~127 hr/year, per our own DD), and the slippage at the "
+            "high end of the cost-sensitivity sweep (25 bps cuts active "
+            "to +61pp), the gap to passive is real but not enormous.",
+            s["body"],
+        ),
+        _para(
+            "The honest framing: our strategy is worth running as a "
+            "learning/discipline asset (its primary intent) and worth "
+            "running for the alpha if and only if all of the following "
+            "hold: (a) the Tier 0 gates clear, (b) the strategy "
+            "demonstrates positive active return through at least one "
+            "observed regime change in the live data, and (c) the "
+            "operator's annual time cost remains genuinely below 127 hr. "
+            "If those conditions don't hold, the Boglehead community's "
+            "recommendation — stop and put the capital in VTI — is a "
+            "real option that retail-algorithmic communities "
+            "consistently underweight in their own threads.",
+            s["callout"],
+        ),
+        _para(
+            "<b>The 'I made an algo with AI' pattern is dominant and "
+            "bad.</b> Multiple top threads in r/algotrading and r/Trading "
+            "describe AI-assisted strategies whose evidence base is 10 "
+            "days of paper. The community's top comments on these threads "
+            "are universally skeptical. Our reactor is in SHADOW only — "
+            "the LLM is a signal extractor on filings, not a strategy "
+            "generator — and the v3.73.10 forward-return validation "
+            "table is built specifically to prevent this failure mode. "
+            "But the operator should be aware: any later move to expand "
+            "the LLM's role (e.g., letting it propose strategies rather "
+            "than tag filings) puts us into the failure pattern the "
+            "community has watched fail many times.",
+            s["body"],
+        ),
+        _para(
+            "<b>The 2022 lesson resonates.</b> r/Bogleheads, "
+            "r/ValueInvesting, and r/investing all have multiple "
+            "high-upvote threads on the 2022 episode (S&P -25%, "
+            "Nasdaq -35%, Meta -75% peak-to-trough). The community "
+            "memory is that even brief drawdowns reset confidence "
+            "broadly. Our 5-year backfill includes this episode but "
+            "no sustained bear; the §6.2 disclosure of the regime-"
+            "bias is honest by the community's bar.",
+            s["body"],
+        ),
+        Paragraph("8.5.3 The retail landscape, condensed", s["h2"]),
+    ]
+
+    landscape = [
+        ["Approach", "Community sentiment", "Comparable to our system?"],
+        ["Bogleheads (passive index)", "Strongly positive; verified by SPIVA",
+         "Our benchmark; we must clear it net of cost + time"],
+        ["Wheel / theta selling", "Survivor-biased successes; tail blow-ups documented",
+         "We considered an analog (long-short), tested empirically, rejected"],
+        ["Discretionary day-trading", "Brazil 97% / Taiwan 1% lose; community's hardest warning",
+         "We are not this; monthly cadence and code-enforced rules avoid"],
+        ["AI-driven strategy generation", "Community's most-skepticed pattern",
+         "We use LLM as signal extractor only, in SHADOW"],
+        ["Concentrated value (Buffett-style)", "Long-horizon, fundamentally rigorous",
+         "Different style; we are factor-systematic"],
+        ["Quant career-track (BlackRock-style)", "Aspirational; not a retail playbook",
+         "Different scale entirely"],
+        ["Retail momentum / factor-systematic", "Niche; few documented retail successes",
+         "<b>Our position</b>"],
+    ]
+    story.append(_table(landscape,
+                         col_widths=[1.6 * inch, 2.4 * inch, 2.7 * inch]))
+    story += [PageBreak()]
+
+    # ============================================================
+    # 9. CLOSING
     # ============================================================
     story += [
         Paragraph("9. The honest framing", s["h1"]),
