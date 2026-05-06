@@ -1,5 +1,13 @@
 # trader — context
 
+## ⚠️ HARD RULE — NO EXTERNAL-PROJECT NAMES
+
+**This project stands alone.** Never introduce references to other projects, companies, or unrelated business names anywhere in this codebase — not in code comments, doc prose, commit messages, plist labels, env-var names, log strings, prompt templates, or scheduled-task SKILL.md files.
+
+In particular: **never use "FlexHaul" or any prefix containing it (`ai.flexhaul.*`, `com.flexhaul.*`, `flexhaul-`, `/FlexHaul/`, etc.) anywhere.** If you see one, scrub it. The launchd label convention for trader jobs is `com.trader.<job-name>`. The Python module / data path is `/Users/richardchen/trader/`. The trader is its own thing.
+
+This was committed as a hard rule on 2026-05-06 after a full repo + launchd scrub. If you find yourself about to write or copy a string containing "FlexHaul" into a trader-system file, stop and rephrase.
+
 ## What this is
 
 Personal automated trading system. Alpaca paper account. Daily-run cron + GitHub Actions.
