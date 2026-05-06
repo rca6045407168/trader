@@ -197,7 +197,7 @@ def build():
             "deployment-anchor risk gates, and now a continuous strategy-"
             "evaluation harness. Live equity is $107,296 across 15 positions; "
             "the system has been beating the SP500 benchmark by approximately "
-            "+71pp cumulatively over five years of monthly-rebalance backtest, "
+            "+77pp cumulatively over five years of monthly-rebalance backtest, "
             "after transaction costs.",
             s["body"],
         ),
@@ -218,9 +218,11 @@ def build():
 
     headline = [
         ["Metric", "Value", "Note"],
-        ["Cumulative active vs SPY", "+71.23pp", "60-month, 47 settled obs"],
-        ["Information ratio (annualized)", "0.59",
+        ["Cumulative active vs SPY", "+76.60pp", "60-month, 47 settled obs"],
+        ["Information ratio (annualized)", "0.62",
          "monthly returns × √12 — corrected"],
+        ["vs Boglehead 3-fund", "+103.0pp", "passive baseline empirical"],
+        ["vs Classic 60/40", "+114.7pp", "passive baseline empirical"],
         ["Beta to SPY (live, 7-day)", "+1.72",
          "small sample; not statistically meaningful"],
         ["Live equity", "$107,296", "Alpaca paper, 2026-05-05"],
@@ -241,7 +243,7 @@ def build():
             "instrumentation built around it. The strategy harvests a "
             "documented academic factor (12-1 momentum) with a thoughtful "
             "weighting scheme and a vol-state gate. Empirical edge is real "
-            "but modest (IR 0.59, +71pp cum active over 5y, post-fix).",
+            "but modest (IR 0.62, +77pp cum active over 5y, post-fix).",
             s["callout"],
         ),
         _para(
@@ -414,7 +416,7 @@ def build():
             "transaction costs and 15-30 name portfolios deliver Sharpe "
             "in the 0.3-0.6 range historically. That is exactly where this "
             "system sits: the cross-validated 5-year information ratio is "
-            "0.59 against the SP500 benchmark. The strategy is <i>not</i> "
+            "0.62 against the SP500 benchmark. The strategy is <i>not</i> "
             "claiming a new finding. It is harvesting a documented factor "
             "with discipline.",
             s["body"],
@@ -495,8 +497,8 @@ def build():
             "But the scaling between picks remains proportional to the "
             "<i>spread</i> of scores, so a clear winner gets meaningfully "
             "more weight than a marginal pick. The empirical result on "
-            "five years of cost-aware backtesting: +71pp vs SPY at IR "
-            "0.59 — beating both equal-weight (-0.52pp) and pure score-"
+            "five years of cost-aware backtesting: +77pp vs SPY at IR "
+            "0.62 — beating both equal-weight (+0.97pp) and pure score-"
             "weighted (+43.33pp).",
             s["body"],
         ),
@@ -544,30 +546,37 @@ def build():
             "max equity — a vol-state filter on top of the momentum factor.",
             s["body"],
         ),
-        Paragraph("12-strategy comparison (5y, post-fix)", s["h2"]),
-        Paragraph(
-            "The eval harness evaluates 12 candidate strategies at every "
-            "rebalance. Numbers below are cost-aware (5bps × turnover) and "
-            "exclude warmup periods. The LIVE variant's lead is robust "
-            "across cost levels and across the 50-name vs 121-name "
-            "universe expansion.",
+        Paragraph("15-strategy comparison (5y, post-fix, passive baselines included)", s["h2"]),
+        _para(
+            "The eval harness evaluates 15 candidate strategies at every "
+            "rebalance: 12 active candidates plus 3 passive baselines "
+            "(buy-and-hold SPY, Boglehead 3-fund, classic 60/40) added in "
+            "v3.73.14 in response to the Reddit research. Numbers are "
+            "cost-aware (5bps × turnover) and exclude warmup periods. "
+            "The passive baselines are the most important addition: they "
+            "force the system to <i>measure</i> whether active is "
+            "actually beating the simplest alternatives, rather than "
+            "claiming so in prose.",
             s["body"],
         ),
     ]
     leaderboard = [
         ["Rank", "Strategy", "Cum Active", "IR", "Win %"],
-        ["1 ★", "xs_top15_min_shifted (LIVE)", "+71.23pp", "0.59", "47%"],
-        ["2", "score_weighted_xs", "+43.33pp", "0.49", "47%"],
-        ["3", "xs_top8 (concentrated)", "+41.62pp", "0.41", "49%"],
-        ["4", "xs_top15 (equal-wt)", "-0.52pp", "0.01", "45%"],
-        ["5", "xs_top15_capped", "-2.99pp", "-0.04", "40%"],
-        ["6", "dual_momentum", "-3.75pp", "-0.05", "43%"],
-        ["7", "xs_top25", "-8.95pp", "-0.28", "43%"],
-        ["8", "equal_weight_universe", "-11.86pp", "-0.47", "47%"],
-        ["9", "vertical_winner", "-16.01pp", "-0.28", "43%"],
-        ["10", "long_short_momentum", "-18.02pp", "-0.09", "43%"],
-        ["11", "inv_vol_xs", "-19.04pp", "-0.40", "45%"],
-        ["12", "sector_rotation_top3", "-25.20pp", "-0.34", "45%"],
+        ["1 ★", "xs_top15_min_shifted (LIVE)", "+76.60pp", "0.62", "49%"],
+        ["2", "score_weighted_xs", "+47.07pp", "0.52", "49%"],
+        ["3", "xs_top8 (concentrated)", "+46.26pp", "0.45", "51%"],
+        ["4", "xs_top15 (equal-wt)", "+0.97pp", "0.03", "47%"],
+        ["5", "buy_and_hold_spy [PASSIVE]", "-0.09pp", "-0.45", "0%"],
+        ["6", "xs_top15_capped", "-1.64pp", "-0.02", "43%"],
+        ["7", "dual_momentum", "-2.31pp", "-0.02", "45%"],
+        ["8", "xs_top25", "-8.23pp", "-0.26", "43%"],
+        ["9", "equal_weight_universe", "-12.12pp", "-0.48", "47%"],
+        ["10", "long_short_momentum", "-15.37pp", "-0.07", "45%"],
+        ["11", "vertical_winner", "-15.55pp", "-0.27", "43%"],
+        ["12", "inv_vol_xs", "-18.83pp", "-0.39", "45%"],
+        ["13", "sector_rotation_top3", "-22.02pp", "-0.29", "47%"],
+        ["14", "boglehead_three_fund [PASSIVE]", "-26.44pp", "-0.86", "43%"],
+        ["15", "simple_60_40 [PASSIVE]", "-38.06pp", "-1.03", "37%"],
     ]
     story.append(_table(leaderboard,
                           col_widths=[0.5 * inch, 2.4 * inch, 1.2 * inch,
@@ -1253,7 +1262,7 @@ def build():
         ),
         Paragraph("6.2 The 5-year sample regime bias", s["h2"]),
         _para(
-            "The headline backtest result (+71pp vs SPY at IR 0.59 over "
+            "The headline backtest result (+77pp vs SPY at IR 0.62 over "
             "60 monthly observations) covers May 2021 through May 2026. "
             "It is essential to note what regimes that window does and "
             "does not contain.",
@@ -1279,7 +1288,7 @@ def build():
             "(the 2000-2007 period when value beat growth by ~50pp "
             "cumulatively), or a stagflation regime (1970s). The "
             "strategy has not been backtested through any of these. "
-            "It is reasonable to expect that the +71pp lead would be "
+            "It is reasonable to expect that the +77pp lead would be "
             "materially smaller, possibly negative, in a regime that "
             "doesn't reward momentum or doesn't reward tech.",
             s["body"],
@@ -1288,7 +1297,7 @@ def build():
             "The right framing of the 5-year cum-active number is "
             "therefore: this is the strategy's performance in a friendly "
             "regime, not its expected performance across all regimes. "
-            "The IR 0.59 is more honest as a long-run estimate, but "
+            "The IR 0.62 is more honest as a long-run estimate, but "
             "even that is fitted to a friendly window. A reasonable "
             "real-world expectation is IR 0.3-0.5 across full cycles, "
             "with multi-year drawdowns relative to SPY during value-"
@@ -1517,7 +1526,7 @@ def build():
             "reported in v3.73.7 through v3.73.12 — including the "
             "headline IR 2.51 for the production strategy — were "
             "overstated by the ratio sqrt(252/12), approximately 4.58x. "
-            "The corrected production IR is 0.59. v3.73.13 fixed the "
+            "The corrected production IR is 0.62. v3.73.13 fixed the "
             "constant.",
             s["body"],
         ),
@@ -1530,7 +1539,7 @@ def build():
             "did not share the bug. After the fixes, the leaderboard's "
             "headline numbers are materially smaller than what was "
             "reported earlier in the session: production beats SPY by "
-            "+71pp at IR 0.59, not +88pp at IR 2.51. The strategy is "
+            "+77pp at IR 0.62, not +88pp at IR 2.51. The strategy is "
             "still strongly winning, but the prior numbers were wrong, "
             "and several 'borderline winners' in the leaderboard turned "
             "out to be losers (xs_top15 equal-weight, vertical_winner, "
@@ -1581,7 +1590,7 @@ def build():
         ["1",
          "DD compared production to wrong baseline",
          "v3.73.4 DD claimed 'production xs_top15 is mid-pack at +5.28pp'. "
-         "Wrong: production is xs_top15_MIN_SHIFTED, leader at +71pp. "
+         "Wrong: production is xs_top15_MIN_SHIFTED, leader at +77pp. "
          "Documented in DD_ADDENDUM_2026_05_05.md."],
         ["2",
          "Long-short empirical failure",
@@ -1606,7 +1615,7 @@ def build():
          "sqrt(252) IR overstatement",
          "leaderboard() annualized monthly returns with sqrt(252). "
          "All IRs reported v3.73.7-v3.73.12 were 4.58x too high. Fixed "
-         "to sqrt(12). IR 2.51 → 0.59."],
+         "to sqrt(12). IR 2.51 → 0.62."],
         ["7",
          "yfinance MultiIndex breaking dashboard",
          "auto_adjust=True returns multi-column DF; .iloc[-1] returned "
@@ -1775,31 +1784,55 @@ def build():
         ),
         Paragraph("8.5.2 Where the community's evidence challenges the design", s["h2"]),
         _para(
-            "<b>The Bogleheads counter-argument deserves explicit "
-            "engagement.</b> r/Bogleheads's pinned reality is that ~85% "
-            "of active mutual funds underperform their benchmark over 10+ "
-            "years (SPIVA data); the community's confidence is in passive "
-            "simplicity. Our 5-year backtest shows +71pp active return "
-            "vs SPY at IR 0.59. After accounting for the regime-bias of "
-            "the sample, the time cost of operating the system "
-            "(~127 hr/year, per our own DD), and the slippage at the "
-            "high end of the cost-sensitivity sweep (25 bps cuts active "
-            "to +61pp), the gap to passive is real but not enormous.",
+            "<b>The Bogleheads counter-argument is now MEASURED, not "
+            "argued.</b> v3.73.14 added three passive baselines to the "
+            "eval harness so the Boglehead claim could be tested "
+            "empirically rather than engaged in prose: "
+            "<b>buy_and_hold_spy</b> (100% SPY, never reset), "
+            "<b>boglehead_three_fund</b> (60% VTI / 30% VXUS / 10% BND, "
+            "monthly rebalance), and <b>simple_60_40</b> (60% SPY / 40% "
+            "AGG, monthly rebalance). Five-year results, cost-aware:",
             s["body"],
         ),
         _para(
-            "The honest framing: our strategy is worth running as a "
-            "learning/discipline asset (its primary intent) and worth "
-            "running for the alpha if and only if all of the following "
-            "hold: (a) the Tier 0 gates clear, (b) the strategy "
-            "demonstrates positive active return through at least one "
-            "observed regime change in the live data, and (c) the "
-            "operator's annual time cost remains genuinely below 127 hr. "
-            "If those conditions don't hold, the Boglehead community's "
-            "recommendation — stop and put the capital in VTI — is a "
-            "real option that retail-algorithmic communities "
-            "consistently underweight in their own threads.",
+            "The LIVE strategy beat <i>every</i> passive baseline by a "
+            "wide margin: +76.6pp vs buy-and-hold-SPY, +103.0pp vs the "
+            "Boglehead 3-fund, +114.7pp vs classic 60/40. The 3-fund "
+            "and 60/40 underperformed not just our active strategy but "
+            "<i>SPY itself</i>: the 3-fund lagged SPY by 26pp because "
+            "VXUS (international) and BND (bonds) both lagged US equity "
+            "during the rate-hiking cycle; 60/40 lagged by 38pp for the "
+            "same reason amplified by the 40% bond weight. This is "
+            "honest empirical data showing why \"diversify into bonds "
+            "and international\" got punished in a US-tech-led era.",
+            s["body"],
+        ),
+        _para(
+            "The honest framing remains: our strategy is worth running "
+            "as a learning/discipline asset (its primary intent) and "
+            "worth running for the alpha if and only if all of the "
+            "following hold: (a) the Tier 0 gates clear, (b) the "
+            "strategy demonstrates positive active return through at "
+            "least one observed regime change in the live data, and "
+            "(c) the operator's annual time cost remains genuinely "
+            "below 127 hr. If those conditions don't hold, the "
+            "Boglehead community's <i>structural</i> argument — stop "
+            "and put the capital in a low-cost index fund — remains a "
+            "real option, even though their <i>specific</i> 3-fund "
+            "allocation underperformed our LIVE by a large margin in "
+            "this sample.",
             s["callout"],
+        ),
+        _para(
+            "<b>The strongest passive baseline is buy-and-hold SPY</b>, "
+            "not the 3-fund. If the operator decides at any point that "
+            "the active system isn't worth the time, the right "
+            "fallback is 100% SPY (or equivalent). Adding bonds and "
+            "international to be 'diversified' actually hurt over the "
+            "5-year window. The eval harness will continue to track "
+            "all three passive baselines so the operator has live data "
+            "on which to decide.",
+            s["body"],
         ),
         _para(
             "<b>The 'I made an algo with AI' pattern is dominant and "
@@ -1871,7 +1904,7 @@ def build():
             "with confidence in a leaderboard that was wrong by "
             "approximately 4.58x on its IR claim and 17pp on its cum-"
             "active claim. The session ended with the same leaderboard "
-            "showing more honest numbers (+71pp, IR 0.59) — still a "
+            "showing more honest numbers (+77pp, IR 0.62) — still a "
             "winning strategy, but materially less of one than the "
             "operator was prepared to claim that morning. Crucially, "
             "the corrections came from the system catching itself, not "

@@ -618,20 +618,29 @@ def main(force: bool = False) -> dict:
 
     # v3.73.7: write a row to strategy_eval for every candidate
     # strategy on every rebalance run. The eval runner is cheap
-    # (pure functions on the same price panel; ~1-2s for all 10),
+    # (pure functions on the same price panel; ~1-2s for all 15),
     # and accumulating rows is what turns the leaderboard into a
     # real signal over time. Failures here MUST NOT fail the run.
+    #
+    # v3.73.14: also fetch ETFs (VTI/VXUS/BND/AGG) alongside SPY so
+    # the passive baselines (buy_and_hold_spy, boglehead_three_fund,
+    # simple_60_40) can price their picks. The active stock-picking
+    # strategies filter to the stock universe via _stock_panel(),
+    # so adding ETFs to the panel doesn't contaminate them.
     try:
         from .eval_runner import evaluate_at, settle_returns
         from .data import fetch_history
         import pandas as pd
         end = pd.Timestamp.today()
         start = (end - pd.DateOffset(months=18)).strftime("%Y-%m-%d")
-        prices = fetch_history(universe + ["SPY"], start=start)
+        ETF_TICKERS = ["SPY", "VTI", "VXUS", "BND", "AGG"]
+        prices = fetch_history(universe + ETF_TICKERS, start=start)
         prices = prices.dropna(axis=1, how="any")
         if not prices.empty:
             asof = prices.index[-1]
-            n = evaluate_at(asof, universe, prices=prices.drop(columns=["SPY"], errors="ignore"))
+            # Pass full panel (incl. ETFs) so passive baselines work;
+            # stock strategies filter to universe internally.
+            n = evaluate_at(asof, universe, prices=prices)
             print(f"  -> strategy_eval: recorded {n} new picks for {asof.date()}")
             settled = settle_returns(asof, prices=prices)
             if settled:

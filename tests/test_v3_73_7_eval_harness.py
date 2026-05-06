@@ -23,27 +23,64 @@ ROOT = Path(__file__).resolve().parent.parent
 # ============================================================
 # Registry
 # ============================================================
-def test_twelve_strategies_registered():
-    """v3.73.12: 10 candidates + 1 production-replica + 1 long-short.
-    Total 12 strategies so the leaderboard tests selection × weighting ×
-    structure (long-only vs long-short)."""
+def test_fifteen_strategies_registered():
+    """v3.73.14: 12 active candidates + 3 passive baselines (Boglehead-
+    style). The passive baselines were added in response to the Reddit
+    research finding that the Boglehead counter-argument deserves
+    explicit MEASUREMENT, not just prose engagement."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 12, \
-        f"expected 12 strategies, got {len(specs)}: {[s.name for s in specs]}"
+    assert len(specs) == 15, \
+        f"expected 15 strategies, got {len(specs)}: {[s.name for s in specs]}"
 
 
 def test_canonical_strategy_names_present():
     from trader import eval_strategies
     names = {s.name for s in eval_strategies.all_strategies()}
     expected = {
+        # Active candidates (12)
         "xs_top15", "xs_top15_capped", "vertical_winner",
         "xs_top8", "xs_top25", "score_weighted_xs", "inv_vol_xs",
         "dual_momentum", "sector_rotation_top3", "equal_weight_universe",
-        "xs_top15_min_shifted",  # v3.73.11 production-replica
-        "long_short_momentum",    # v3.73.12 structural addition
+        "xs_top15_min_shifted",
+        "long_short_momentum",
+        # Passive baselines (3) — v3.73.14
+        "buy_and_hold_spy",
+        "boglehead_three_fund",
+        "simple_60_40",
     }
     assert names == expected, f"missing: {expected - names}, extra: {names - expected}"
+
+
+def test_passive_baselines_handle_missing_tickers():
+    """If VXUS/BND/AGG aren't in the price panel (cheaper backfill),
+    the baselines must still return a valid allocation rather than
+    crash or return empty."""
+    import pandas as pd, numpy as np
+    from trader.eval_strategies import (
+        buy_and_hold_spy, boglehead_three_fund, simple_60_40,
+    )
+
+    np.random.seed(7)
+    dates = pd.bdate_range("2025-01-01", periods=100)
+    # Only SPY available — neither VTI/VXUS/BND/AGG
+    prices = pd.DataFrame(
+        100 * np.cumprod(1 + np.random.randn(100, 1) * 0.01, axis=0),
+        index=dates, columns=["SPY"],
+    )
+
+    spy_only = buy_and_hold_spy(dates[-1], prices)
+    assert spy_only == {"SPY": 1.00}
+
+    bog = boglehead_three_fund(dates[-1], prices)
+    assert "SPY" in bog
+    assert abs(sum(bog.values()) - 1.0) < 1e-6, \
+        f"3-fund weights should normalize to 1.0, got {sum(bog.values())}"
+
+    sixty_forty = simple_60_40(dates[-1], prices)
+    # SPY+AGG → just SPY when AGG missing → renormalize to 1.0
+    assert "SPY" in sixty_forty
+    assert abs(sum(sixty_forty.values()) - 1.0) < 1e-6
 
 
 def test_long_short_returns_negative_weights():
@@ -142,19 +179,22 @@ def test_evaluate_at_inserts_rows_and_is_idempotent(tmp_path, monkeypatch):
 
     db = tmp_path / "j.db"
     asof = dates[-1]
-    # v3.73.13: evaluate_at now skips empty-picks strategies.
-    # long_short_momentum requires 20+ names (15 long + 5 short);
-    # the 5-name test panel produces empty picks for it. So we
-    # expect 11 inserts, not 12.
+    # v3.73.13/14: evaluate_at skips empty-picks strategies. Of the
+    # 15 registered strategies on the 5-name test panel:
+    #   12 active candidates: 11 produce picks (long_short_momentum
+    #     fails — needs 20+ names for top-15 + bottom-5)
+    #   3 passive baselines: all return {"SPY": ...} unconditionally
+    #     (with renormalize fallback if SPY missing — still non-empty)
+    # Expected inserts: 11 + 3 = 14.
     n1 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
-    assert n1 == 11, f"first call should insert 11 rows; got {n1}"
+    assert n1 == 14, f"first call should insert 14 rows; got {n1}"
     n2 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
     assert n2 == 0, f"second call should be idempotent; got {n2} new rows"
 
     con = sqlite3.connect(db)
     total = con.execute("SELECT COUNT(*) FROM strategy_eval").fetchone()[0]
     con.close()
-    assert total == 11
+    assert total == 14
 
 
 def test_settle_returns_only_settles_unsettled_rows(tmp_path):

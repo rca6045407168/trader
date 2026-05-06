@@ -32,7 +32,21 @@ from typing import Callable, Optional
 import pandas as pd
 
 from .signals import momentum_score
-from .sectors import get_sector
+from .sectors import get_sector, SECTORS
+
+# v3.73.14: ETFs are now in the price panel for the passive baselines.
+# Active stock-picking strategies must explicitly filter to the
+# stock universe, otherwise xs_top15 / equal_weight_universe / etc.
+# would treat ETFs as universe members.
+_STOCK_UNIVERSE = frozenset(SECTORS.keys())
+
+
+def _stock_panel(prices):
+    """Return prices restricted to the stock universe (excludes ETFs
+    like SPY/VTI/VXUS/BND/AGG that may be present for passive
+    baselines)."""
+    cols = [c for c in prices.columns if c in _STOCK_UNIVERSE]
+    return prices[cols]
 
 
 @dataclass
@@ -65,7 +79,10 @@ def get(name: str) -> Optional[StrategySpec]:
 # Shared helpers
 # ============================================================
 def _score_universe(asof, prices, lookback: int = 12, skip: int = 1):
-    p = prices[prices.index <= asof]
+    # v3.73.14: filter to stock universe so ETFs in the panel (added
+    # for passive baselines) don't contaminate momentum-based picks.
+    p = _stock_panel(prices)
+    p = p[p.index <= asof]
     out: list[tuple[str, float]] = []
     for t in p.columns:
         s = p[t].dropna()
@@ -257,9 +274,13 @@ def sector_rotation_top3(asof, prices):
 # 10. Equal-weight universe (no signal — sanity floor)
 # ============================================================
 @register("equal_weight_universe",
-          "Naive 1/N over entire universe (passive baseline)")
+          "Naive 1/N over entire stock universe (no signal)")
 def equal_weight_universe(asof, prices):
-    p = prices[prices.index <= asof]
+    # v3.73.14: filter to stock universe (excludes ETFs added for
+    # passive baselines) so this is comparable across re-backfills
+    # regardless of how many ETFs are in the panel.
+    p = _stock_panel(prices)
+    p = p[p.index <= asof]
     available = [t for t in p.columns if not p[t].dropna().empty]
     if not available:
         return {}
@@ -268,7 +289,80 @@ def equal_weight_universe(asof, prices):
 
 
 # ============================================================
-# 12. Long-short momentum (the structural alpha)
+# 12. Buy-and-hold SPY (passive baseline)
+#
+#     v3.73.14 — added in response to Reddit research finding the
+#     Bogleheads counter-argument. The community's strongest empirical
+#     case against active strategies is that ~85% of active funds lose
+#     to their benchmark over 10y (SPIVA data). The right way to
+#     validate our active strategy is to MEASURE it against the
+#     simplest possible passive alternative, not to claim it beats
+#     SPY in prose.
+# ============================================================
+@register("buy_and_hold_spy",
+          "100% SPY at the first rebalance, never reset. The simplest "
+          "passive baseline. If our active can't beat this, the "
+          "Boglehead recommendation wins.")
+def buy_and_hold_spy(asof, prices):
+    return {"SPY": 1.00}
+
+
+# ============================================================
+# 13. Boglehead 3-fund (VTI / VXUS / BND, rebalanced monthly)
+# ============================================================
+@register("boglehead_three_fund",
+          "60% VTI / 30% VXUS / 10% BND, rebalanced to target every "
+          "month. The canonical Boglehead allocation.")
+def boglehead_three_fund(asof, prices):
+    # If VTI / VXUS / BND aren't in the panel (smaller backfill), fall
+    # back to SPY-only to avoid empty picks. This preserves the
+    # baseline-test intent: 'the boring portfolio.'
+    weights = {}
+    if "VTI" in prices.columns:
+        weights["VTI"] = 0.60
+    elif "SPY" in prices.columns:
+        weights["SPY"] = 0.60
+    if "VXUS" in prices.columns:
+        weights["VXUS"] = 0.30
+    if "BND" in prices.columns:
+        weights["BND"] = 0.10
+    elif "AGG" in prices.columns:
+        weights["AGG"] = 0.10
+    # Renormalize if some are missing
+    total = sum(weights.values())
+    if total <= 0:
+        return {"SPY": 1.00}
+    return {t: w / total for t, w in weights.items()}
+
+
+# ============================================================
+# 14. Classic 60/40 (SPY / AGG)
+#
+#     The single most-cited 'balanced' allocation in retail. Proxy
+#     for the original Markowitz / Bogle balanced portfolio.
+# ============================================================
+@register("simple_60_40",
+          "60% SPY / 40% AGG, rebalanced monthly. The classic "
+          "balanced portfolio against which all multi-asset "
+          "alternatives are measured.")
+def simple_60_40(asof, prices):
+    weights = {}
+    if "SPY" in prices.columns:
+        weights["SPY"] = 0.60
+    if "AGG" in prices.columns:
+        weights["AGG"] = 0.40
+    elif "BND" in prices.columns:
+        weights["BND"] = 0.40
+    elif "TLT" in prices.columns:
+        weights["TLT"] = 0.40
+    total = sum(weights.values())
+    if total <= 0:
+        return {"SPY": 1.00}
+    return {t: w / total for t, w in weights.items()}
+
+
+# ============================================================
+# 15. Long-short momentum (the structural alpha)
 # ============================================================
 @register("long_short_momentum",
           "Long top-15 (min-shifted) + short bottom-5 (equal-weighted); "

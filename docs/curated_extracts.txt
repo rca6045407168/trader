@@ -1,0 +1,1750 @@
+Curated to 120 threads with high relevance
+
+====== 1: r/Bogleheads score=4911 ======
+TITLE: Crossed $500k today.
+BODY:  Big milestone for me today, and don't have anyone in my life I can share it with.  I still have a lot to learn about investing (and some spending habits to unlearn/keep in check), but I'm proud of this $500k accomplishment.
+
+Breakdown of the $500k is roughly as follows:
+-$400k traditional 401k (100% VFFSX via Vanguard Institutional 500 Indx Tr); maxing annually with an 8% employer match
+-$25k Roth IRA (70% VOO/30% VYM); contributing $7k/yr via backdoor
+-$75k taxable brokerage (80% VOO/15% VUSXX/5% miscellaneous (NVDA and a few other stocks to track for fun); minimum $200/mo to VOO, but usually more depending on how my expenses shake out each month
+
+41F, renter in HCOL area (SoCal), ~$210k total comp (salary+bonus).  No kids, divorced a few years ago (I earned significantly more than ex, fought hard to keep my retirement accounts and very glad I did).  I had a late start ramping up my retirement contributions because I was in law school in my late 20s and then paying off $215k in law school loans (paid off 7.5 years after graduating, which I'm extremely proud of).  Paid-off 2019 vehicle, no consumer debt.  I also have a separate emergency fund of ~$65k between HYSA and CD ladder, which is 10-12 months of essential expenses.  As the CDs mature, I'll be shifting those funds to VUSXX to take advantage of the CA tax benefits, which I just recently learned about thanks to this sub!
+
+Goals for the next few years:
+-$1M by 45!
+-Improve diversification (adding VTIAX/VXUS?)
+-$25k sinking fund towards next vehicle purchase
+-Continue reducing non-essential expenses (more $$ to brokerage and for travel!)
+-Increase charitable contributions
+
+Happy to take suggestions for things I should consider or where I might be able to improve.  But I mostly just wanted to share my experience and thank this sub for all of the advice and encouragement I've passively picked up as I've lurked for the last year or so.
+
+====== 2: r/Bogleheads score=3288 ======
+TITLE: The market has not crashed
+BODY:  The past few weeks the investing subreddits have been filled with threads about the US stock market. Tons of people asking if they should ditch their positions. Comments largely fall into two categories: 
+
+1. Trump has ruined everything, pull out of US stocks (to Europe or cash, mostly) 
+2. Ha ha sucker, I'm buying on sale!
+
+I find both of these frustrating because _there is no sale_ - the stock market is hardly even down. 
+
+Let's take a look at some data.
+
+If we look at [a portfolio composed only of the S&amp;P 500](https://www.lazyportfolioetf.com/portfolio-backtest-and-simulation/?sm=eNqrVkp0VrJSCg12UdJRynUDMg0MgaxKEMvQwhzELg4CsQ2ArGRPuNI8QyDTKTE5uyS1uERBGaQuzwhFyAgkZIwiZAwSMkERMgEKJYLMCg6IBDILDOMNwbaBrCtTsjKuBQBZeie4), as of a week ago we were in a drawdown of 1.27%. That is a quarter of the way to the great crash of April 2024 where it went down 4.03% (remember that one? I sure don't).
+
+Reminder: dot com brought us down almost 45%. 2008 got it down 50%. _Those_ are crashes. If your glasses prescription is out of date you can't even see current events on the graph. 
+
+Ok, sure, that data is from February 28 and today is March 9, the whole world has changed since then. Let's go look at an up to date graph then. Hmm, notice how we've had a multitude of equivalent blips, just in the last five years?
+
+(See attached) 
+
+And this is even assuming someone who is fully into US large cap. If you go even a little boglehead with total US, total international, and a teensy bit of bonds, it's all moderated even more.
+
+And yet, we have highly upvoted posts saying things like [My portfolio is down 26% since Don took office.](https://www.reddit.com/r/investing/comments/1j5eqp1/feeling_the_heat_today_my_portfolio_is_down_26/) It sure feels good:  there's a lot of fear in the air, maybe we're on the political side of the spectrum where we think the president is making bad choices, this must be true! It's only after you dig far into the comments that you find out what this portfolio
+
+====== 3: r/ValueInvesting score=3214 ======
+TITLE: Warren Buffett On If Japan Divested from US Bonds (1998)
+BODY:  Someone once asked Warren Buffett about the threat of Japan selling their US bonds. Somewhat relevant here:
+
+WARREN BUFFETT: I was busy chewing here and —
+
+AUDIENCE MEMBER: Japan is a major holder of U.S. Treasurys. Given the troubled Japanese economy, do you foresee Japan cashing in their U.S. investments to bail themselves out? Why or why not?
+
+WARREN BUFFETT: The problems with the Japanese economy and does that mean that — are you thinking particularly about them dumping Treasurys or something of the sort?
+
+CHARLIE MUNGER: That’s exactly what she’s —
+
+WARREN BUFFETT: Yeah. (Laughter)
+
+Well, you know, it’s very interesting. All the questions about what so-called foreigners do with investments.
+
+Let’s just assume the Japanese, or any other country, decides to sell some U.S. government holdings that they have. If they sell them to U.S. corporations or citizens or anything, what do they receive in exchange? They receive U.S. dollars. What do they do with the U.S. dollars? You know, I mean they can’t get out of the system.
+
+If they sell them to the French, you know, the French give them something in return. Now the French own the government securities.
+
+But really as long as we, the United States, run a deficit — a big deficit — a trade deficit — we are accepting goods and giving something in exchange to foreigners. I mean when they send us whatever it may be — and on balance they send us more of that then we send over there — we give them something in exchange.
+
+We give them — we may give them an IOU. We may give them a government bond. But we may give them an investment they make in the United States.
+
+But they have to be net investors in this country as long as we’re net consumers of their goods. It’s a tautology.
+
+So I don’t even know quite how a foreign government dumps its government bonds without getting some other type of asset in exchange that may have an effect on a different market.
+
+The one question you always want to ask in economics is — and not a bad id
+
+====== 4: r/ValueInvesting score=3038 ======
+TITLE: Sex Workers Already Predicted There's A Recession Coming — Here's How They Know
+BODY:  
+
+While some people anxiously watch the stock market for signs of a recession, others look for more subtle cues that the economy is in trouble.
+
+One of them is Catherine De Noire, a manager of a legal brothel, a Ph.D. candidate in organizational psychology and an influencer. When business at her brothel unexpectedly dips, De Noire takes it as a sign that the economy is in trouble.
+
+Although De Noire is based in Europe, she believes that economic upheaval in the United States “triggers huge uncertainty” across the pond because of America’s global influence. De Noire first noticed a decline in business right after Donald Trump was elected in November 2024, as Americans and the rest of the world anticipated upheaval.
+
+Strippers in the U.S. are also feeling the pinch. Dancer and influencer Vulgar Vanity said that when she first started dancing in 2022, she could earn six figures just by dancing during a handful of big events in Austin, such as the Formula 1 Grand Prix and South by Southwest music festival. This year is different.
+
+“I didn’t even bother working South by Southwest because the first Friday night I attempted to work, I walked into a completely empty club and didn’t make any money at all,” she said.
+
+Vanity also says that many of her regular customers aren’t tipping at all or tipping less than half of what they used to. She is quick to point out that she is just one dancer and “obviously not an economist,” but she notes that other dancers and tipped workers are also hurting. Her theory is that her customers are no longer tipping as generously because of rising costs and economic uncertainty. Vanity is worried that this means we are on the verge of a recession or full-blown depression.
+
+The theory behind the "lipstick index" is that when money is tight, consumers substitute costly purchases with cheap luxuries like lipstick.
+
+
+Are these astute women onto something? Indicators like a decline in business at brothels, lower tips for strippers and other nontradit
+
+====== 5: r/Bogleheads score=3037 ======
+TITLE: Kamala Harris is an index investor
+BODY:  [https://www.barrons.com/articles/kamala-harris-wealth-investments-12983bda](https://www.barrons.com/articles/kamala-harris-wealth-investments-12983bda)
+
+&gt;Her largest fund holdings included a Target Date 2030 fund, worth between $250,001 and $500,000, and an S&amp;P 500 fund and large-cap growth fund, each worth between $100,001 and $250,000 at the time.
+
+Emhoff’s retirement accounts, on the other hand, are chock-full of exchange-traded funds offered by Vanguard, BlackRock, and Charles Schwab. His largest holdings were the iShares Core MSCI EAFE ETF and the iShares Broad USD Investment Grade Corporate Bond ETF, each worth between $250,001 and $500,000. He had another $402,000 to $1.1 million in iShares and Vanguard funds invested primarily in U.S. stocks.
+
+None of Harris’s or Emhoff’s holdings were invested in sector-specific funds or stocks of individual companies.
+
+Looking at the [disclosure](https://www.whitehouse.gov/wp-content/uploads/2024/05/Harris-Kamala-D.-2024-Annual-278.pdf) I would say it is not strictly boglehead-approved but quite OK 😂
+
+Edit (07/23 6:20PM CT): I am a bit surprised/concerned that this post has received a lot of attention. My intention was that it was a relatively good Boglehead-style personal portfolio and I thought it was interesting (compared with those who own lots of individual stocks and even options). Please keep in mind this is a community mainly about investment and keep informed when you are reading the remaining part of the shared article and comments below!
+
+====== 6: r/ValueInvesting score=3011 ======
+TITLE: Remembering the stock market crash of 2022
+BODY:  It’s easy to forget how short the market’s memory is. I think this community understands it better than anyone else, but it's still worth re-visiting from time to time.
+
+I still remember the last few months of 2022. The S&amp;P 500 was down nearly 25%, the Nasdaq had crashed over 35%, and inflation was out of control. The Fed was hiking rates aggressively, and it felt like a deep recession was inevitable.
+
+Goldman Sachs or JP Morgan (don't remember which) predicted the S&amp;P 500 would go all the way to 3,000. Michael Burry suggested an even bigger collapse taking S&amp;P500 back to 1800. Most investors were convinced this was just the beginning of more pain. Even then people talked about stagflation and going into the lost decade.
+
+Meta, in particular, was the poster child of despair. Down 75%, from $380 to $88. People genuinely thought it would never recover. The ad market was dying. Reels weren’t making money. Zuckerberg was "burning billions" on the metaverse. Investors wanted him to shut it all down.
+
+It wasn’t just Meta. Amazon reported its first unprofitable year after a long time. Google’s ad revenue shrank. Microsoft’s growth slowed. Tesla was down to $113 at its lowest. Institutions were slashing price targets left and right. Investors were selling at the lows, convinced things would only get worse.
+
+And then... the market did what it always does. Slowly, things started improving. Companies adapted. Earnings stabilized. The panic faded. By mid-2023, inflation was cooling. The Fed hinted at pausing rate hikes.
+
+Meta posted a solid earnings report. Then came $40 billion in stock buybacks. The stock doubled. Then doubled again. Amazon recovered. Nvidia went on a historic run. The Nasdaq had its best year in two decades in 2023. By early 2024, Meta, Nvidia, and Microsoft were hitting all-time highs to reach even higher by end of 2024. Two years of record gains.
+
+When markets are crashing, it feels like they’ll never go up again. When they’re at all-time highs
+
+====== 7: r/Bogleheads score=2974 ======
+TITLE: Most Investors Have Never Lived Through a True Market Crash
+BODY:  A lot of new ppl in this sub say they “won’t time the market,” but I’m not sure everyone understands what that actually feels like irl. It’s easy to talk about staying the course when the worst drawdown you’ve lived through was a brief COVID dip that fully recovered in months or the 2022 dip followed by 3 yrs of 10%+ returns.   
+
+The last real crash was 2008. If you weren’t old enough to have a job, a mortgage, or a family back then, you don’t know how deeply a prolonged downturn can affect your day‑to‑day life. It’s not just red numbers on a screen. It’s layoffs, hiring freezes, underwater homes, and years of slow recovery. That’s when people who swore they’d never time the market suddenly panic and make irrational decisions.  
+
+Staying the course is simple in theory, but incredibly hard when the world feels like it’s falling apart. 
+
+Of course, I don't want market to crash. But it's a possibility and we need to prepare for it.
+
+====== 8: r/Bogleheads score=2355 ======
+TITLE: Well, I fell for it
+BODY:  After firmly sticking to my boglehead 3 fund plan for years, I gave in and sold VTI from my rollover this morning. I had rolled the account over in January and inadvertently bought near record highs, so my thought was I would take advantage of this downturn and buy back in tomorrow after China puts its reciprocal tariffs into place and drops the market more. I thought I was so smart. Then, just about two hours afterwards, the 90-day pause goes into effect. Cue much cursing and self-flagellation.
+
+Fortunately, my account was small and already relatively diversified so I didn’t lose more than a couple thousand, but that money is gone for good now. 
+
+Let that be a lesson for all of us. Don’t time the market. It’s said a lot here, but it bears repeating even in the most unnecessary self-inflected market downturns: Don’t time the market! You don’t know jack shit about what’s going to happen or when and it’s not worth being anxious about.
+
+I’m just glad I learned my lesson at such a low cost.
+
+Edit: This was supposed to be an honest and slightly funny account of a mistake I made so that people could learn from it. The amount of people responding with patronizing groupthink “no true Scottsman,” “you don’t belong here,” and “you learned nothing” type arguments is absurd and totally missing the point. Jack Bogle invented an investment strategy, not a fucking identity. I briefly tried something else, failed, and remembered why this is still the best strategy for me. If you can relate or find this useful, great. If that seems stupid to you, just move on instead of virtue signaling. K? K.
+
+====== 9: r/thetagang score=2273 ======
+TITLE: I’m dumb and feel so hopeless. Never SELL NAKED CALLS. My 100k loss turned into over 600K in minutes with AMC. I’m not even sure how I can recover from this.
+BODY:  
+
+====== 10: r/thetagang score=2144 ======
+TITLE: this will always keep happening lol
+BODY:  
+
+====== 11: r/thetagang score=1824 ======
+TITLE: Ended the year up 986% $18k-&gt;$177k
+BODY:  Grew up buying options and making money but losing more. Found out about the wheel and SELLING options in October 2023. Started out with $37k in TDAmeritrade. Turned it into $70k mainly selling CC’s on SOFI, SNAP, PLTR and a few others. TDAmeritrade got bought out by Schwab (in my photo, this is where it jumps from $1200 to $70k in about May). 
+
+At this point I was introduced to spreads by my friend. I ended up making a few thousand dollars the next few months but realizing this was similar to buying options and I am too much of a degenerate to be successful at this. I decided to switch back to CSP’s and CC’s. 
+
+In September I switched back and went on an absolute tear hitting nearly 95% of my trades and going from $60k to $180k in a few months. I have since withdrawn $19k in the last few months so my total invested is around $18k. Learned a ton. My strategy is buy shares after big red days. Sell CC’s after big green day’s. Sell CSP’s on red days. I do strictly weeklies and roll 50% of the time (if I like the chart). I rely a lot on RSI and 300 day moving average. I’d guess about 70% of my profits have come from premiums rather than appreciation. I like selling ATM CC’s to get as much premium as possible. 
+
+Main tickers I’ve been playing are Sofi, SNAP, BA, COIN, MSTR, Nike, AMD, NVDA, DKNG, Ford, DJT, GME, CRWD, TSLA, and then a few random dividend stocks. 
+
+This is a margin account. I obviously don’t think I can keep this up next year but now I have a solid base to grow and shoot for 25-50% a year. Ask me anything! 
+
+====== 12: r/Bogleheads score=1708 ======
+TITLE: VTI or VOO is a choice that truly doesn’t matter. But the year is now 2026, and the S&amp;P 500 is a long-outdated investment for buy &amp; hold purposes.
+BODY:  As of this year, the dataset from the world’s most prolific equity benchmark (officially launched in 1957) [goes back a full century to 1926](https://www.sensiblefinancial.com/how-has-the-sp-500-performed-over-the-last-98-years/). I thought now might be a good time to revisit its merit since one of the most tediously repetitive questions across all investing subs is whether the S&amp;P 500 alone (eg VOO) is a sufficient investment, or perhaps if a *total* US market fund like VTI would be better. The S&amp;P 500 is considered the standard to which the industry is held; it has been recommended for average investors by the great Warren Buffett, and many say small caps are mostly “junk” anyway, so why would you invest in the total market? This question is so common that r/Bogleheads had a pinned post to address it, and it even has its own satirical subreddit: [r/VOOorVTI](https://www.reddit.com/r/VOOorVTI/). And what makes the question particularly tiresome is the fact that whether you choose an S&amp;P 500 fund or a total US market fund will likey make no meaningful difference in your long-term returns (or in your life, for that matter). The question is barely worth the brain cells used to dwell on it, yet some people describe themselves as struggling to choose. But do those investors grappling with the question understand the history and merits of each index? Join me on a deep dive to review them (so I can just link to this post and never write out another explanation again).
+
+
+
+**In this post**
+
+* In 1926, Poor’s Publishing and the bond rating company Standard Statistics created a 90-stock composite index in an attempt to track and report the daily returns of the US stock market [more broadly than the Dow Jones Industrials Average](https://www.spglobal.com/spdji/en/research-insights/index-literacy/the-sp-500-and-the-dow/) which only included 12 stocks at the time
+* This index would gradually be expanded to 500 stocks and become the Standard &amp; Poor’s 500 Index, la
+
+====== 13: r/ValueInvesting score=1662 ======
+TITLE: Buffett has purchased $4.3B worth of Alphabet shares in latest 13f filing
+BODY:  [DATAROMA Superinvestors Portfolio Holdings](https://www.dataroma.com/m/holdings.php?m=BRK)
+
+====== 14: r/ValueInvesting score=1662 ======
+TITLE: I fed 48 years of Buffett's shareholder letters to Anthropic's latest model Opus 4.6 and had it pick stocks blind
+BODY:  Hi everyone, 
+
+Some of you might remember my last post here where I experimented using AI to detect [when CEOs are being deceptive in earnings calls](https://www.reddit.com/r/ValueInvesting/comments/1qqksjt/used_ai_to_detect_if_ceos_are_being_deceptive_in/). I didn't think this community would be so welcoming and receptive to experiments like these (which I love doing). So here I am with yet another experiment that I thought this community would find interesting :-)!
+
+I recently got curious about feeding the latest model from Anthropic (Opus 4.6) all 48 years of Buffet's shareholder letters, and seeing if it could actually pick winning stocks better than Buffet himself? Could AI-Buffet be more consistent at following Buffet's historical advice (ridiculous, right?). Based on its picks, I also wanted test how it would perform I gave it $10,000 at the start of 2020 (at the start of COVID) and compare it against Buffet's actual holdings &amp; the broader market.
+
+*Also I have to be honest: I have never read any of these letters and sad to report, I still have not read them even after running this experiment. Modern-day engineer traits.*
+
+If you prefer to watch the full experiment, I uploaded it to my channel: [https://www.youtube.com/watch?v=nRMPN1NwGOk](https://www.youtube.com/watch?v=nRMPN1NwGOk)
+
+**Experiment Design**
+
+I fed all of 561,849 words from his shareholder letters to Opus 4.6. Similar to last time, I used Claude Code with subagents to keep the analysis clean. Had it read every letter from 1977-2024, extract the investing principles independently, and turn them into a quantitative scoring rubric. This rubric was made out of criteria like ROE thresholds, debt-to-equity limits, margin of safety, moat durability. It found 15 principles total, 9 of which were quantitative enough to score against.
+
+I then anonymized 50 stocks by stripping their names, tickers, and sectors. I only fed Opus the raw financial numbers of each company. In the sample size, I mixed in 2
+
+====== 15: r/Bogleheads score=1582 ======
+TITLE: The Accidental Boglehead: How $26k Turned into $271k
+BODY:  I want to share my story for anyone who thinks you need a complex strategy to win at retirement. As it turns out, I’ve been a "Boglehead" for 30 years—I just didn't know it for the first fifteen.
+
+**The Seed (1995–1999)**
+
+In 1995, I started my first full-time job making $24,000 a year. Thanks to my mom’s wisdom, I signed up for the 401k immediately, contributing 10% with a 100% company match. I knew nothing about stocks, so I followed the advice of a kind, older colleague. She pointed me toward a few mutual funds including a target-date fund.
+
+I worked there for 52 months. When I walked out the door in August 1999, my balance was $26,083.34.
+
+**The "Forgetful" Years**
+
+Over the next decade and a half, I changed jobs 3 times. While I opened new 401ks at each stop, I never touched that first one or any of the previous ones. I didn't roll them over, and I didn't "play" with the allocation. I just let them ride.
+
+It wasn't until my mother passed and I took over my father’s finances that I actually sat down to learn the mechanics of the market. I started gravitating toward low-cost index funds and lower expense ratios simply because the math made sense. I had never even heard the name Jack Bogle, but I was already practicing his gospel: Buy the haystack, and keep your costs low.
+
+**The Harvest (Today)**
+
+Today, I’ve refined my strategy to be *mostly* a Boglehead—focusing on low-cost index funds (mostly S&amp;P 500) and managing risk according to my age.
+
+That original $26,083.34 from my "starter job" in the 90s? Without me adding a single penny to it in 26 years, it is now worth $271,674.49.
+
+    Total Gain: 941.56%
+
+    Average Annual Return: 9.22%
+
+**The Lesson**
+
+The rest of my portfolio has followed a similar path, though none have the "magic" of that first account because they haven't had as much time to cook.  But they will.
+
+If you’re just starting out and feel like your contributions are small, remember my 1995 self. I was making $24k and taking advice from the 
+
+====== 16: r/ValueInvesting score=1580 ======
+TITLE: Buffett's alternative to tariffs is seriously brilliant (Import Certificates)
+BODY:  I'm honestly not sure how this hasn't been brought up more, but Buffett actually has a beautifully elegant alternative to tariffs that solves for the trade deficit (which is a very real problem, he said in 2006.... "The U.S. trade deficit is a bigger threat to the domestic economy than either the federal budget deficit or consumer debt and could lead to political turmoil...")
+
+Here's how Import Certificates work...
+
+* Every time a U.S. company exports goods, it receives "Import Certificates" equal to the dollar amount exported.
+* Foreign companies wanting to import into the U.S. must purchase these certificates from U.S. exporters.
+* These certificates trade freely in an open market, benefiting U.S. exporters with an extra revenue stream, and gently nudging up the price of imports.
+
+The brilliance is that trade automatically balances itself out—exports must match imports. No government bureaucracy, no targeted trade wars, no crony capitalism, and no heavy-handed tariffs.
+
+Buffett was upfront: Import Certificates aren't perfect. Imported goods would become slightly pricier for American consumers, at least initially. But tariffs have that same drawback, with even more negative consequences like trade wars and global instability.
+
+The clear advantages:
+
+* **Automatic balance:** Exports and imports stay equal, reducing America's dangerous trade deficit.
+* **More competitive exports:** U.S. businesses get a direct benefit, making them stronger in global markets.
+* **Job creation:** Higher exports mean more domestic production and, consequently, more American jobs.
+* **Market-driven:** No new bureaucracy or complex regulation—just supply and demand at work.
+
+I honestly don't know how this isn't being talked about more! Hell, we could rename them Trump Certificates if we need to, but I think this policy needs to get up to policymakers ASAP haha.
+
+Edit: removed ‘no new Bureaucracy’ as an explanation for market driven. It def does increase gov overhead, thanks for pointing t
+
+====== 17: r/thetagang score=1579 ======
+TITLE: Option strategies for dummies
+BODY:  
+
+====== 18: r/ValueInvesting score=1528 ======
+TITLE: Nancy Pelosi's Portfolio Returned Over 700% In a Decade: Copy Her Investment Strategy Here
+BODY:  
+
+====== 19: r/algotrading score=1284 ======
+TITLE: I created an algorithm that collected wallstreetbets posts and market data, and then utilized a machine learning model to try and calculate an edge of of WSB posts. It worked exactly how you expect it would...
+BODY:  
+
+====== 20: r/Trading score=1284 ======
+TITLE: 5 years of trading, my best tips
+BODY:  I’ve been day trading full-time for about 5 years now. In that time, I’ve blown up accounts, had winning streaks, and gone through phases where I thought I finally “figured it out” only to get humbled the next week. If you’re just getting into this, I’ll save you a lot of pain by sharing the biggest lessons I wish someone drilled into me early on.
+
+1. Risk management is everything.
+
+This is the hill most beginners die on. It doesn’t matter how good your strategy looks, how many indicators you stack on your chart, or how many “conviction trades” you think you’ve found... if you don’t have strict risk rules, the market will clean you out. Always know your max risk per trade. For most people, that’s around 1–2% of your account balance. It sounds boring, but it’s the only thing that keeps you alive long enough to actually learn.
+
+The temptation to “average down” or hold losers is massive when you’re new. You’ll convince yourself that a stock “has to bounce” or “can’t go any lower,” and then watch it tank another 10%. Every trader who’s lasted has their scars from ignoring stop losses. Treat capital like ammo; you only get so much of it, and wasting it on stubbornness will take you out of the game fast.
+
+2. Don’t overtrade.
+
+One of the biggest mistakes I see (and made myself) is thinking you need to be in a trade all the time. The reality is most of the market is just noise. The edge comes from waiting for the handful of clean setups each week that actually make sense. Some of my best months have come from taking fewer than 20 trades total.
+
+It feels counterintuitive at first. You think, “If I’m not in a trade, I’m not making money.” But that’s backwards. By forcing trades, you’re just paying commissions, racking up losses, and burning mental energy. A huge skill in day trading is learning to sit on your hands until your setup appears. That patience is where consistency comes from.
+
+3. Journaling changes the game.
+
+I used to think journaling was pointless. Then I realize
+
+====== 21: r/ValueInvesting score=1195 ======
+TITLE: Did people learn nothing from April
+BODY:  If you were fully invested in the S&amp;P 500 over a long period (usually 20–30 years), your returns were great.
+
+But if you missed just the 10 best single days in that entire period, your return was cut roughly in half.
+
+This is probably the most commonly cited anecdote as to why you should not time the market. I feel in at least half the investing books I've read, they mention this. I do not know of a single investor who has successfully timed the market consistently over any meaningful time period. Even Michael Burry, who is probably one of the most infamous investors for predicting the 08-09 recession, has wrongly called a market top an absurd number of times in recent years. 
+
+Back in April, the market starts to sell off, and inevitably posts start popping up all over the subreddit talking about how they're selling and why they're selling and why this time is different. Of course, it wasn't different, and the market has proceeded to rip 20% since many folks here panic sold. 
+
+Here we are, not even a year later in December, and people are asking unironically whether it's a good idea to move to cash or not. What do you think? Do you think that now is the time to finally start trying to time the market? After this age-old wisdom has been proven right, time and again? 
+
+I feel like there's so many better ways to navigate an expensive market than by trying to time it. 
+
+Such as buying counter-cyclical companies, or buying companies that are recession-resistant, or buying companies at a larger margin for error. Heck, maybe even give bonds a shot?  But no. People are starting to come to the conclusion again that now is the time to time the market yet again and inevitably make a massive mistake. 
+
+
+DO NOT TIME THE MARKET.
+
+Edit: This sub unironically defending timing the market lmao. The reason why this hurts people's feelings is because they sold back in April, and they're still waiting to get back in the market. Instead of taking a lesson, they double down on that ti
+
+====== 22: r/Trading score=1180 ======
+TITLE: How I used ChatGPT to make 7.2k
+BODY:  I’ve been seeing loads of people talking about using AI to trade on tiktok and few people posting about it here on reddit so figured I'd give it a try as well.
+
+Holy shit.
+
+I didn't put too much thought into this originally I just instructed ChatGPT to analyze price action.. mainly to spot market sentiment based on the news, support/resistance levels. Then I asked it to generate a trade plan with entry points, stop losses, and take profits all while spamming it with chart screenshots throughout the day…
+
+I played around with a lot with prompts but the prompt used in the context of this post is:
+
+“I need a structured trading analysis for (ETH) based on the latest 4H and 1D chart screenshots. The analysis must include: 
+
+1, Market Sentiment &amp; News Interpretation:
+
+Search for relevant news regarding Ethereum and summarize its impact (bullish, bearish, or neutral). If no relevant news is found, state 'no relevant news’ 
+
+2. Technical Analysis: • Identify the current trend based on price action, volume, and the 200 SMA. • Highlight key support and resistance levels that influence price movement. • Assess RSI for potential overbought/oversold conditions. • Identify if Ethereum is breaking above/below moving averages and what that implies. 
+
+3. Trade Setup: Based on analysis, suggest either a long or short position, and provide the following: • Entry Price • Stop Loss (STPL) level • Take Profit (TP) Levels • DCA Strategy: • Define price levels to add to a losing position (increasing size according to risk management). DCA levels must reflect volatility index for the underlying asset. Higher volatility more spread between DCA levels. • Define price levels to add to a winning position when in profit. \* Return previous information in a well organized table chart structure. 
+
+4. Position Sizing for a $20,000 Portfolio: • Ensure a maximum risk of 10% per trade. (This is high risk) • Use 20x leverage to determine asset quantity in contracts (not dollar value). • Maintain a 
+
+====== 23: r/Trading score=1177 ======
+TITLE: Your Brain is Programmed to Lose Money in Trading
+BODY:  **TL;DR: Academic studies prove psychological biases kill more accounts than bad strategies. Here's the science behind why your mind sabotages your trades.**
+
+I'm about to explain why most of us will fail at trading, and it has nothing to do with our indicators or "edge."
+
+# The 3 Brain Glitches That Murder Accounts
+
+# 1. The Disposition Effect
+
+**What it is:** You naturally hold losers too long and sell winners too fast.
+
+**Real example:**
+
+* AAPL drops 5% → "It'll come back, I'll hold"
+* AAPL gains 3% → "Better take profits before it reverses"
+
+**The brutal data:** Traders sell winners **50% more often** than losers. This single bias destroys more accounts than any strategy flaw.
+
+**Why your brain does this:** Losses hurt 2.5x more than equivalent gains feel good (loss aversion). Your brain tricks you into avoiding the "pain" of realizing losses.
+
+# 2. Confirmation Bias (The Echo Chamber)
+
+**What happens:** You only see information that confirms your trades.
+
+**The research:**
+
+* Traders give **50% more weight** to confirming opinions
+* Click on news that supports positions **85% of the time**
+* Ignore stronger contradictory evidence
+
+**Real behavior:** Long on Bitcoin? You'll find 10 bullish articles and ignore the bearish ones.
+
+# 3. Overconfidence + Self-Attribution
+
+**The cycle:**
+
+* Win = "I'm skilled"
+* Loss = "Bad luck/manipulation"
+
+**Barber &amp; Odean's study:** Overconfident traders achieve **inferior returns** and trade excessively, racking up fees.
+
+# The Data That Should Terrify You
+
+**Brazil:** 97% of day traders who persisted 300+ days lost money  
+**Taiwan:** Only 1% of day traders profitable after fees  
+**The kicker:** These failures weren't from bad strategies - they were **behavioral patterns that never changed**
+
+# The Beginner's Luck Death Trap
+
+Here's how most accounts die:
+
+1. **Early random wins** create false confidence
+2. **Position sizes increase** ("I've got this figured out")
+3. **Risk tolerance grows** (start gambling)
+4. **Reality 
+
+====== 24: r/ValueInvesting score=1120 ======
+TITLE: I spent $9,600/year on Substack newsletters so you don't have to. Here's who actually makes money.
+BODY:  **EDIT (March 2):** Thanks you guys for the incredible feedback, working on two new features
+
+**1. Longer time horizon:** adding 6m / 12m return windows for all substacks
+
+**2. More newsletters:** adding Citrini / Dick cap / funddai / irrationalanalysis / taekim / bpresearch. lemme know if you have new nominations.  
+
+
+\###################################
+
+
+
+I work in tech and started trading casually last year. Like any good regard, I immediately subscribed to every investing newsletter I could find on Substack. 23 paid subscriptions. $9,600/year, including Michael Burry's.
+
+The problem? I can't actually read them all. And I have no idea which ones are worth the money.
+
+So I did what any engineer would do — I wrote codes to find out.
+
+**What I Built**
+
+A pipeline that:  
+\- Crawls every article from 23 paid Substack authors (1,782 articles over the past year)  
+\- Uses Gemini AI to extract **high-conviction stock picks only** — not casual mentions, but tickers the author actually analyzed in depth  
+\- Tracks returns at 1d, 7d, 15d, 30d, and 60d after publication  
+\- Calculates alpha vs sector benchmarks (SOXX for semis, IGV for SaaS, XLF for financial services etc)  
+\- Dedupes: if the same author calls the same ticker multiple times within 14 days, it only counts once (first mention wins). Different authors calling the same ticker are tracked independently
+
+Total dataset: **3,519 high-conviction calls** tracked over 1 year.
+
+**The Results**
+
+30-Day Absolute Return Leaderboard (Long Calls)
+
+|**Rank**|**Author**|**Calls**|**30d Avg Return**|
+|:-|:-|:-|:-|
+|||||
+|1|Global Tech Research|50|\+14.9%|
+|2|Paulo Macro|21|\+9.5%|
+|3|Collyer Bridge|89|\+8.7%|
+|4|Doomberg|79|\+7.8%|
+|5|SemiAnalysis|80|\+7.5%|
+|6|Altay Capital|15|\+7.2%|
+|7|The Overshoot|24|\+7.1%|
+|8|The Setup Factory|285|\+6.7%|
+|9|Fabricated Knowledge|50|\+5.8%|
+|10|Macro Charts|72|\+3.6%|
+
+30-Day Alpha vs Benchmark (Long Calls)
+
+|**Rank**|**Author**|**Calls**|**30d Avg Alpha**|
+|:-|:-|:-|:-|
+|||||
+|1|Glo
+
+====== 25: r/algotrading score=1107 ======
+TITLE: High-level overview of how to get started
+BODY:  
+
+====== 26: r/ValueInvesting score=1094 ======
+TITLE: Energy Stocks Are Still Cheap… and Nobody Seems to Care
+BODY:  Everyone is freaking out about how “expensive” the S&amp;P 500 looks. Record highs. AI hype everywhere. Nvidia memes. You know the drill.
+
+But here’s what most people miss:
+
+The S&amp;P 500’s big valuation problem is basically seven stocks. Apple, Microsoft, Alphabet, Amazon, Meta, Nvidia and Tesla (the Mag 7) now make up almost a third of the index. They trade around 31x forward earnings. That pumps up the whole index average.
+
+Now take those 7 out of the picture.
+
+The other 493 companies suddenly look way more normal. Roughly 20x forward earnings. Slightly above history, not “bubble mode.”
+
+And here’s the interesting part for anyone hunting for value…
+
+One sector is actually cheap.  
+Like, legitimately cheap.
+
+Energy.
+
+On a forward P/E basis, energy trades around 60% of its 10-year average valuation. Every other sector is above its historical average. Energy is the lone outlier.
+
+So what gives?
+
+A mix of things:
+
+• Everyone thinks oil is “dead” because renewables are growing  
+• Momentum chasers only want AI names  
+• Energy stocks had a monster 2022, then flatlined while earnings climbed
+
+But here’s where it gets fun.  
+AI doesn’t run on hopes and dreams.  
+It runs on electricity.  
+Lots of it.
+
+Data centers are power hogs. And in the U.S., a big chunk of that power still comes from natural gas. Even with renewables growing, hydrocarbons aren’t disappearing anytime soon. The demand floor is pretty solid.
+
+Meanwhile…
+
+• Cash flows are strong  
+• Shareholder payouts (dividends + buybacks) are high  
+• Balance sheets are cleaner than they’ve been in years  
+• Valuations are stuck in 2015
+
+In a market where most sectors feel priced for perfection, energy still feels priced for a recession.
+
+Not saying “YOLO into oil and become the next Saudi prince.”  
+Just saying that if you’re a value investor… it’s weird to ignore the only sector still on sale.
+
+Curious what others here are thinking. Is energy a legit value opportunity right now? Or is the market right to sleep on
+
+====== 27: r/algotrading score=1084 ======
+TITLE: Anyone given it a read? I know it doesn’t really go into actual algo strategies, but it’s been excellent thus far.
+BODY:  
+
+====== 28: r/Trading score=1070 ======
+TITLE: Musk Wants $58 Billion While Neglecting Tesla—Anyone Else See the Problem?
+BODY:  Elon Musk has the audacity to demand a **$58 billion** pay package while treating Tesla like a side project. Since January 20, he’s been outright *neglecting* the company. Meanwhile, Tesla stock is tanking, its EV market share is shrinking, and competitors are eating its lunch.
+
+Let’s be real—Musk isn’t running Tesla. He’s a *fake* CEO, barely even pretending to do the job while juggling **five** other companies: SpaceX, Neuralink, The Boring Company, X Corp, and xAI. Half his time is spent playing politics in the US and other European governments all while Tesla investors watch their money burn.
+
+How much longer are people going to put up with this? If Musk doesn’t want to lead Tesla, he shouldn’t be rewarded for it. Not with a dime, and sure as hell not with $58 billion. Tesla needs real leadership, not a part-time clown who drops in whenever he feels like it.
+
+It should send a message when Europe's second largest pension fund, APB, sells its entire $585 million stake in Tesla over Musks unjustifiable and unearned billion-dollar pay package.
+
+The board needs to wake up and cut him loose *before* he tanks the company completely. Enough is enough. Either he **st**eps up and actually acts like a real CEO, or he needs to get the hell out and make way for someone who actually care about the company. Until then, he shouldn’t be crying to the courts about not getting his $58 billion payday. He hasn’t earned it.
+
+(Just my two cents—which is apparently being echoed by millions of other investors who feel exactly the same way.)
+
+====== 29: r/Trading score=1049 ======
+TITLE: 10-year trader here. If you’re new in 2026, read this before you blow your first account.
+BODY:  I’ve been trading for more than 10 years now. Long enough to have blown accounts, thought I’d “made it,” been humbled again, and finally realized this whole thing is more about survival and self-awareness than secret strategies.
+
+**Your first job is survival**
+
+Forget getting rich this year. Your real goal is to not blow up.
+
+* Trade small. Smaller than you think you need.
+* Don’t max leverage just because the platform lets you.
+* If you’re down bad emotionally, walk away; the market will still be here tomorrow.
+
+**Pick one lane and stick with it (for a while)**
+
+New traders love jumping from strategy to strategy every week. That’s how you end up being “kind of okay” at nothing.
+
+* Choose one style that fits your life (swing, intraday, whatever).
+* Focus on 1-3 markets/instruments instead of 20.
+* Give a strategy a real sample size before calling it “trash.”
+
+**Risk management &gt; win rate**
+
+You will be wrong. A lot. The question is: how expensive is it when you’re wrong?
+
+* Keep your risk per trade tiny at the start (like 0.5–1% or even less).
+* Use a stop loss and actually respect it.
+* Don’t add to losers “because it has to bounce.” Nothing has to do anything.
+
+Big losses, not small ones, are what kill you.
+
+**Journal your trades like someone else is going to read them**
+
+Most new traders think journaling is optional. It’s not.
+
+* Write down: why you entered, where you’ll get out, how much you’re risking, and what setup it is.
+* After the trade: did you follow the plan? What did you feel?
+* Over time, look at your stats by setup, time of day, and rule-following. You’ll be shocked at how much of your P/L is tied to a few patterns and a few recurring mistakes.
+
+You don’t need anything fancy, but some kind of structured stats or dashboard that shows your win rate and P/L by setup will fast‑forward your learning.
+
+**Process goals beat profit goals**
+
+“Make $10k this year” is cute but useless if you don’t control your behavior. Instead, set goals like:
+
+* “Follow my
+
+====== 30: r/algotrading score=1028 ======
+TITLE: My little bot has really mastered the "Buy High, Sell Low" strategy.
+BODY:  
+
+====== 31: r/ValueInvesting score=998 ======
+TITLE: Seeking Alpha is a scam
+BODY:  \[removed\]
+
+====== 32: r/algotrading score=991 ======
+TITLE: I created a terrible trading algorithm that buys pretty much everything wallstreetbets comments wants me too. Code in the comments. (Reupload to follow the rules of this subreddit)
+BODY:  
+
+====== 33: r/algotrading score=982 ======
+TITLE: Lesson from a quant on testing trading strategies
+BODY:  
+
+====== 34: r/Trading score=977 ======
+TITLE: I’m a failed trader. 
+BODY:  I have been buying and trading bitcoin since 2016. I had met a day trader back then who was making so much money, and he taught me how to do it with crypto. Bitcoin was my obsession. It was so exciting and everyone thought I was crazy and that bitcoin was stupid. But my conviction was strong, and now all my friend think I’m sitting on a lot of money.
+
+I wish I had never met this guy. He introduced me to leverage trading which has made me so much money, but in the end left me with nothing. 
+
+After years of commitment and countless hours, I know the Bitcoin chart by heart. what he didn’t teach me was risk reward, and my trading history has been a complete mess. I feel like im professional chart analyst with great skill, but suffering a gambling addiction.
+
+Im so disgusted with myself, with how many times I’ve made life changing money, and lost it time and time again. Perhaps this is a confession.
+
+
+I understand Bitcoin completely and conviction is all time highs. In my head I know I can make it all back, and this really is what fucks with my brain, because later on I’ll lose it again. So much time wasted!
+
+I know I should have bought and held. What I didn’t know, was trading is a losing game. 
+
+====== 35: r/algotrading score=921 ======
+TITLE: I created Tickerrain, an open source real time, sentimental analysis of different subreddit posts and comments. It stores posts in a Redis DB, the processes them and shows the results in a web server.
+BODY:  Over the last month I've been working on a tool to scrape, store and analyze posts. You can check the code  [here](https://github.com/GonVas/tickerrain).
+
+It works by using three processes, one to asynchronous get posts from different subreddits (you can specify them in a txt file) and stores them in a Redis DB.  
+Another process uses Pandas to conduct the analysis of the posts, it does sentimental analysis  (done using Spacy, more specifically VADER), counts the total mentions and also the score of the posts.
+
+Finally the web server is another process, using Flask, that displays the results. It shows the latest post being processed, showing its entities, tickers and sentiment. Its really simple and the design is basic. Then at the end of the page it shows three graphs of the most mentioned stocks, with one for the latest day, another for 3 days and finally for a week. 
+
+&amp;#x200B;
+
+[Heres a preview ](https://preview.redd.it/wwrrhkcjuxg61.png?width=1428&amp;format=png&amp;auto=webp&amp;s=72385c85e864da8194a7b936c6d85847216ea7e9)
+
+I also spun up a digital ocean instance to host it and used a free domain [http://tickerrain.tk/](http://tickerrain.tk/) (hope it doesn't crash)
+
+Tell me want you think and if you want more features (I have some planned).
+
+ I know that programs about analyzing reddit posts are common, but they are either closed source or very basic, lacking  interfaces or DBs, plus I thought about showing the process being done.
+
+You are free to do whatever you want with this, fork it, use it for your own strategies or anything.
+
+(I also know that the code isn't that great or optimized and that Redis isn't the best choice)
+
+====== 36: r/quant score=908 ======
+TITLE: How can I donate to hedge funds?
+BODY:  I’ve been reflecting on the pivotal roles various financial entities play in our economic system, particularly hedge funds and high-frequency traders. I believe these institutions are crucial for maintaining market efficiency and fairness. High-frequency trading, for instance, helps ensure that stock prices are always fair by improving liquidity and pricing accuracy.
+
+Considering the immense benefits that top-performing hedge funds provide in driving economic growth and stability, I've come up with a controversial idea: should these funds receive greater leniency towards financial crimes if they consistently deliver high returns and contribute positively to the market's overall functionality? Additionally, I am considering donating $1,000 annually to the hedge fund that achieves the highest returns each year, as a way to further encourage their pursuit of market inefficiencies.
+
+I am trying to spark a discussion on how we might incentivize hedge funds to push for greater efficiencies in the market.
+
+====== 37: r/algotrading score=901 ======
+TITLE: Truth about successful algo traders. They dont exist
+BODY:  Now that I got your attention. What I am trying to say is, for successful algo traders, it is in their best interest to not share their algorithms, hence you probably wont find any online.
+
+Those who spent time but failed in creating a successful trading algo will spread the misinformation of 'it isnt possible for retail traders' as a coping mechanism.
+
+Those who ARE successful will not share that code even to their friends.
+
+I personally know someone (who knows someone) that are successful as a solo algo trader, he has risen few million from his wealthier friends to earn more 2/20 management fee.
+
+It is possible guys, dont look for validation here nor should you feel discouraged when someone says it isnt possible. You just got to keep grinding and learn.
+
+For myself, I am now dwelling deep in data analysis before proceeding to writing trading algos again. I want to write an algo that does not use the typical technical indicators at all, with the hypothesis that if everyone can see it, no one can profit from it consistently.. if anyone wanna share some light on this, feel free :)
+
+====== 38: r/quant score=885 ======
+TITLE: Don't ever work at Optiver
+BODY:  Title says it all. I worked there from 2021 through mid 2024. They are a very successful shop and do well, but there are some serious issues.
+
+  
+1. Workplace harassment. I'll leave this here, but it's decently known that they have had issues with frat-level behavior. It's just a bit worse here than at other companies I've worked for. There was an inappropriate ad run many years ago, and questionable rumors were going around the office back in 2021. 
+
+2. Pay structure - The comp levels look great on Levels FYI, but the truth is that there that they cut a lot of people loose before their first year bonus is paid out so nobody actually gets it. They still get a majority (60-70%) but it's not great. They also have a very straightforward performance rating system that ensure that people are dinged even if they do well. They have these "committee" meetings that determine how many marbles each person gets and they really do try to not give out more than they can. They'll ding you for the smallest things.
+
+3. Management. If you think Citadel has cutthroat management you're in for a rude awakening. When I was at Citadel, they were very cutthroat but you know and expect that. At Optiver, the pnl and efforts are all shared so you'd think it's less toxic, but that was far from the truth. Also, the people in middle and middle-upper management are legitimate contenders for James Bond villains. 
+
+4. Career opportunity. If you want to learn to trade or be a great developer, you've come to the wrong place. You're very limited in your capacity to understand the markets and learn. The training program they have is nothing more than the Sheldon Natenburg book so if you think they have a world-class training program that makes you better than your average retail trader you're in for a rude awakening.
+
+Overall, if I could I would have told myself to go anywhere but here. 
+
+====== 39: r/ValueInvesting score=882 ======
+TITLE: Never buy a reverse stock split. Always sell.
+BODY:  I have been investing for 30 years, for work and for myself. Reverse stock splits are the ONE reliable signal to get the hell out of the position and/or remove the stock from your watchlist and never look at it again. 
+
+Reverse stock splits are THE kiss of death signal. 
+
+If you stumble upon one years after a reverse stock split, then maybe. If it has survived a few years after a reverse split, there MIGHT be something there but be extremely skeptical.
+
+That is all. 
+
+====== 40: r/Trading score=853 ======
+TITLE: I Made Almost $11,000+ Trading Less Than 15 Minutes a Day, Here’s the Exact System:
+BODY:  My average hold time over the last two months is under 5 minutes, and my average trading day duration is 33 minutes.
+
+Yet this simple, repeatable framework has put me up $11k+ trading one NQ mini 
+
+https://preview.redd.it/4bn6mscknj2g1.png?width=1755&amp;format=png&amp;auto=webp&amp;s=f0d54d0626aa3652eb2ca567304c4cd84a3b3270
+
+Here’s how the 15-min ORB + Imbalance model works:
+
+
+
+Why This Setup Works
+
+
+
+The first 15 minutes of the NY session is where liquidity gets grabbed, direction forms, and momentum kicks in. When you pair that with Imbalance confirmation on the 1-min, you eliminate 90 percent of noise.
+
+
+
+This setup thrives on trending weeks, NQ, GC, TSLA, XAUUSD all respond beautifully to it.
+
+
+
+Trade the Opening Range Breakout (ORB) with Gap confirmation and manage around structure.
+
+
+
+The flow:
+
+• Mark ORH / ORL
+
+• Wait for a real breakout and close above/below
+
+• Confirm with an Imbalance formation between 3 candles in the direction of the break
+
+• Enter on the break + close of the Imbalance
+
+• Target 1R-2R depending on stop size
+
+
+
+If stop is &lt;30 points, aim for 2R (On NQ)
+
+
+
+If stop is &gt;30 points, aim for 1R (On NQ)
+
+
+
+Premarket Prep
+
+
+
+Before the bell, I already know:
+
+
+
+• Previous day high/low
+
+• Overnight high/low
+
+• Session bias (bullish, bearish, or mixed)
+
+• Where the next liquidity draw is (High or Low of  the day)
+
+• Major news (FOMC, CPI, earnings)
+
+
+
+https://preview.redd.it/ynj9dmxmnj2g1.png?width=786&amp;format=png&amp;auto=webp&amp;s=2414f82637674127e84e093c8c93a80c18282dc0
+
+The goal is to eliminate hesitation before the session even starts.
+
+
+
+Entry Triggers
+
+
+
+Long Setup (Bullish Bias):
+
+• Clean break of ORH
+
+• Imbalance forms in the same direction
+
+• Price closes outside the range and forms a 1-min Imbalance
+
+• Stop below Imbalance low
+
+• Target 1-2R
+
+https://preview.redd.it/qgrcftkunj2g1.png?width=1835&amp;format=png&amp;auto=webp&amp;s=26a74ba6b5463d5a592c910a61f210e83e06cb3e
+
+Short Setup (Bearish Bias):
+
+• Clean break of ORL
+
+• Imba
+
+====== 41: r/algotrading score=822 ======
+TITLE: This is what happens when you DO NOT include Fees in your backtests
+BODY:  Fees truly are an edge killer...  
+  
+If you backtest a strategy with misleading or inaccurate fees, you're in for big disappointment when going live.
+
+
+
+====== 42: r/Trading score=817 ======
+TITLE: I lost 590k in one day.
+BODY:  I work a decent job so I was able to grind up to 180k liquid under my name at 28 years old. My whole life, I have been a rational and risk-averse investor. I would only deposit my money in diversified ETF's. But recently I needed money quickly for a new house and my car. I tried pennystocks but quickly lost some money. I tried to recoup through options trading, specifically scalping index (SPY, QQQ, IWM) 0DTE.
+
+My goal in life is similar to many. I wanted to retire early, work only a couple hours a day, retire my parents, achieve financial freedom and not adhere to a strict 9-5 schedule.
+
+I started small by trying with only a couple hundred bucks. It went well so I kept going. Early stage I was copying some traders on Discord who had high win rates. I then started getting cocky and trade by myself after learning a couple of strategies. Everything was going smoothly so I started sizing up to win more money, from $100 to $1000 to $10,000 and eventually $100,000 allocations. Sure, I would have some bad trades but my wins far outweighed my losses. I would always end the day green.
+
+Over the past two weeks, I turned 200k to 600k. On some days I would make 50k or 100k alone. I felt invincible and on top of the world. "Wow, I really just made someone's yearly salary within a day". Then last Thursday I blew up everything on one wrong trade. Before I even came back to my senses, I saw 600k collapse into just 10k before my eyes. Of course, I didn't bet the whole 600k right off the bat, just 40k, but the price kept going down so I was averaging down in hopes of a rebound and before I knew it 590k was gone. I could have cut my losses, I could have not average down, and none of this would have happened. I would still have minimum 550k. Now I am down to my last 10k.
+
+This is a strict warning to anyone that you win UNTIL you don't. Let it be gambling, daytrading, or any form of risky investment, please only use the money you are COMFORTABLE with losing. Also, make sure to quit whi
+
+====== 43: r/quant score=793 ======
+TITLE: I've aggregated all of my research about quant finance careers into this thread.
+BODY:  Hi all,
+
+I've been researching quant finance careers for a while. In this thread, I've aggregated many informative links that I've found during my research. These links should answer a lot of your questions about (getting into) quant finance as a career. I've grouped them into categories and added descriptions so that you can jump to whatever you need.
+
+## Overview of quant jobs
+
+* [How to become a quant](https://www.efinancialcareers.com/news/2022/01/quant-jobs-finance): this is an article by eFinancialCareers (UK-based) that I really liked because it gives a wide yet still detailed overview of quant roles.
+* [Quant funds by Mergers and Inquisitions](https://mergersandinquisitions.com/quant-funds/): this website is usually focussed on "traditional” finance (investment banking, private equity, fundamental hedge funds, etc), but I think this particular article on quant funds gives a good overview.
+* [QuantStart career articles](https://www.quantstart.com/articles/topic/quant-careers/): a series of articles specifically about quant finance careers by the QuantStart blog. In my opinion, some of their older articles may be out of date, but they're very readable and a good way to quickly get an overview before doing deeper reading.
+* [WallStreetOasis on quants](https://www.wallstreetoasis.com/resources/careers/jobs/quants): article by WallStreetOasis. Same as for the above bullet point: usually they're focused on traditional finance but this is still worth reading.
+* [Understanding the industry and its many moving parts](https://quantnet.com/threads/understanding-the-industry-and-its-many-moving-parts.51361/#post-304958): a summary and comparison of quant roles on the sell-side (banks) versus buy-side (prop shops, hedge funds); read this with a grain of salt though, because it's written by someone who's not a quant professional.
+* [Comprehensive Overview on Types of Quants](https://www.reddit.com/r/quant/comments/wx6gtd/comprehensive_overview_on_types_of_quants/): a grea
+
+====== 44: r/Trading score=765 ======
+TITLE: I’m 26. It took me 7 years, two blown accounts, and a supermarket job to become a profitable trader. Here’s the honest version.
+BODY:  It started when you were 18 — a friend showing fake P&amp;L screenshots, going all in with $3,200 and YouTube. Years 1-2 were 14-17 hour days, multiple strategies, blew the account. Borrowed $6,000 from parents, blew that too. Hit rock bottom at 23 — depressed, owed money, friends telling you to quit. Got a supermarket job, took a 4-month break.
+
+Came back with a different mindset — stopped chasing strategies, accepted the trading education space is largely a scam. Stripped it down to one setup, one instrument (BTC), committed to 100 trades minimum, journaled everything. Passed 5 funded accounts in a year, made $400k in payouts. Deposited $300k, netted 8-15% monthly, grew net worth to $1M.
+
+The message: nobody can teach you trading, you have to develop your own process. Journaling was the turning point.
+
+====== 45: r/Trading score=731 ======
+TITLE: friend of mine traded for 10+ years, went from making $100/day to $17 mil in a year
+BODY:  Hey all, I am doing long-form content on trading--basically "Trader bio's" where I write about the best traders I have known in real life after 15 years of trading. You can check it out in my [profile link](https://churningandburning.com/category/portrait-of-a-trader-series).
+
+Here's my TL;DR version of it in this post.
+
+2011-2014 -- Stephen (I nickname him Clockwork, for reasons you can read about) starts at a third rate prop firm in NYC. They don't pay any salary. There's a 90% drop out rate within one year as most traders struggle during this market. Stephen likes scalping but this era marks the rapid proliferation of HFT and scalping isn't what it used to be. He's consistently able to make $100/day but it gets eaten up by profit split, fees, and living expenses. He literally sits next to me and I teach him everything I know. Only able to break through in 2014 as he shifts to OTC trading, options, and small caps.
+
+2015-2019 -- Stephen becomes a consistent 6-figure trader. He likes to short small caps and buy large market dips during 50+ VIX events. 2017, he surpases 1 mil annual for the first time.
+
+2020-2021 -- pandemic market with market crash and recovery, followed by crazy bubble market in SPAC's, covid stocks, SAAS/tech, pump and dumps, crypto/NFT, Stephen enters 8-figure PnL territory.
+
+2022-2023 -- easy money over, Stephen's PnL shrinks by 80%. he has to learn how to adapt
+
+Trading isn't easy. There's a lot of bumps along the way, even for the very best. You have to keep a student's mindset--always humble, always learning, never thinking you have it all figured out. I think Stephen really embodies that mindset. He's not out there making bold calls and claiming to have a holy grail. He just likes to make money.
+
+All the information is based off of interviewing him and asking for his statements. Anyway, check it out and let me know what you think.
+
+====== 46: r/Trading score=729 ======
+TITLE: Just lost it all (REKT)
+BODY:  I’ve read stories about people losing it all. Never thought it would happen to me. I don’t know how to feel right now. I have no idea what to do I’m straight up lost. I was leverage trading got greedy thought I could make back what I lost and it’s gone. All of it. I have $.74 in my trading account. I hope no one ever has to experience what I just went through because this is genuinely one of the worst feelings if not the worst I have ever had. Knowing that I just let myself do that is almost unbearable. If anyone has recommendations on how to get over this please let me know. I’m actually in tears for the first time in about 7 years. I can’t believe it I hate myself so much. I don’t know what I’m going to tell my wife, she’s going to leave me. This wasn’t a joint account or anything but we were supposed to use this money for real life stuff. Now I have basically nothing.
+
+Edit: Wow, I was not expecting this much feedback. I was definitely emotional at the time of the post probably should’ve took a breath first. I didn’t have anyone to talk to about it though and kinda just lost it. I want to say thank you to all the kind words, it definitely helped me change my mindset and access the situation. To all the assholes out there thank you for kicking ya boi when he’s down. I’m 25 years old and just trying to make something of myself in this world. I have a good idea of where I want to go from here a roadmap or plan per se. I couldn’t get back to everyone but know I read all of your guys comments and again thank you. Y’all seriously helped me out. 
+
+====== 47: r/Trading score=720 ======
+TITLE: I make a living with a 40-50% win rate
+BODY:  I didn’t leave my 9-5 because I found a magic 80% win strategy. My journal shows 58.26% green days, a typical day wins bigger than it loses (avg daily win/loss 1.17), and I’m done in about 4h18m on average. Biggest up day: $5,387.50. Biggest down day: -$2,015.25.
+
+*Processing img duzroav91vof1...*
+
+Nothing glamorous, also note that still to this day, trading **is NOT** the only source of income I have, it is advised to have at least one more, for youre safety and sanity.
+
+What I actually trade and how it performs:
+
+ES: 40% win rate, $13,637.50 net, avg win $695.97 vs avg loss -$317.34 (\~2.2x payoff).
+
+NQ: 52.11% win rate, $14,215 net, avg win $794.86 vs avg loss -$446.91 (\~1.8x payoff).
+
+MES: 36.84% win rate, $917.50 net.
+
+MNQ: 37.04% win rate, -$1,438.50 net (I cut it, noise for me).
+
+RTY: 27.91% win rate, $1,960 net.
+
+*Processing img j0q5ltv81vof1...*
+
+The lesson: you don’t need a sky-high win rate if your average winner is meaningfully larger than your loser and you focus on the symbols that actually pay you.
+
+My playbook is simple and strict. I trade a smart money concepts: wait for alignment (bias + structure), then pull the trigger only on A-setups. For index futures that means things like SMT between ES/NQ, reclaim through key levels, and clean breaks of strcuturee ofter a liquidity sweep. Early in a cycle I’ll size conservatively and let one or two quality trades build a buffer, then I protect that buffer like my paycheck. It’s boring but boring compounds.
+
+If you’re trying to make the jump: track your real numbers, cut the instruments that drain you, and let the payoff ratio do the heavy lifting. Most traders don’t have a strategy problem,they have a data problem.Focusing too much on your entry and not your risk management will teach you a valuble lesson.
+
+====== 48: r/quant score=706 ======
+TITLE: Will we have to listen to this fucktard every day for the next 4 years to generate alpha?
+BODY:  This fucktard has totally changed the nature of what we’re doing.  The deep statistical learning-to-trading pipeline was fun and rewarding.  This work is currently something else. 
+
+Edit:  the tariff week alone was worth months’ worth of alpha.  I’m market-neutral vol.  *I’m asking if people are irritated that an shithead with low cognitive function hijacked an entire economic cycle.*  I enjoy physics, complex analysis, economics and probability theory and the way they combine in this work.  Yes, it’s much easier to make money now, but everything is much dumber.  
+
+This is actually not how markets are supposed to function.
+
+====== 49: r/thetagang score=700 ======
+TITLE: Best Strategy: Laugh
+BODY:  
+
+====== 50: r/Trading score=678 ======
+TITLE: After five years of trading, I've finally reached $600,000 in revenue, and what makes me even prouder is that I just paid my children's college tuition in full.
+BODY:  I started trading five years ago, and like everyone else, my account was in the red. This year, my account finally broke through, but that number isn't what I'm proud of. What really matters is that I've set aside $200,000 to pay for my children's college tuition in full, without loans or stress. Money is money, but seeing your trading transform into real security for your family? That's the real victory. I'm starting my journey towards $1 million.
+
+====== 51: r/Trading score=667 ======
+TITLE: How I learned to trade while working 7-5, six days a week
+BODY:  My trading journey wasn’t built in comfort. It was built during years of exhaustion, sacrifice, and pure stubbornness. For a long time, I worked 7-5, six days a week. On top of that, I had a few side gigs, a part-time job, and was trying to attend college. I was completely on my own in America, no family nearby, no one to lean on financially, and no time to waste. Every day felt like survival, and somehow, in the middle of that chaos, I decided I wanted to learn how to trade.
+
+
+
+I didn’t have the luxury of sitting in front of screens all day. I had to build my trading career in the cracks of my schedule. I woke up every morning at 5 AM to study. That hour before work was sacred, books, courses, videos, and anything I could find that would get me closer to understanding the market. I didn’t get it all at first, but I kept showing up. Once I got to work, I used every slow moment to backtest or study price action. I was lucky to have access to two monitors at my job, one for work, one for charts. While my coworkers talked about their weekend plans, I was drawing levels and trying to connect dots that didn’t seem to make sense yet. Yes, I got a lot of "stop gambling bro and focus on your work" or "you know 99% traders never make it right? haha"
+
+
+
+During my lunch breaks, I didn’t scroll through my phone or go out for food. I stayed at my desk and journaled every trade. I’d write what went wrong, what went right, and how I felt during each setup. I didn’t even realize it at the time, but I was building a system, not just a trading one, but one that trained my discipline and patience. After work, I’d head straight to my part-time job, clock in a few more hours, then hit the gym or train MMA just to clear my mind. By the time I got home, it was usually 9 or 10 PM. I’d squeeze in another two or three hours of study before crashing into bed and doing it all again the next day.
+
+
+
+That schedule went on for years. Two, maybe three. Most of it without any real progress. No big 
+
+====== 52: r/quant score=663 ======
+TITLE: Judge orders Jane Street to reveal strategies by next week
+BODY:  
+
+====== 53: r/quant score=660 ======
+TITLE: Significant Employers of Quants
+BODY:  One Fund To Rule Them All:
+
+     Renaissance Technologies
+
+&amp;#x200B;
+
+Proprietary Trading Shops:
+
+    Jane Street
+    Citadel Securities
+    IMC
+    Optiver
+    Akuna
+    DRW
+    CTC
+    SIG
+    TransMarketGroup
+    Old Mission Capital
+    Five Rings
+    Radix
+    3Red
+    XTX
+    Ginkgo
+    Sunrise
+    Volant
+
+High frequency trading:
+
+    Jump
+    Virtu
+    HRT
+    Headlands
+    HAP Capital
+    Tower Research
+    QuantLab
+
+Hedge Funds:
+
+    Multistrats:
+        Citadel
+        Millenium
+        Balyasny
+    Stat Arb:	
+        DE Shaw
+        Two Sigma
+        PDT
+    Uncategorized:
+        World Quant
+        Cubist
+        Point 72
+        Squarepoint
+        GSA
+        ExodusPoint
+        Marshall Wace
+        Winton
+        Guggenheim
+        Schoenfeld
+        AQR
+        Bridgewater
+        Verition
+        MAN GLG
+        Brevan Howard
+        Graham Capital
+        GAM Systematic
+        Voleon
+        QuantRes
+        Spark
+        Hihghbridge
+        Vatic Labs
+
+Boston:
+
+    Man Numeric
+    Baupost 
+    AlphaSimplex
+    Arrowstreet Capital
+    PanAgora
+    Acadian Asset Management
+    Bracebridge Capital
+    Bain Capital Credit 
+    Wellington Management 
+    Domeyard
+
+UK:
+
+    G-Research
+    Quadrature capital
+    MAN AHL
+
+Asset Managers:
+
+    BlackRock
+    Pimco
+    Fidelity
+
+Banks (roughly in order of prestige)
+
+    Goldman Sachs
+    Morgan Stanley
+    JP Morgan Chase
+    Citi bank
+    Bank Of America
+    Deutsche bank
+    Barclays
+    
+    \-- not in order anymore --
+    
+    UBS
+    Credit Suisse
+    Societe Generale
+    BnP Paribas
+    Wells Fargo
+    HSBC
+    Nomura
+
+Some Relevant Links, some extremely obsolete:
+
+    [https://news.efinancialcareers.com/uk-en/256351/tier-1-tier-2-tier-3-investment-bank](https://news.efinancialcareers.com/uk-en/256351/tier-1-tier-2-tier-3-investment-bank)
+    
+    [https://www.traderslog.com/proprietarytradingfirms](https://www.traderslog.com/proprietarytradingfirms)
+    
+    Prop Trading [http://leverageacademy.c
+
+====== 54: r/Trading score=637 ======
+TITLE: I quit my job as a dev to trade full time. It was the best decision of my life (YTD $102k in NET profit)
+BODY:  I’m a developer by trade, so I treat trading like a data problem, not a gambling problem. I wanted to break down exactly how I got here, including the strategy stats and the "boring" financial details that I see most people ignore.
+
+My win rate is not 90%. It's 52%, BUT the edge comes from the Risk/Reward ratio enforced by my code and risk management strat.
+
+Total Net Profit (YTD): $102,400 
+
+Gross Profit: $136,850 
+
+Win rate: \~52% 
+
+Avg win: $1,420 
+
+Avg loss: -$450 
+
+Best month: $22,150 (June volatility was a gift) 
+
+Worst month: -$1,800 (August chop) 
+
+Current month (Nov): around $4,000 (I sized down heavily this month to protect annual gains, and for a few other personal reasons).
+
+I trade a mean-reversion model on Futures (ES/NQ).
+
+I used to trade based on "feel", and lost a sh\*t ton of money (quite a sum for me back then). Now, I have a custom script and a strategy based on it that acts as a gatekeeper. I wait for price to hit statistical volume extremes (2 stds, + a few selective types of volumetric liquidity zones). The entry zones are very small, which lets me place my stop tightly too, and the upside potential is much larger (hence the avg win size).
+
+If the script doesn't print a signal, I don't trade. I also generally don't trade on Wednesdays (The Wednesday effect), unless we are expecting some imminent volatility that day. It’s boring, but it prevents me from revenge trading a small loss into a blown account.
+
+A lot of traders look at my P&amp;L and ask why I don't trade SPY options or individual stocks. The answer is TAXES.
+
+Because I trade Futures, I fall under IRS section 1256 which means that 60% of my profits are taxed at the lower long term capital gains rate. Only 40% is taxed as ordinary income.
+
+In addition, i don't have to worry about the 30-day wash sale rule. I can scalp the same level 10 times a day if I want to, and deduct every single loss.
+
+The Math: Living in Richmond VA, I pay \~5.75% state tax. If I made this $136k scalping Options
+
+====== 55: r/algotrading score=620 ======
+TITLE: Meta Labeling for Algorithmic Trading: How to Amplify a Real Edge
+BODY:  I’ve commented briefly on some other posts mentioning this approach, and there usually seems to be some interest so I figured it would be good to make a full post. 
+
+There is a lot of misunderstanding and misconceptions about how to use machine learning for algo trading, and unrealistic expectations for what it’s capable of. 
+
+I see many people asking about using machine learning to predict price, find a strategy, etc. However, this is almost always bound to fail - machine learning is NOT good at creating its own edge out of nowhere (especially LLM’s, I see that a lot too. They’ll just tell you what it thinks you want to hear. They’re an amazing tool, but not for that purpose.)
+
+ML will not find patterns by itself from candlesticks or indicators or whatever else you just throw at it (too much noise, it can't generalize well).
+
+A much better approach for using machine learning is to have an underlying strategy that has an existing edge, and train a model on the results of that strategy so it learns to filter out low quality trades. The labels you train on could be either the win / loss outcomes of each trade (binary classification, usually the easiest), the pl distribution, or any metric you want, but this means it’s a supervised learning problem instead of unsupervised, which is MUCH easier, especially when the use case is trading. The goal is for the model to AMPLIFY your strategies existing edge.
+
+Finding an edge -&gt; ml bad
+
+Improving an existing edge -&gt; ml good
+
+###Introduction
+Meta labeling was made popular by Marco Lopez de Prado (head of Abu Dhabi Investment fund). I highly recommend his book “Advances in Financial Machine Learning” where he introduces the method. It is used by many funds / individuals and has been proven to be effective, unlike many other ml applications in trading. 
+
+With meta labeling, instead of trying to forecast raw market movements, you run a primary strategy first — one that you’ve backtested and know already has at least a small 
+
+====== 56: r/Trading score=610 ======
+TITLE: I’ve been trading for about 5 years. Profitable for the last 2-3, Here’s what actually mattered:
+BODY:  I’ve been around markets long enough to know there are no shortcuts. The first few years were messy, inconsistent, and humbling to say the least. The progress I’ve made came from fixing things I kept ignoring, one setp at a time and backed by proper data
+
+For anyone still early or stuck, these are the lessons that genuinely changed my results.
+
+1. One repeatable model
+
+Early on, I thought adaptability meant switching approaches whenever conditions changed. In reality, it just made my results a mess. Once I committed to one core model and traded it through different environments, I started to understand when it worked and when it didn’t. That familiarity is what builds confidence. Then I expanded my horizon and now I trade 3 models and 2 is my main one, but first master one before you move on.
+
+2) Risk management is MANDATORY
+
+Everything improved once I stopped only focusing on my "perfect" entries.
+
+Until downside is controlled, you don’t know if you have an edge or just a lucky streak. Consistent risk gave my strategy room to play out over time and after I backtested it plenty of times, the same model but with different risk management strategies and it made a world of difference.
+
+3) Most bad trades aren’t analytical mistakes
+
+Looking back at my worst days, they usually came from impatience. Trading out of boredom. Trading because I was already at the screen. Very rarely was it because I misread structure or context.
+
+Learning when not to trade ended up being as important as learning how to trade.
+
+here are just some ofthe mistakes and how much they cost me :)))))))
+
+https://preview.redd.it/75460fnjozhg1.png?width=640&amp;format=png&amp;auto=webp&amp;s=36ad8455c9950c909940bb64fc8abb972800bf99
+
+[](https://preview.redd.it/ive-been-trading-for-about-5-years-profitable-for-the-last-v0-q89g86pqethg1.png?width=1294&amp;format=png&amp;auto=webp&amp;s=7095639be73c8b05276c7a77626b243d652cc966)
+
+4) Journaling behavior mattered more than journaling trades
+
+Recording entries 
+
+====== 57: r/algotrading score=589 ======
+TITLE: Dead Internet Theory in r/algotrading
+BODY:  im calling this out because the discussion quality here is being degraded by what i am 99% sure is a bot farming engagement.
+
+if you saw the recent post about Small experiment: "[Small experiment: filtering low-expectancy trades flipped a strategy’s PnL in 24h](https://www.reddit.com/r/algotrading/comments/1q5jvlf/small_experiment_filtering_lowexpectancy_trades/)" you might have noticed the strategy itself was nonsense, hindsight bias and overfitting to a tiny sample. but the bigger red flag isnt the bad math, its the behavior.
+
+ive gone through his history and the pattern is unmistakable. this user doesnt have opinions. they dont get defensive. they dont argue. every single response follows the exact same syntax of a friendly AI assistant.
+
+first they validate you with "thats a fair point" or "i completely agree". then they rephrase your exact comment to show they understood. then they pivot to something like "thats exactly why i moved away from X". finally they end with a generic open ended question to keep the thread alive.
+
+this isnt how traders talk. real traders have conviction, get annoyed, or simply say thanks. this user is running a script to farm karma or train a model on our responses.
+
+i was suspicious of whether it was to mine alpha so i copy pasted his responses in gemini and this is the response i got \~\~
+
+&gt;It is almost certainly an attempt to collect alpha (or training data), with karma farming just being a side effect that keeps the account alive.
+
+&gt;Here is why the evidence points to Data Mining / Social Engineering rather than just gaining internet points:
+
+1. The Cunningham's Law Exploit
+
+&gt;There is an old internet adage: "The best way to get the right answer on the internet is not to ask a question; it's to post the wrong answer."
+
+&gt;The Bait: The bot posted a "flawed" strategy (the 24h PnL flip). It was just plausible enough to look real, but flawed enough to trigger competent traders to correct it.
+
+&gt;The Trap: Real traders (like f
+
+====== 58: r/quant score=585 ======
+TITLE: Alpha research is so much more about being creative than being good at maths
+BODY:  Very anecdotal.
+
+So I do alpha research at a quant fund, fairly senior.
+
+A lot of people around me are math geniuses and are really good at complex stuff. But they never produce any original ideas (alpha wise).
+
+On  the other hand I put myself as a "median" in the top quantile: I went to top unis etc but I was never the "genius type" just hard working. I can't stand to read complex papers anymore i just zone out, unless it's applicable to my work.
+
+Do you find the same ? Is it just me ?
+
+====== 59: r/Trading score=577 ======
+TITLE: A few lessons learned from 10 years of algo trading—hoping it helps someone
+BODY:  Hey everyone, I’ve been algo trading for about ten years now so I thought I’d share a few things I’ve picked up along the way. I’ve seen lots of similar questions in the group recently so maybe these thoughts will help if you’re considering getting started.
+
+1. **Keep It simple:** It’s tempting to make things more complicated with tons of indicators and complex strategies, but I’ve found that simpler, clear-cut strategies tend to work better in the long run. It’s more about testing and refining than making everything overly complicated.
+2. **Backtest but don’t rely too much on It:** Backtesting is important, but it’s not the whole picture. Past performance isn’t always a reliable predictor of future results. I’d recommend paper trading your algo in a real environment before going live as the market can behave a bit differently than what the backtest data shows.
+3. **Risk management matters:** Even if your algo is well-built without proper risk management it can be tough to get through market swings. I always include stop-losses, position sizing, and other protective measures in my strategy.
+4. **Watch out for overfitting:** A mistake I’ve made in the past is overfitting an algo to historical data. It’s important to make sure your model can adapt to live market conditions not just the past data it’s trained on. Regular monitoring and updates are key for this.
+5. **Don’t forget about emotions:** Even though your algo runs automatically you can’t just “fire and forget” You still need to stay involved to monitor how things are going and make adjustments when needed. The market changes and so should your approach.
+6. **Keep learning:** I’m constantly learning and trying to improve. Particularly from others in this group. Lots of good data sources and advice being shared for improving my methods—there’s always something new to discover and someone out there doing better.
+
+**TL;DR:** Over the years, I’ve learned that simpler strategies often work best, backtesting is usefu
+
+====== 60: r/quant score=557 ======
+TITLE: Finally Understood What Quant Traders Do
+BODY:  So i was testing a strategy i've been working on the past couple of weeks. To be honest, the performance was garbage, but they were patient with me since i'm still an intern. Eventually I manage to get good forecasts and decent signal to have a constructive discussion about how to proceed. 
+
+Then comes the quant trader, asks to hand over my strategy and within a couple of hours makes it way more profitable than what it was. No coding no remodeling, nothing. Just went over my logic and made did some parameter adjustments and the strategy performed better than i expected. Watching the PnL graph change as he make the parameter adjustments in realtime was surreal. Honestly, i was in disbelief at the fact my strategy could even work, i had zero confidence at myself and felt like the solution to the problem is math that i didn't know i don't know. Ultimately, still not a great strategy, but something to work with and got positive comments and direction on how to proceed. 
+
+The reason i'm sharing this, is because i was always confused for the purpose of a Quant Trader. I understand discretionary traders, but in quant? What purpose do they serve? A developer builds the infra and deploys the strategies. A researcher explores and develops new strategies. But a Quant Trader is just sitting monitoring a bunch of GUI most of the time from what i've seen. I know they make parameter adjustments and may have a hands on role when things go really bad, but it seems like they are overpaid for their work. But just earlier today, i witnessed the intuition of a trader and how he managed to flip a garbage strategy to a decent one in just half a day. 
+
+  
+Anyways, i know this sub is strict about novice quants, so i hope this doesn't get taken down, just figured i'd share the story because i'm sure many people are confused what does a trader do that a researcher or developer cannot.
+
+====== 61: r/algotrading score=555 ======
+TITLE: List of the Most Basic Algorithmic Trading Strategies
+BODY:  I am currently compiling a list of the most basic strategies used in algorithmic trading.
+
+* Trend Following (+Momentum)
+   * MA Cross
+   * EMA Cross
+   * MACD ([ingpawat](https://www.reddit.com/user/ingpawat/))
+   * RSI / LRSI ([Mike\_Trdw](https://www.reddit.com/user/Mike_Trdw/))
+   * New Low or High
+   * ATR ([Away-Box793](https://www.reddit.com/user/Away-Box793/))
+   * VWAP
+* Seasonal
+   * Sell in May and Stay away
+* Mean Reversion ([Mike\_Trdw](https://www.reddit.com/user/Mike_Trdw/))
+   * Mean Reversion To Trend
+   * Mean Reversion in Range (The-Goat-Trader)
+   * Reverting Market (The-Goat-Trader)
+* Momentum Rotation (Tactical Allocation) (The-Goat-Trader)
+* Grid Trading ([Mike\_Trdw](https://www.reddit.com/user/Mike_Trdw/))
+* Arbitrage
+* Offset Trades / Trading Pairs
+* Index fund rebalancing
+* Market timing
+* Scalping
+* Price Pattern / Candle Stick
+* Price Forecasting
+   * Neural Networks
+* News-based
+* Market Sentiment
+* Trend line
+   * Break
+   * Bounce
+* Standard SMA
+   * break (SMA 20D, 50D, 100D, 150D, 200D)
+   * bounce
+* Range Breakout
+   * Open Range Break Out
+   * Horizontal Compression Breakout
+   * Wedge Compression Breakout
+* Options
+   * Covered calls ([Chuyito](https://www.reddit.com/user/Chuyito/))
+   * "The Wheel" on LargeCaps ([faancy5050](https://www.reddit.com/user/faancy5050/))
+   * Short Iron Condor on SPY 0DTEs ([faancy5050](https://www.reddit.com/user/faancy5050/))
+   * Long Straddle or Long Strangle on any earnings ([faancy5050](https://www.reddit.com/user/faancy5050/))
+* Smart Money Concepts ([good read](https://howtotrade.com/wp-content/uploads/2024/06/Smart-Money-Concept-trading-strategy-PDF.pdf), [Franco\_Love](https://www.reddit.com/user/Franco_Love/))
+* "Martingale" ([reckless\_homicide](https://www.reddit.com/user/reckless_homicide/))
+   * Me: It is risky but it is a classic and basic strategy for you to play with. There are good papers on it too, so it made the list.
+
+\---
+
+* [BT\_2112](https://www.reddit.com/user/BT_2112/) ment
+
+====== 62: r/algotrading score=551 ======
+TITLE: Profitable Trading is often Boring Trading
+BODY:  I've been developing and running strategies for years now, always trying to improve them and add filter, etc... often resulting in overfitting. (you can read my previous posts on this sub)
+
+Anyway, came to realize my most boring strategy on 2h timeframe is on the long run one of the best performing. It's boring, kinda frustrating sometimes because you're feeling like you miss a lot of opportunities, but results are here. 
+
+Actually made only 7 trades this year so far, 100% Win rate and +74.77% Profit 
+
+We always say the simpler the better, but it's hard to follow when you're more passionate about building strategies than just watching them trade. Don't make things complicated, there are enough simple strategies that actually work. 
+
+Just add leverage, focus on risk management, trade Futures / CFDs and you'll multiply your profits
+
+====== 63: r/Trading score=548 ======
+TITLE: My exact daily routine as a full-time trader
+BODY:  Most people only focus on what happens during the trading session.
+
+But what I do before the market opens is what actually keeps me consistent.
+
+Here’s the exact routine I follow every single morning:
+
+**- 4:30 AM – Wake up (2 hours before the market opens)**
+
+I don’t touch my phone. No emails. No charts. Just get vertical and get moving.
+
+**- 4:35 AM – Cold shower**
+
+Instant alertness. Forces presence. No better way to break sleep inertia.
+
+**- 4:45 AM – 20 min walk or stretching session**
+
+Gets the blood flowing. Movement before momentum. It clears mental fog better than any podcast.
+
+**- 5:10 AM - 4-7-8 breathwork (10 cycles)**
+
+Inhale for 4 seconds
+
+Hold for 7 seconds
+
+Exhale slowly for 8 seconds
+
+There is 5-10min guided videos on YT
+
+This activates the parasympathetic nervous system, reduces anxiety and sharpens focus. Especially important before a day of high-stakes decisions.
+
+**- 6:00 AM – Black coffee + no screens**
+
+Caffeine hits better when I’ve been awake for \~1.5 hrs. Also prevents anxiety spikes or rushed decisions.
+
+**- 6:30 AM – Game plan review (no trades yet)**
+
+I have a hard rule, no trading the 30 minutes before open. Instead, I use that time to:
+
+Review my game plan (must be written the night before)
+
+Chart out the overnight session (Asia + London highs/lows)
+
+Update key levels or bias only if the overnight session justifies it
+
+I always ask these 3 questions before entering a trade:
+
+Where is price drawn to?
+
+What is liquidity telling me?
+
+Do I have confluence or am I forcing it?
+
+
+
+https://preview.redd.it/3tnk51pc4ref1.png?width=1704&amp;format=png&amp;auto=webp&amp;s=1b9f10972b4d95cbfd78832c7354e5972b9f2782
+
+No trade gets taken without a clear answer to all 3. No exceptions.
+
+This routine isn’t about being perfect. It’s about showing up sharp, focused, and regulated, so that I can execute my edge without hesitation.
+
+Happy to answer any questions or break this down further. I'm not saying you have to journal, meditate and cold plunge to beco
+
+====== 64: r/Trading score=534 ======
+TITLE: Why Profitable Traders Rarely Share Their Strategies – A Hard Truth I Learned After 4 Years
+BODY:  After struggling for three years in the forex market and finally becoming profitable in my fourth, I found myself asking a tough question: Why don’t experienced traders share their actual strategies?
+
+I noticed that out of every 100 traders, maybe only two are willing to share a fully documented strategy—including any proprietary indicators, pairs they focus on, or their specific rules for execution. Even my mentor, who has over 11 years of experience, never actually gave me his strategy. Instead, he offered advice and guidelines, making me believe that following his teachings would eventually lead to consistent profitability. It helped, yes—but only to a point.
+
+Let me break down a typical reason why profitable traders stay tight-lipped.
+
+Take Smart Money Concepts (SMC) or even traditional support and resistance strategies. These approaches have been around for years. But when strategies become popular, they also become predictable. The same institutions and large players in the market—the so-called “smart money”—begin to exploit that predictability.
+
+For example, a common supply and demand strategy might say:
+
+“Buy at demand, place your stop-loss just below it, and aim for a 1:2 risk-reward ratio.”
+
+Sounds simple. But when 99% of traders are doing exactly that, institutions will often push price slightly below the demand zone to trigger retail stop-losses—before reversing the market in the intended direction. This SL hunt clears out most traders, leaving only the 1% who waited patiently for the manipulation to play out and then entered with confirmation.
+
+That’s exactly why only a small percentage of traders consistently make money. Most are using the same widely shared strategies, entering at the same levels, and placing stops in the same obvious places. In a game that punishes the predictable, doing what everyone else is doing just doesn’t work.
+
+I used to think that not sharing strategies was selfish. But after learning the hard way, I understand now:
+
+If a str
+
+====== 65: r/algotrading score=529 ======
+TITLE: I ADMIT IT. I OVERFIT. I HAVE SELECTION BIAS.
+BODY:  
+
+====== 66: r/Trading score=527 ======
+TITLE: Trading broke me
+BODY:  Most people think trading is about money. Charts, setups, accounts. But the longer you’re in this game, the more you realize it’s not really about any of that. It’s about you. Your reactions. Your emotions. Your ability to sit still when every part of you wants to act. The market doesn’t just expose your weaknesses, it forces you to meet them face to face.
+
+I used to believe I needed a better strategy,a new tool or a secret indicator, but what I really needed was to become someone who could follow the simple rules I already had. It sounds so obvious in hindsight right? cut losses, let winners run, manage risk. But when you're in the moment? That knowledge is useless unless you’ve trained yourself to act on it.
+
+The truth is, trading feels easy until it’s real. It’s one thing to backtest or sim-trade. It’s another to watch real money vanish because you didn’t stick to your plan. That emotional spiral? The overtrading, the revenge entries, the panic exits because that’s what kills most traders. Not the market but, themselves.
+
+Before trading I was a really confident gyu but it broke e down, showed me my flaws and obligated me to work on them to better myself and that’s what makes this journey so spiritual. Because if you stay long enough, you realize the goal isn’t to master the market. It’s to master your mind. You’re not just building a system, you’re building discipline, patience, self-awareness. The kind of traits that bleed into the rest of your life. It’s not about pressing buttons, it’s about becoming the kind of person who can press them with clarity.
+
+I used to think trading would give me freedom and it has but not just financially. It’s forced me to grow into someone I never thought I could become. That’s why I keep showing up. That’s why I’ll never quit. Because win or lose, every session brings me closer to the version of me I’m chasing. And that’s worth everything.
+
+====== 67: r/Trading score=505 ======
+TITLE: The Ugly Truth About How Long It Actually Takes To Make It In Trading
+BODY:  Everyone thinks they’ll be the exception. I thought so too.
+
+When I started, I figured one or two good years was all I needed to “crack it” and go full-time.
+
+It took me four. And those four years looked nothing like I imagined.
+
+
+
+Year one, I was on fire, or so I thought. Every setup I saw on YouTube went straight onto my chart. Sometimes I won big. Most times I lost bigger. I blamed my broker, my internet speed, the market… anything but me, it was never my fault, I started realizing this type of behavior in all aspects of my life.
+
+
+
+Year two, the cracks started showing. I was no longer new, but I wasn’t good either. I’d keep switching strategies, half-heartedly journal trades, and convince myself that the next prop challenge would be “the one.” It never was.
+
+
+
+Year three, I finally stopped trying to sprint. I stripped everything back to one market, one setup, one timeframe. I spent more time reviewing than trading. I tracked every trade, studied every miss, and realized my biggest leak wasn’t my strategy, it was me.
+
+
+
+Year four, things got quiet. Boring. Profitable. I sized down, focused on base hits, and stopped chasing. Drawdowns became just part of the cycle instead of a crisis. My trading stopped feeling like gambling and started feeling like a business.
+
+
+
+Some people can do this in less time. But unless you’re studying 12-14 hours a day, fully locked in, the market will humble you into taking the long route. And honestly? That’s not a bad thing. The time you “lose” learning is the time you gain in never having to blow it all again.
+
+
+
+====== 68: r/quantfinance score=487 ======
+TITLE: My quantitative strategy delivered a +2111% return within a year—this unique approach
+BODY:  Over the past year, I've been experimenting with a novel quantitative trading approach whose results have astonished even me. From October 2024 to October 2025, this strategy delivered a +2111% return, with a profit factor of 2.05, a win rate of 66%, and a maximum drawdown of approximately 31%. 
+
+
+
+This strategy avoids traditional machine learning models or classical factor systems, instead integrating market microstructure signals, volatility clustering analysis, and adaptive reinforcement logic (validated through multiple forward tests with no overfitting). 
+
+
+
+For transparency, the equity curve is attached below.  
+
+
+
+The most intriguing aspect: this system automatically adapts to changing volatility environments—requiring no manual parameter tuning post-deployment.  
+
+
+
+To spark discussion:  
+
+
+
+Have others experimented with similar adaptive quantitative frameworks?  
+
+
+
+What are your insights on employing non-stationary feature sets in live trading models? 
+
+
+
+Share your insights or backtesting approaches—if you're conducting similar research or interested in collaboration, please reach out. I'll gladly share findings and respond to every message.   
+
+====== 69: r/Trading score=485 ======
+TITLE: Most of trading is just learning how to do nothing.
+BODY:  People think trading is all about charts, setups, and crazy calls.
+
+But truthfully?
+
+It’s about sitting on your hands 90% of the time.
+
+No setup? Do nothing.
+
+Missed a move? Do nothing.
+
+Feeling emotional? Definitely do nothing.
+
+It sounds simple, but it’s actually the hardest part. Because doing nothing feels wrong. It feels like you’re missing out.
+
+But every time I’ve forced a trade out of boredom or FOMO, I’ve regretted it.
+
+Every. Single. Time.
+
+The best trades I’ve taken? They came after hours of watching, waiting, and doing absolutely nothing.
+
+So yeah, learning when not to click might be the most underrated skill in this game.
+
+Has anyone else come to that realization over time?
+
+====== 70: r/quant score=479 ======
+TITLE: Finished my quant internship and got a return offer, but I’ve never passed a technical interview in my life
+BODY:  I just wrapped up an internship in HFT working on model development. I got a return offer, which I’m really happy about, but it has left me in a weird headspace.
+
+The thing is, I have never passed a single technical or quant interview. Not once. I have completed eight internships across software engineering, data, and quant. For the quant one, I actually got the initial internship offer without going through interviews at all. Ever since my first internship, the process has basically been that I show what I can actually do, and suddenly the interview turns into them trying to convince me to join.
+
+But put me in a real technical interview and I bomb. I am not a math wizard or an algorithm puzzle guy. I am just good at the creative and practical side of things. Building systems, finding patterns, and understanding how things actually work.
+
+Now I have this return offer at a trading firm, which is objectively amazing. But it is a strange feeling, like I have somehow built a career without ever being able to pass the standard filters. And because of that, I worry that if I ever leave, I will never get back in.
+
+At the same time, people I have worked with keep asking me to join their startups because they like how I approach problems. So I am torn. Either I take the stable and high prestige path and stay in quant research and development, or I take the risk and join a startup and accept that I might never pass another quant interview again. Btw, these startups have huge amounts of funding and are high potential opportunities with comp comparable to quant.
+
+====== 71: r/Trading score=466 ======
+TITLE: 10 Things NOT To Do If You Want To Become a Profitable Trader
+BODY:  
+I’ve been trading swing options and day trading stocks for the last 8 years. I’ve blown accounts, overtraded, and made every mistake in the book. But through backtesting, journaling, and sheer repetition, I’ve figured out what separates consistent traders from the rest. Here are 10 things you must avoid if you want to get profitable:
+
+1. Don’t chase every setup you see.
+Early on, I tried to trade every pattern, every indicator, every hot stock. It spread me too thin. The breakthrough came when I focused on one model, backtested it 300+ times, and mastered it. Consistency comes from depth, not breadth.
+
+2. Don’t ignore your risk per trade.
+Sizing up randomly is the fastest way to blow an account. Pick a % you can live with, 1% or less is standard and track it. Once I started journaling risk vs reward in TradeZella, I saw my survival rate shoot up.
+
+3. Don’t skip journaling.
+Your memory is unreliable. Journaling gives you hard data. My biggest improvements came after I could see, in black and white, that revenge trades and premature exits were eating my edge alive.
+
+4. Don’t trade without a plan.
+Every trade should have levels, stop-loss, and profit targets before you enter. A plan doesn’t guarantee a win,it guarantees discipline. Forward testing plans helped me realize my execution was my real problem, not my strategy.
+
+5. Don’t treat backtesting like busywork.
+Backtesting isn’t about “curve fitting.” It’s about confidence. Once you see a setup play out 300+ times, hesitation disappears. It’s how I built conviction in both my swing setups and intraday scalps.
+
+6. Don’t ignore market context.
+A setup that prints money in trending conditions can bleed you dry in chop. I learned to separate my playbooks for different cycles, trending vs range-bound and my win rate stabilized.
+
+7. Don’t get emotional with losses.
+I’ve taken 10 losses in a row. What saved me wasn’t luck, it was keeping size small enough that my emotions didn’t hijack me. Most traders blow up not from bad
+
+====== 72: r/quantfinance score=458 ======
+TITLE: Do you need to be a genius to break into quant?
+BODY:  I recently interviewed Guang Cui, an ex-quant trader (Five Rings, Jane Street, Akuna), MIT alumnus, and current CTO of [Miyagi Labs](https://miyagilabs.ai). Out of everything we discussed, this question (title) resonated the most. Here’s his answer:
+
+“I think the inherent intelligence part is a bit overrated. It certainly helps in some capacity, but there are a couple of reasons people think that way. One big reason is that the interview process selects people who have done math in high school and such. And I don’t know, I personally don’t think that the interview process correlates to how well you do during your day-to-day as a quant trader. You could say the same thing for, like, LeetCode, SWE, and internships.
+
+I would say what’s more important than just having that genius, ‘cracked’ personality or something is being quite interested in quant and actually being passionate about both the industry and the willingness to get better.
+
+I’ve seen a bunch of people who were in college, freshman/sophomore year, who didn’t do too much math growing up or things in the quant sphere, but they were able to land the internship and do really well just by staying curious, putting in the effort, and getting a little better every day or every week. In my opinion, that’s a much more sustainable path forward.”
+
+We also talked about his math background, quant trader work life, and the path from quant to startups. 
+
+You can read the full interview here:
+
+[Full Interview](https://topquantunis.com/the-new-quant-times)
+
+Thanks Guang!
+
+====== 73: r/algotrading score=452 ======
+TITLE: am i ready to go live?
+BODY:  should I go live with my strategy?
+
+I started trading this year and lost a lot of money so now I decided to write a trading strategy to remove the emotion and trade automatically.
+
+using ChatGPT’s free tier I told it to build me a profitable strategy for TradingView pinescript and was extra careful to tell it not to make any mistakes.
+
+attached it photograph of my screen (not a screenshot) with the results of a TradingView backtest based on 2 whole weeks of 5m candle data.
+
+I haven’t added fees or slippage yet but I’m sure that won’t make much difference.
+
+I spent ages tweaking and fine tuning tiny variables to optimize it to be as profitable as possible, if I change these much the whole thing goes red so I’m glad I was able to find the perfect settings to make it go green.
+
+I’m looking for feedback but I can’t tell you much about my strategy because I don’t want JP Morgan to steal my edge.
+
+I can tell you that it is an HFT scalping strategy that enters and exits a trade in less than a minute before the candle even closes, using super tight trailing stops (pretty cool when it catches a big breakout!) 
+
+this means it only needs to trade between 9:30 and 9:40 each day and I can spend the rest of my time doing whatever I want!
+
+I don’t have much money so I think I will use leverage with this strategy so I can make more money.  
+  
+what am I missing? do you think I’m ready to quit my job?
+
+please don’t ask me any difficult questions about things I don’t understand, I’m new to algotrading.
+
+====== 74: r/quant score=452 ======
+TITLE: Hate being a quant. How to pivot to another industry?
+BODY:  Working at a large high frequency trading firms as a quant for around 3 years. I personally find it a very boring job, pretentious industry, I'm not contributing anything to society apart from making some old rich white people richer. The culture is very toxic, and the expectations are very demanding, I work on average 70 hours a week, on weekends too sometimes. Basically I just hate the job and the industry disgusts me, despite all the perks. The only reason I'm in this job is I couldn't find any other jobs after finishing uni, so was forced into the industry.
+
+How do I get a normal 9-5 job in another industry like software? I've been applying to data/software related roles over the last 2 years but haven't been able to get past any recruiters/HRs so far. I just want a simple life and not have to worry if made another 10mil this week to go towards our shareholders new private jet by running scam algorithms which suck money from retail traders.
+
+Has anyone been successful in escaping this industry into a something like tech or data science? Any advice is appreciated!
+
+  
+p.s. if you want advice on getting into this industry (although i can't imagine why anyone would want a soul-sucking job) I'm happy to share what I know (even though I will strongly discourage this career)
+
+====== 75: r/Trading score=452 ======
+TITLE: Trading Changed Me Forever
+BODY:  Most people think trading is about charts, money, and setups. But stay in the game long enough and you realize it’s really about *you*. How you react. How you manage fear. How you sit on your hands when every instinct screams to act.
+
+The market doesn’t just show you your strengths, it throws your weaknesses in your face. I used to think I needed a new strategy or the “right” indicator. Turns out, I just needed to become the kind of person who could follow the rules I already had,cut losses, let winners run, manage risk. Sounds simple, but in the moment? That’s where discipline gets tested.
+
+Sim trading and backtesting feel safe. But when it’s real money and you break your rules, the spiral is brutal, overtrading, revenge entries, panic exits. The market doesn’t kill most traders but their own reactions do.
+
+Before trading, I thought I was confident. But trading humbled me, exposed my flaws, and forced me to work on them. What’s worked for me has been a mix of things, journaling every trade in TradeZella and also running my own backtests in it, using funded accounts to scale, and surrounding myself with traders who hold me accountable in some discord groups, slowly fundinga personal acount and trading a cash account with my own rules.
+
+Over time, I realized the goal isn’t just to master the market. It’s to master your mind. To build discipline, patience, and self-awareness that spill into the rest of your life. I know all the advice sounds cliche but it really is true, maybe if all the traders and investors are telling you the same thing, you should really listen,
+
+I’m not saying discipline alone can replace having a proper strategy. What I am saying is this ,backtest your strategy until you trust it, find a mentor you respect if you can, and focus on just 1-2 markets, whether that’s indices, stocks, or forex. Learn what fits *you* best, whether it’s swing trading, scalping, or day trading. Don’t force yourself into a style that doesn’t feel natural. Get comfortable
+
+====== 76: r/algotrading score=447 ======
+TITLE: The Signal I Use to Detect Hidden Instability in Markets ( Source Code Included )
+BODY:  Most traders think a market is “stable” when price looks smooth. In reality, stability has nothing to do with how price looks it’s a volatility pattern, not a price pattern.
+
+Here’s the simple mechanism my algos use to detect when the market is shifting from stable → unstable long before most traders notice.
+
+**The Core Idea: Compare Fast Volatility vs. Slow Volatility**
+
+I calculate two ATRs:
+
+* ATR^((short)) → fast volatility (current reactions)
+* ATR^((long)) → baseline volatility (normal behavior)
+
+Then I compare them:
+
+**VEI = ATR****^((short)****) / ATR\*\*\*\*****^((long)****)**
+
+Volatility Expansion Index
+
+It’s shockingly simple but it reveals the hidden character of the market.
+
+**How to Read VEI (The Three Volatility States)**
+
+Most indicators try to predict direction. VEI does something more important:
+
+It tells you whether the environment is favorable for your strategy.
+
+Here’s how it behaves:
+
+**VEI &lt; 1.0 → Stable / Normal**
+
+* Structure clean
+* Pullbacks respected
+* Trend setups behave well
+
+This is where most systematic strategies perform best.
+
+**VEI &gt; 1.2 → Volatility Expansion (Unstable)**
+
+Short-term volatility is 20% higher than the market’s normal baseline.
+
+This is where you see:
+
+* Trends becoming noisy
+* Fakeouts and broken structure
+* Stops getting hit more often
+* Random wicks and slippage
+* Breakouts failing
+
+This is the zone where undisciplined traders lose money fast.
+
+When VEI pushes above 1.2, my systems automatically:
+
+* Reduce position size
+* Tighten or skip entries
+* Avoid trend continuations
+
+Volatility shifts before direction shifts and VEI catches it early.
+
+**VEI &lt; 1.0 and Decreasing → Controlled &amp; Structured**
+
+This is the most cooperative market condition:
+
+* Volatility contracting
+* Trends orderly
+* Pullbacks symmetric
+* Easier trade management
+
+If you’re a trend or pullback trader, this regime is gold.
+
+**What VEI Is (and Isn’t)**
+
+VEI IS
+
+* A market stability filter
+* A classifier for stable vs unstable regimes
+
+====== 77: r/Trading score=444 ======
+TITLE: I made $2,700 in October and $5,500 so far in November. Here’s my strategy:
+BODY:  
+
+https://preview.redd.it/0fqxzwa5mr0g1.png?width=1134&amp;format=png&amp;auto=webp&amp;s=669f47431d8d42f9f09bb01b00e44912fa605b85
+
+https://preview.redd.it/6wv4vit6mr0g1.png?width=1135&amp;format=png&amp;auto=webp&amp;s=5757791eed503f4788e33f20ecc320deefdca0c2
+
+Only traded NQ 15-min ORB + FVG setup
+
+Traded once per day, risked 0.5-2% per trade.
+
+This setup thrives during trending weeks, especially on NQ, GC. The structure is clean, repeatable, and data-backed. I trade it on a 5 x 50k account, one mini contract at a time.
+
+https://preview.redd.it/gnuy128cmr0g1.png?width=1750&amp;format=png&amp;auto=webp&amp;s=e97ec262d5e809d4ce2327a8faa4bd84864b42bd
+
+**Core Idea**
+
+I’m trading the Opening Range Breakout (ORB) with Fair Value Gap (FVG) confirmation.
+
+The goal: catch momentum from the opening drive and manage around structure.
+
+https://preview.redd.it/cjkazca8mr0g1.png?width=1131&amp;format=png&amp;auto=webp&amp;s=d3d156fa70e3d12b738c9a25c7d97c07547798b6
+
+**Here’s the flow:**
+
+Define the first 15-minute range (ORH / ORL).
+
+Wait for a clear breakout (no front-running).
+
+Confirm with an FVG in the direction of the break.
+
+Enter on the break and close of the FVG on the 1min.
+
+Manage around 1R to 2R, scaling partials when structure shifts.
+
+**- 30 points or less on stop loss, you shoot for fixed 2R**
+
+**- 30 points or more on stop loss, you shoot for fixed 1R**
+
+**Premarket Prep**
+
+Mark previous day’s high/low and overnight range.
+
+Identify session bias (bullish, bearish, or mixed).
+
+Note key liquidity pools (BSL/SSL zones).
+
+Highlight any news or macro events (FOMC, CPI, earnings).
+
+Plan your if-then scenarios before the bell:
+
+“If price breaks ORH and holds, I’ll look for a long entry through the FVG.”
+
+“If price breaks ORL and rejects, I’ll look for shorts on the retest.”
+
+**Entry Triggers**
+
+**Long Setup (Bullish bias):**
+
+Clean break of ORH.
+
+FVG forms in the same direction.
+
+Closes outside the range and 1min FVG formed.
+
+Target: 1-2R. Stop below FVG low.
+
+**Short Set
+
+====== 78: r/thetagang score=434 ======
+TITLE: I've been selling strangles on futures for 4 years (83% win rate, 130+ trades, 1.3 Profit Factor). Here's what I've learned about tail risk that changed how I size everything.
+BODY:  I want to share something that took me a while to figure out, and that I think a lot of premium sellers in this sub are probably not thinking about. This isn't a trade idea or a strategy pitch. It's more of a conceptual framework that changed how I approach position sizing and portfolio construction.
+
+**Background:** I sell 20-delta strangles on futures (currencies, grains, metals, energy, rates). 45 DTE, managed at 50% profit, 2x stop, 21 DTE time stop. Roughly following the tastytrade playbook but applied across uncorrelated futures instead of just equities. Over 130+ trades, the win rate has been 83.65%, average winner is 0.47x of risk, average loser is about 1x of risk, average hold 27 days. Profit factor around 1.3. Nothing spectacular per trade, but it compounds.
+
+I'm posting this because of something I noticed when I started really digging into the return distributions of the underlyings I trade, and I think it matters for anyone selling premium.
+
+**The thing most premium sellers get wrong (including me, for a long time):**
+
+We all know implied vol overstates realized vol. That's the variance risk premium. That's why selling premium works. No argument there.
+
+But here's what I wasn't thinking about carefully enough: WHY does implied vol overstate realized vol? The standard answer is "because hedgers overpay for insurance." True. But there's a deeper layer.
+
+￼​Financial returns are leptokurtic. Fat tails, tall middles. This means two things are happening simultaneously:
+
+1. Markets make extreme moves more often than a normal distribution predicts (fat tails). This is the risk we're getting paid to absorb, and it's MUCH bigger than most of us think or model.
+
+I started counting how many months various futures underlyings have made 3-sigma moves over the past 15 years and comparing that to what a normal distribution would predict. The results kind of blew my mind.
+
+Normal distribution says a 3-sigma monthly move should happen about 0.27% of the time. Over 180 mo
+
+====== 79: r/quantfinance score=424 ======
+TITLE: The Ultimate Guide to Breaking Into Quant Finance (Dev, Researcher, Trader) - All Resources in One Place
+BODY:  Hey everyone,
+
+I've spent the last few months putting together this comprehensive guide while preparing for quant interviews myself. I'm primarily focused on Quant Trader and Low-Latency Systems Quant Dev, but I've included resources for Quant Researchers too, since the prep overlaps quite a bit.
+
+When I started this journey, I couldn't find a single consolidated resource. Everything was just scattered around Reddit posts, random PDFs, and people gatekeeping info. So here's everything I wish I had from day one. (Feel free to add anything I missed in the comments)
+
+--- 
+
+## First: Know Your Track
+
+There are three main paths in quant finance:
+
+1. **Quant Developer** - Building trading systems, low-latency infrastructure, C++/Rust heavy
+2. **Quant Researcher** - Alpha research, statistical modeling, ML, mostly Python
+3. **Quant Trader** - Mental math, probability, market intuition, brainteasers (these questions usually bleed into the others)
+
+Each requires different prep, so know where you're aiming before you grind.
+
+### The Essential Books
+
+These are non-negotiable. Get through at least the first two:
+
+| Book | What It Covers | Best For |
+|------|----------------|----------|
+| **"A Practical Guide to Quantitative Finance Interviews" (The Green Book)** by Xinfeng Zhou | Probability, brainteasers, calculus, linear algebra | Everyone |
+| **"Heard on the Street"** by Timothy Falcon Crack | Classic Wall Street brainteasers | Traders, Researchers |
+| **"Frequently Asked Questions in Quantitative Finance"** by Paul Wilmott | Stochastic calculus, Black-Scholes, volatility | Researchers |
+| **"An Introduction to Statistical Learning"** | ML/Data Science bible | Researchers |
+| **"Quantitative Trading"** by Ernie Chan | Strategy development, backtesting, Kelly formula | Researchers |
+| **"Algorithmic Trading"** by Ernie Chan | Mean reversion, momentum strategies | Researchers, Devs |
+| **"150 Most Frequently Asked Questions on Quant Interviews"** by Stefanica et al. | Recent i
+
+====== 80: r/Trading score=424 ======
+TITLE: I’ve been day trading for 3 years and I stopped blowing accounts once I learned this
+BODY:  I'm new to reddit and just discovered this subreddit. I've been day trading for a few years now, and wanted to drop my 2 cents on how to AVOID blowing up accounts. I noticed a lot of newer traders here, so here's my little nugget of wisdom. Let's save you some money.
+
+See, when I first started, I thought the key to trading was finding the perfect setup... you know, that one trading pattern that would make everything click. I spent months obsessing over indicators on trading view, candlestick formations, and the worst.... those “secret” strategies from random YouTubers. If you've been there, you should know by now that none of it actually mattered. I’d make money one week, give it all back the next, and then some. I wasn’t losing because my setups were bad. I was losing because I didn’t respect risk. Every blown account I had came down to the same thing... size too big, emotions too high, and no plan when things went wrong.
+
+The turning point came when I realized trading isn’t about being right; it’s about staying alive. I started risking less per trade... like, way less. 5% max, sometimes half that. That alone changed everything. Suddenly I wasn’t trading scared. I could let my setups play out without watching every tick. I also stopped moving stops, stopped revenge trading, and started tracking data. Once I began journaling, I saw clear patterns in my behavior... the times I overtraded, the setups that worked, the ones that didn’t. It was humbling, but necessary.
+
+The biggest shift wasn’t technical, it was psychological. No seriously. You have to accept that losing is part of the game. Before, every red trade felt like failure. Now, a losing trade that follows my plan feels like a win, because it means I executed properly. The market doesn’t care how confident you are, how much you “need” to make it, or how good your last trade was. It rewards discipline over ego.
+
+If you’re still blowing up accounts, forget the hunt for the perfect strategy. Focus on survival firs
+
