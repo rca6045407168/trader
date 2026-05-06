@@ -132,7 +132,6 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
         # VERTICAL_WINNER = top-1-per-sector with absolute-momentum
         # floor). Vertical-winner is feature-flagged for production
         # A/B per the v3.73.4 DD recommendation.
-        import os
         strategy_mode = os.environ.get("STRATEGY_MODE", "XS").upper()
         if strategy_mode == "VERTICAL_WINNER":
             from .strategy import rank_vertical_winner
