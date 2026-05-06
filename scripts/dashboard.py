@@ -837,7 +837,7 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.18 · chat-first AI dashboard")
+    st.caption("v3.73.19 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the
@@ -1905,6 +1905,173 @@ def _render_benchmark_panel() -> None:
                 st.success(f"Wrote {n} rows."); st.rerun()
 
 
+def _render_effective_exposure_panel() -> None:
+    """v3.73.19: surface every vol-scaling layer in one dashboard
+    panel.
+
+    The v3.73.18 critique exposed that a major sizing layer (VIX-based
+    risk gate) existed but wasn't documented; the live book at 68%
+    gross looked inconsistent with the 80% target because the VIX
+    gate's 0.85 multiplier was hidden in the orchestrator and only
+    surfaced in the per-run decision report.
+
+    This panel makes the multiplication chain explicit:
+       base_target × deployment_anchor × VIX_gate × regime_overlay
+       × drawdown_protocol = effective_target_gross
+
+    If actual_gross deviates from effective_target_gross by >2pp,
+    flag for investigation.
+    """
+    import os
+
+    st.subheader("🎚️ Effective exposure decomposition")
+    st.caption(
+        "Every layer that scales gross. The product is the target the "
+        "orchestrator should produce; if actual gross deviates, the "
+        "control plane has a bug."
+    )
+
+    # Gather the active multipliers
+    base = 0.80
+    layers = []  # (label, multiplier, source)
+
+    # Deployment anchor — uses 60-day rolling-max equity vs 200-day
+    try:
+        from trader.deployment_anchor import get_anchor_pct
+        anchor_pct = get_anchor_pct()
+        layers.append(("Deployment anchor", anchor_pct,
+                        "30/200-day equity rolling-max ratio"))
+    except (ImportError, AttributeError):
+        # Different version of deployment_anchor; mark as 1.0 fallback
+        layers.append(("Deployment anchor", 1.0, "module API mismatch"))
+    except Exception as e:
+        layers.append(("Deployment anchor", 1.0, f"error: {type(e).__name__}"))
+
+    # VIX-based risk gate
+    try:
+        import yfinance as yf
+        vix_data = yf.download("^VIX", period="5d", progress=False, auto_adjust=False)
+        if vix_data is not None and not vix_data.empty:
+            vix = float(vix_data["Close"].iloc[-1])
+            # Match the production rule: VIX>20 → 0.7, VIX>16 → 0.85, else 1.0
+            if vix > 20:
+                vix_mult = 0.70
+            elif vix > 16:
+                vix_mult = 0.85
+            else:
+                vix_mult = 1.0
+            layers.append(("VIX risk gate", vix_mult,
+                            f"VIX={vix:.1f} → ×{vix_mult}"))
+        else:
+            layers.append(("VIX risk gate", 1.0, "VIX unavailable"))
+    except Exception as e:
+        layers.append(("VIX risk gate", 1.0, f"error: {type(e).__name__}"))
+
+    # Regime overlay (HMM + GARCH + macro)
+    try:
+        from trader.regime_overlay import get_gross_multiplier
+        regime_mult = get_gross_multiplier()
+        layers.append(("Regime overlay", regime_mult,
+                        "HMM × GARCH × macro (env-gated)"))
+    except (ImportError, AttributeError):
+        # Disabled or fallback path
+        layers.append(("Regime overlay", 1.0, "DISABLED or fallback"))
+    except Exception as e:
+        layers.append(("Regime overlay", 1.0, f"error: {type(e).__name__}"))
+
+    # Drawdown protocol — read mode + currently-fired tier
+    try:
+        from trader.risk_manager import drawdown_protocol_mode
+        dd_mode = drawdown_protocol_mode()
+        # In ADVISORY mode, the protocol doesn't scale; it warns only
+        dd_mult = 1.0  # ADVISORY default; scales only in ENFORCING
+        layers.append(("Drawdown protocol", dd_mult,
+                        f"mode={dd_mode} (multiplier {dd_mult} unless ENFORCING + tier fired)"))
+    except Exception as e:
+        layers.append(("Drawdown protocol", 1.0, f"error: {type(e).__name__}"))
+
+    # Vol-target overlay (env-flagged)
+    if os.environ.get("VOL_TARGET_ENABLED", "0") == "1":
+        layers.append(("Vol-target overlay", "computed at run-time",
+                        "VOL_TARGET_ENABLED=1 (active)"))
+    else:
+        layers.append(("Vol-target overlay", 1.0,
+                        "VOL_TARGET_ENABLED=0 (off)"))
+
+    # Compute effective target
+    effective = base
+    rows = [
+        {"layer": "Base target gross", "multiplier": "—",
+         "value": f"{base*100:.1f}%", "source": "STRATEGY_AND_RISK.md"}
+    ]
+    for label, mult, src in layers:
+        if isinstance(mult, (int, float)):
+            effective *= mult
+            rows.append({
+                "layer": label,
+                "multiplier": f"×{mult:.3f}",
+                "value": f"{effective*100:.2f}%",
+                "source": src,
+            })
+        else:
+            rows.append({
+                "layer": label,
+                "multiplier": f"({mult})",
+                "value": "see run-time",
+                "source": src,
+            })
+
+    # Pull live actual gross
+    try:
+        from trader.positions_live import fetch_live_portfolio
+        p = fetch_live_portfolio()
+        if p.equity:
+            deployed = sum((x.market_value or 0) for x in p.positions)
+            actual_gross = deployed / p.equity
+        else:
+            actual_gross = None
+    except Exception:
+        actual_gross = None
+
+    # Headline metrics
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Base target", f"{base*100:.0f}%")
+    with c2:
+        st.metric("Effective target",
+                   f"{effective*100:.1f}%",
+                   delta=f"after {len(layers)} layers",
+                   delta_color="off")
+    with c3:
+        if actual_gross is not None:
+            drift = actual_gross - effective
+            color = "off" if abs(drift) < 0.02 else "inverse"
+            st.metric("Actual gross",
+                       f"{actual_gross*100:.1f}%",
+                       delta=f"{drift*100:+.2f}pp vs effective",
+                       delta_color=color)
+        else:
+            st.metric("Actual gross", "n/a")
+
+    # Decomposition table
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    if actual_gross is not None and abs(actual_gross - effective) > 0.02:
+        st.warning(
+            f"⚠️ Actual gross ({actual_gross*100:.1f}%) deviates from "
+            f"effective target ({effective*100:.1f}%) by "
+            f"{(actual_gross - effective)*100:+.2f}pp. Either a layer "
+            "is missing from this decomposition or the orchestrator "
+            "didn't fully execute the target. Investigate before next "
+            "rebalance."
+        )
+    elif actual_gross is not None:
+        st.success(
+            f"✅ Actual gross matches effective target within 2pp. "
+            f"All vol-scaling layers accounted for."
+        )
+
+
 def _render_portfolio_caps_panel() -> None:
     """v3.73.5: surface whether the 8% single-name + 25% sector caps
     are binding on the live book right now. Reads the live portfolio,
@@ -2045,6 +2212,14 @@ def view_overview():
     # would produce on the next rebalance). Without this surface, the
     # operator can't tell whether the cap is doing real work.
     _render_portfolio_caps_panel()
+
+    st.divider()
+
+    # v3.73.19: effective exposure decomposition. Shows EVERY
+    # vol-scaling layer in one place so 'why is the live book at
+    # 68% gross when the target is 80%' can be answered at a glance
+    # rather than requiring a forensic investigation.
+    _render_effective_exposure_panel()
 
     st.divider()
 

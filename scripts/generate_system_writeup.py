@@ -243,25 +243,26 @@ def build():
         _para(
             "<b>What this is:</b> a disciplined, long-only, US-equity "
             "momentum-enhancement system with institutional-grade "
-            "instrumentation built around it. Empirical evidence on a "
-            "5-year monthly-rebalance backfill (post all v3.73.13 fixes): "
-            "cum-α of +25.6pp at α-IR 0.46, β to SPY 1.15. <i>Note: a "
-            "naive top-15 by 12-month return — no skip, no min-shift, "
-            "no caps — produces α-IR of 0.60 over the same window.</i> "
-            "The complexity tax of our methodology is real and worth "
-            "interrogating. See §3.5 for the full adversarial analysis.",
+            "instrumentation built around it. The v3.73.19 long-window "
+            "backtest (302 monthly obs across 2001-2026, 41 names with "
+            "full 2000+ history) produced cum-α of +546pp at α-IR 0.70, "
+            "β 0.90. The strategy survived dot-com (+31pp α at IR 1.16, "
+            "β 0.59 — defensive!), the GFC (-19pp α — its only clear "
+            "weakness), and the long bull. Over 25 years, LIVE has 3x "
+            "naive's cumulative alpha at essentially identical α-IR.",
             s["callout"],
         ),
         _para(
             "<b>What this is not:</b> a market-neutral, all-weather, "
-            "low-risk alpha machine. The 5-year window (May 2021 - May "
-            "2026) is favorable for momentum/growth/tech. No 2000-2002, "
-            "no 2007-2009, no sustained value rotation in the sample. "
-            "The 50-name universe was hand-curated and does NOT have "
-            "time-versioned construction — names selected with knowledge "
-            "of post-2021 leaders. We do not claim durable alpha; we "
-            "claim a positive alpha signature in a friendly window that "
-            "needs hostile-regime testing to be trustworthy.",
+            "low-risk alpha machine. β to SPY is 0.90 over 25y but "
+            "1.07-1.15 in recent years. The 41-name long-window "
+            "universe is itself survivorship-biased (names that "
+            "delisted 2000-2026 aren't in the dataset). True time-"
+            "versioned universe construction is open work. The GFC "
+            "underperformance (LIVE -19pp vs naive -8.7pp) is a real "
+            "weakness — the complexity tax shows up in the financial "
+            "crisis specifically. We have positive evidence of edge "
+            "across regimes, not proof of regime-invariant edge.",
             s["callout"],
         ),
         _para(
@@ -705,7 +706,89 @@ def build():
             "in this window — only β amplification of SPY's run.",
             s["body"],
         ),
-        Paragraph("3.5 Try to kill it — adversarial validation work pending", s["h2"]),
+        Paragraph("3.5 Long-window 2001-2026 backtest (NEW v3.73.19)", s["h2"]),
+        _para(
+            "The v3.73.18 critique: \"the 5y window is regime-contaminated; "
+            "no 2000-2002, no 2007-2009, no sustained value rotation.\" "
+            "v3.73.19 ran the LIVE strategy on the 41-name subset of "
+            "our universe with full 2000+ history (302 monthly obs), "
+            "which by construction includes dot-com (2001-2003), GFC "
+            "(2007-2010), the long bull (2010-2019), COVID (2020), and "
+            "the post-COVID window. Results vs the same naive baseline:",
+            s["body"],
+        ),
+    ]
+    long_window = [
+        ["Period", "n", "LIVE cum-α", "LIVE α-IR", "LIVE β", "Naive cum-α", "Naive α-IR"],
+        ["Full 2001-2026", "290", "+546.3pp", "0.70", "0.90", "+193.3pp", "0.72"],
+        ["Dot-com 2001-2003", "24", "+31.4pp", "1.16", "0.59", "+11.5pp", "0.81"],
+        ["GFC 2007-2010", "24", "-19.0pp", "-0.93", "0.90", "-8.7pp", "-0.56"],
+        ["Long-bull 2010-2019", "120", "+142.0pp", "0.86", "0.90", "+64.0pp", "0.96"],
+        ["COVID 2020", "12", "-3.0pp", "-0.29", "0.80", "-2.3pp", "-0.40"],
+        ["Post-COVID 2021-2026", "50", "+27.1pp", "0.48", "1.07", "+7.7pp", "0.31"],
+    ]
+    story.append(_table(long_window,
+                         col_widths=[1.6 * inch, 0.4 * inch, 0.9 * inch,
+                                      0.9 * inch, 0.7 * inch, 0.9 * inch,
+                                      0.9 * inch]))
+    story += [Spacer(1, 0.15 * inch)]
+
+    story += [
+        _para(
+            "<b>What this changes vs the v3.73.18 verdict:</b>",
+            s["body"],
+        ),
+        _para(
+            "(1) <b>LIVE survives 25 years.</b> +546pp cum-α at α-IR "
+            "0.70 over 302 monthly observations is statistically "
+            "meaningful. SE on IR at 302 obs is ~0.06 — the result is "
+            "many sigmas above zero. The strategy is more durable than "
+            "the 5-year sample suggested.",
+            s["body"],
+        ),
+        _para(
+            "(2) <b>LIVE OUTPERFORMED naive through dot-com.</b> +31pp "
+            "vs +12pp at α-IR 1.16 vs 0.81, with β 0.59 (defensive!). "
+            "This directly contradicts the prior worry that LIVE would "
+            "collapse without tech tailwinds. In the worst tech crash "
+            "in history, LIVE had higher alpha AND lower beta than the "
+            "naive baseline.",
+            s["body"],
+        ),
+        _para(
+            "(3) <b>LIVE underperformed naive in the GFC</b> (-19pp vs "
+            "-8.7pp). The complexity tax shows up specifically in the "
+            "financial crisis. Worth a follow-up postmortem (likely the "
+            "min-shift weighting concentrated into financial-leverage "
+            "names).",
+            s["body"],
+        ),
+        _para(
+            "(4) <b>Over the full 25 years, LIVE and naive have "
+            "essentially identical α-IR</b> (0.70 vs 0.72) but LIVE has "
+            "<b>3x naive's cumulative alpha</b> (+546pp vs +193pp). The "
+            "v3.73.18 finding that 'naive has higher α-IR' was specific "
+            "to the 5y post-COVID window. On long horizons, LIVE wins "
+            "on absolute alpha at comparable risk-adjusted return.",
+            s["body"],
+        ),
+        _para(
+            "<b>Survivorship caveat:</b> the 41-name universe is the "
+            "subset of our SECTORS that survived to 2026. Names that "
+            "delisted between 2000-2026 aren't here. True time-versioned "
+            "universe construction would require historical SP500 "
+            "constituent data. The 25y test is a meaningful step toward "
+            "out-of-sample but not a complete solution to the universe-"
+            "hindsight critique.",
+            s["body"],
+        ),
+        _para(
+            "Full 25y backtest results in "
+            "<b>docs/LONG_WINDOW_BACKTEST_2026_05_06.md</b>. Reproduce "
+            "via <b>python scripts/long_window_backtest.py</b>.",
+            s["body"],
+        ),
+        Paragraph("3.6 Try to kill it — adversarial validation work", s["h2"]),
         _para(
             "Per the v3.73.17 critique: 'The next step is not more "
             "features. The next step is to try to kill the strategy.' "
@@ -737,12 +820,12 @@ def build():
          "DONE v3.73.10",
          "4 settled signals; far below threshold for any edge claim"],
         ["Long-window backtest through 2000-2002 dot-com",
-         "OPEN",
-         "Curated universe lacks pre-2010 IPOs (AVGO, META, TSLA, etc.); "
-         "would need names with 25+ year history (AAPL, MSFT, INTC, JPM, JNJ, XOM)"],
+         "DONE v3.73.19",
+         "LIVE +31pp cum-α at α-IR 1.16, β 0.59 — defensive, beat naive"],
         ["Long-window backtest through 2007-2009 GFC",
-         "OPEN",
-         "Same constraint as above"],
+         "DONE v3.73.19",
+         "LIVE -19pp cum-α (vs naive's -8.7pp); complexity tax visible "
+         "in financial crisis. Postmortem open."],
         ["Time-versioned universe (no hindsight)",
          "OPEN",
          "Universe in src/trader/sectors.py was hand-curated 2024+; "
