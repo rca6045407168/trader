@@ -549,36 +549,39 @@ def build():
             "max equity — a vol-state filter on top of the momentum factor.",
             s["body"],
         ),
-        Paragraph("15-strategy comparison — beta-adjusted (v3.73.15)", s["h2"]),
+        Paragraph("18-strategy comparison — β-adjusted with sizing layers (v3.73.17)", s["h2"]),
         _para(
-            "The eval harness evaluates 15 candidates at every rebalance "
-            "(12 active + 3 passive baselines). v3.73.15 added a "
-            "beta-adjusted decomposition: each strategy's monthly "
-            "returns are regressed against SPY to get β; the residual "
-            "becomes α. Sorting by cumulative α (rather than cumulative "
-            "active) demotes strategies whose 'edge' is mostly leveraged "
-            "beta and elevates strategies with lower beta but real "
-            "factor edge. This is the more honest scoreboard.",
+            "The eval harness evaluates 18 candidates at every rebalance: "
+            "12 active + 3 passive baselines + 3 sizing-aware (added in "
+            "v3.73.17 in response to the question 'are you taking sizing "
+            "into consideration?'). The sizing layers — vol-targeting at "
+            "the portfolio level, vol-parity per name, and reactor-driven "
+            "trimming — are all overlays on the production min-shift "
+            "scheme. They cost some cum-active in exchange for lower "
+            "beta, smaller drawdowns, or both.",
             s["body"],
         ),
     ]
     leaderboard = [
         ["Rank", "Strategy", "β", "Cum α", "α ann", "α IR", "Cum Active", "Max Rel DD"],
         ["1 ★", "xs_top15_min_shifted (LIVE)", "1.15", "+24.7pp", "+6.7%", "0.44", "+76.6pp", "-11.2%"],
-        ["2", "xs_top8", "1.07", "+16.8pp", "+4.9%", "0.35", "+46.3pp", "-13.8%"],
-        ["3", "score_weighted_xs", "1.08", "+16.6pp", "+4.6%", "0.39", "+47.1pp", "-11.5%"],
-        ["4", "long_short_momentum", "0.68", "+14.4pp", "+4.9%", "0.28", "-15.4pp", "-33.1%"],
-        ["5", "vertical_winner", "0.73", "+10.5pp", "+2.8%", "0.37", "-15.6pp", "-21.2%"],
-        ["6", "xs_top25", "0.87", "+4.7pp", "+1.3%", "0.29", "-8.2pp", "-12.1%"],
-        ["7", "xs_top15 (equal-wt)", "0.94", "+4.2pp", "+1.3%", "0.17", "+1.0pp", "-14.1%"],
-        ["8", "xs_top15_capped", "0.92", "+4.2pp", "+1.3%", "0.18", "-1.6pp", "-15.1%"],
-        ["9", "sector_rotation_top3", "0.77", "+3.9pp", "+1.4%", "0.15", "-22.0pp", "-19.1%"],
-        ["10", "inv_vol_xs", "0.80", "+3.8pp", "+1.1%", "0.18", "-18.8pp", "-18.5%"],
-        ["11", "equal_weight_universe", "0.82", "+3.3pp", "+0.7%", "0.29", "-12.1pp", "-11.9%"],
-        ["12", "dual_momentum", "0.94", "+2.7pp", "+1.0%", "0.13", "-2.3pp", "-14.8%"],
-        ["13", "buy_and_hold_spy [P]", "1.00", "-0.0pp", "-0.0%", "-0.42", "-0.1pp", "-0.0%"],
-        ["14", "simple_60_40 [P]", "0.70", "-5.9pp", "-1.2%", "-0.59", "-38.1pp", "-20.6%"],
-        ["15", "boglehead_three_fund [P]", "0.86", "-7.4pp", "-1.5%", "-0.45", "-26.4pp", "-17.1%"],
+        ["1 ★", "xs_top15_reactor_trimmed", "1.15", "+24.7pp", "+6.7%", "0.44", "+76.6pp", "-11.2%"],
+        ["3", "score_weighted_vol_parity ⭐", "0.98", "+22.8pp", "+5.9%", "0.50", "+42.4pp", "-12.5%"],
+        ["4", "xs_top15_vol_targeted", "0.96", "+20.1pp", "+5.4%", "0.44", "+33.7pp", "-12.2%"],
+        ["5", "xs_top8", "1.07", "+16.8pp", "+4.9%", "0.35", "+46.3pp", "-13.8%"],
+        ["6", "score_weighted_xs", "1.08", "+16.6pp", "+4.6%", "0.39", "+47.1pp", "-11.5%"],
+        ["7", "long_short_momentum", "0.68", "+14.4pp", "+4.9%", "0.28", "-15.4pp", "-33.1%"],
+        ["8", "vertical_winner", "0.73", "+10.5pp", "+2.8%", "0.37", "-15.6pp", "-21.2%"],
+        ["9", "xs_top25", "0.87", "+4.7pp", "+1.3%", "0.29", "-8.2pp", "-12.1%"],
+        ["10", "xs_top15 (equal-wt)", "0.94", "+4.2pp", "+1.3%", "0.17", "+1.0pp", "-14.1%"],
+        ["11", "xs_top15_capped", "0.92", "+4.2pp", "+1.3%", "0.18", "-1.6pp", "-15.1%"],
+        ["12", "sector_rotation_top3", "0.77", "+3.9pp", "+1.4%", "0.15", "-22.0pp", "-19.1%"],
+        ["13", "inv_vol_xs", "0.80", "+3.8pp", "+1.1%", "0.18", "-18.8pp", "-18.5%"],
+        ["14", "equal_weight_universe", "0.82", "+3.3pp", "+0.7%", "0.29", "-12.1pp", "-11.9%"],
+        ["15", "dual_momentum", "0.94", "+2.7pp", "+1.0%", "0.13", "-2.3pp", "-14.8%"],
+        ["16", "buy_and_hold_spy [P]", "1.00", "-0.0pp", "-0.0%", "-0.42", "-0.1pp", "-0.0%"],
+        ["17", "simple_60_40 [P]", "0.70", "-5.9pp", "-1.2%", "-0.59", "-38.1pp", "-20.6%"],
+        ["18", "boglehead_three_fund [P]", "0.86", "-7.4pp", "-1.5%", "-0.45", "-26.4pp", "-17.1%"],
     ]
     story.append(_table(leaderboard,
                           col_widths=[0.4 * inch, 2.0 * inch, 0.4 * inch,

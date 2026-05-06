@@ -23,15 +23,14 @@ ROOT = Path(__file__).resolve().parent.parent
 # ============================================================
 # Registry
 # ============================================================
-def test_fifteen_strategies_registered():
-    """v3.73.14: 12 active candidates + 3 passive baselines (Boglehead-
-    style). The passive baselines were added in response to the Reddit
-    research finding that the Boglehead counter-argument deserves
-    explicit MEASUREMENT, not just prose engagement."""
+def test_eighteen_strategies_registered():
+    """v3.73.17: 12 active candidates + 3 passive baselines + 3
+    sizing-aware candidates (vol-targeted, vol-parity, reactor-
+    trimmed). Total 18."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 15, \
-        f"expected 15 strategies, got {len(specs)}: {[s.name for s in specs]}"
+    assert len(specs) == 18, \
+        f"expected 18 strategies, got {len(specs)}: {[s.name for s in specs]}"
 
 
 def test_canonical_strategy_names_present():
@@ -48,6 +47,10 @@ def test_canonical_strategy_names_present():
         "buy_and_hold_spy",
         "boglehead_three_fund",
         "simple_60_40",
+        # Sizing-aware (3) — v3.73.17
+        "xs_top15_vol_targeted",
+        "score_weighted_vol_parity",
+        "xs_top15_reactor_trimmed",
     }
     assert names == expected, f"missing: {expected - names}, extra: {names - expected}"
 
@@ -179,22 +182,24 @@ def test_evaluate_at_inserts_rows_and_is_idempotent(tmp_path, monkeypatch):
 
     db = tmp_path / "j.db"
     asof = dates[-1]
-    # v3.73.13/14: evaluate_at skips empty-picks strategies. Of the
-    # 15 registered strategies on the 5-name test panel:
+    # v3.73.13/14/17: evaluate_at skips empty-picks strategies. Of
+    # the 18 registered strategies on the 5-name test panel:
     #   12 active candidates: 11 produce picks (long_short_momentum
     #     fails — needs 20+ names for top-15 + bottom-5)
-    #   3 passive baselines: all return {"SPY": ...} unconditionally
-    #     (with renormalize fallback if SPY missing — still non-empty)
-    # Expected inserts: 11 + 3 = 14.
+    #   3 passive baselines: all return non-empty (SPY fallback)
+    #   3 sizing-aware (v3.73.17): vol-targeted + vol-parity + reactor-
+    #     trimmed. All 3 derive from xs_top15_min_shifted, so on the
+    #     5-name panel they produce ≤5 picks (small-universe fallback).
+    # Expected inserts: 11 + 3 + 3 = 17.
     n1 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
-    assert n1 == 14, f"first call should insert 14 rows; got {n1}"
+    assert n1 == 17, f"first call should insert 17 rows; got {n1}"
     n2 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
     assert n2 == 0, f"second call should be idempotent; got {n2} new rows"
 
     con = sqlite3.connect(db)
     total = con.execute("SELECT COUNT(*) FROM strategy_eval").fetchone()[0]
     con.close()
-    assert total == 14
+    assert total == 17
 
 
 def test_settle_returns_only_settles_unsettled_rows(tmp_path):

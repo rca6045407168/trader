@@ -362,7 +362,110 @@ def simple_60_40(asof, prices):
 
 
 # ============================================================
-# 15. Long-short momentum (the structural alpha)
+# 15. Vol-targeted production (v3.73.17)
+#
+#     Same picks + min-shift weights as the production LIVE
+#     variant, but the GROSS scales down when realized portfolio
+#     vol exceeds 18% (the design target). Only ever scales down,
+#     never up.
+# ============================================================
+@register("xs_top15_vol_targeted",
+          "PRODUCTION + vol-target overlay: gross scaled down when "
+          "trailing portfolio vol > 18% annualized")
+def xs_top15_vol_targeted(asof, prices):
+    from .sizing import (
+        realized_portfolio_vol_daily, vol_target_scalar,
+    )
+    base = xs_top15_min_shifted(asof, prices)
+    if not base:
+        return {}
+    # Estimate trailing 60-day realized portfolio vol using current
+    # weights as proxy. Pull daily returns for each name in base
+    # and compute weighted portfolio daily return series.
+    p = _stock_panel(prices)
+    p = p[p.index <= asof].tail(60)
+    if len(p) < 30:
+        return base  # not enough history yet
+    daily_port_rets = []
+    for i in range(1, len(p)):
+        r = 0.0
+        for sym, w in base.items():
+            if sym not in p.columns:
+                continue
+            p0, p1 = p[sym].iloc[i - 1], p[sym].iloc[i]
+            if p0 > 0:
+                r += w * (p1 / p0 - 1)
+        daily_port_rets.append(r)
+    realized = realized_portfolio_vol_daily(daily_port_rets)
+    scalar = vol_target_scalar(realized, target_vol=0.18)
+    return {t: w * scalar for t, w in base.items()}
+
+
+# ============================================================
+# 16. Score-weighted vol-parity (v3.73.17)
+#
+#     Per-name vol-parity within score-weighting. High-vol names
+#     (NVDA, AMD ~ 40% ann) get less weight than low-vol names
+#     (JNJ, WMT ~ 15% ann) at the same score, so each contributes
+#     equally to portfolio vol.
+# ============================================================
+@register("score_weighted_vol_parity",
+          "Top-15 with weights ∝ (score - min + 0.01) / vol(name); "
+          "per-name vol-parity within min-shifted score-weighting")
+def score_weighted_vol_parity(asof, prices):
+    from .sizing import inverse_vol_weights, per_name_vol
+    scored = _score_universe(asof, prices)[:15]
+    if not scored:
+        return {}
+    p = _stock_panel(prices)
+    vols = per_name_vol(p, asof, window_days=60)
+    return inverse_vol_weights(scored, vols, target_gross=0.80,
+                                min_shift=True)
+
+
+# ============================================================
+# 17. Production picks + reactor-driven trims (v3.73.17)
+#
+#     Same picks + min-shift weights as the production LIVE
+#     variant, but applies the reactor's trim rule to any name
+#     with a recent BEARISH/M3 8-K signal. Lookback window per
+#     reactor_rule.lookback_days (default 7). Trim to 50% of
+#     original weight per the rule's bounded-trim contract.
+#
+#     This is the DD's "reactor in execution mode, but only as
+#     measurement candidate" — production rule still SHADOW.
+# ============================================================
+@register("xs_top15_reactor_trimmed",
+          "PRODUCTION + reactor-trim overlay: positions with recent "
+          "BEARISH/M3 reactor signals are trimmed to 50% of weight")
+def xs_top15_reactor_trimmed(asof, prices):
+    from .reactor_rule import ReactorSignalRule
+    base = xs_top15_min_shifted(asof, prices)
+    if not base:
+        return {}
+    try:
+        rule = ReactorSignalRule()
+        # Fresh in-memory rule with default trim_to_pct=0.5
+        # Reads from journal.earnings_signals via compute_trims().
+        # When journal has no signals, returns empty dict → base
+        # picks are returned unchanged.
+        import pandas as pd
+        as_of_dt = (asof.to_pydatetime() if hasattr(asof, "to_pydatetime")
+                    else asof)
+        trims = rule.compute_trims(base, as_of=as_of_dt)
+        if not trims:
+            return base
+        # Apply trims; keep all other positions unchanged
+        out = dict(base)
+        for sym, decision in trims.items():
+            out[sym] = decision.new_weight
+        return out
+    except Exception:
+        return base
+
+
+# ============================================================
+# 18. Long-short momentum (the structural alpha)
 # ============================================================
 @register("long_short_momentum",
           "Long top-15 (min-shifted) + short bottom-5 (equal-weighted); "

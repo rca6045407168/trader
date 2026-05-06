@@ -11,6 +11,7 @@ Pipeline:
 
 All output is logged to SQLite. The post-mortem agent reads it the next night.
 """
+import os
 from datetime import datetime
 
 from .config import TOP_N, USE_DEBATE, DRY_RUN
@@ -166,6 +167,70 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
         if cap_result.name_cap_bound or cap_result.sector_cap_bound:
             print(f"  -> portfolio caps: {cap_result.summary()}")
             momentum_targets = cap_result.targets
+
+    # v3.73.17: optional vol-target overlay. Disabled by default
+    # (VOL_TARGET_ENABLED unset or "0"). When enabled, computes
+    # trailing 60-day portfolio vol from current weights and scales
+    # gross down if realized vol > 18%. Never scales up.
+    if momentum_targets and os.environ.get("VOL_TARGET_ENABLED", "0") == "1":
+        try:
+            from .sizing import (
+                realized_portfolio_vol_daily, vol_target_scalar, apply_vol_target,
+            )
+            from .data import fetch_history
+            import pandas as pd
+            end_d = pd.Timestamp.today()
+            start_d = (end_d - pd.DateOffset(months=3)).strftime("%Y-%m-%d")
+            syms = list(momentum_targets.keys())
+            p = fetch_history(syms, start=start_d).dropna(axis=1, how="any")
+            if len(p) >= 30:
+                daily_port_rets = []
+                for i in range(1, len(p)):
+                    r = 0.0
+                    for sym, w in momentum_targets.items():
+                        if sym not in p.columns:
+                            continue
+                        p0, p1 = p[sym].iloc[i - 1], p[sym].iloc[i]
+                        if p0 > 0:
+                            r += w * (p1 / p0 - 1)
+                    daily_port_rets.append(r)
+                realized = realized_portfolio_vol_daily(daily_port_rets)
+                scalar = vol_target_scalar(realized, target_vol=0.18)
+                if scalar < 0.99:
+                    print(f"  -> vol-target overlay: realized "
+                          f"{realized*100:.1f}% > 18% target → "
+                          f"scaling gross by {scalar:.3f}")
+                    momentum_targets = apply_vol_target(
+                        momentum_targets, realized, target_vol=0.18,
+                    )
+                else:
+                    print(f"  -> vol-target overlay: realized "
+                          f"{realized*100:.1f}% ≤ 18% target → no scale")
+        except Exception as e:
+            print(f"  vol-target overlay failed (non-fatal): "
+                  f"{type(e).__name__}: {e}")
+
+    # v3.73.17: per-trade max-loss pre-check (warn-only). Refuses to
+    # halt — this is a SOFT gate that surfaces when any single
+    # position weight × -25% stress > 1.5% of book. With current 8%
+    # name cap, max stress loss is 8% × 25% = 2.0%, slightly above
+    # the 1.5% threshold; expect this to log a warning on
+    # near-cap positions.
+    if momentum_targets:
+        try:
+            from .sizing import max_loss_check
+            violations = max_loss_check(
+                momentum_targets, max_loss_pct=0.015, stress_pct=0.25,
+            )
+            if violations:
+                print(f"  -> max-loss WARNING: {len(violations)} "
+                      f"positions could lose >1.5% on -25% stress:")
+                for v in violations[:5]:
+                    print(f"     {v.ticker}: w={v.weight*100:.2f}% "
+                          f"→ stress_loss={v.stress_loss_pct*100:.2f}%")
+        except Exception as e:
+            print(f"  max-loss check failed (non-fatal): "
+                  f"{type(e).__name__}: {e}")
 
     approved_bottoms: list[dict] = []
     for c in bottoms[:MAX_BOTTOMS_TO_DEBATE]:
