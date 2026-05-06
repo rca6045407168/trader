@@ -26,16 +26,16 @@ Launchd is more reliable than cron on macOS — it survives reboots and handles 
 # 1. Create the plist files
 mkdir -p ~/Library/LaunchAgents
 
-cat > ~/Library/LaunchAgents/com.flexhaul.trader.daily.plist <<'EOF'
+cat > ~/Library/LaunchAgents/com.trader.daily-run.plist <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.flexhaul.trader.daily</string>
+  <key>Label</key><string>com.trader.daily-run</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string><string>-c</string>
-    <string>cd /Users/richardchen/FlexHaul/trader && source .venv/bin/activate && python scripts/run_reconcile.py && python scripts/run_daily.py >> logs/daily.log 2>&amp;1</string>
+    <string>cd /Users/richardchen/trader && source .venv/bin/activate && python scripts/run_reconcile.py && python scripts/run_daily.py >> logs/daily.log 2>&amp;1</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -45,14 +45,14 @@ cat > ~/Library/LaunchAgents/com.flexhaul.trader.daily.plist <<'EOF'
     <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>10</integer></dict>
     <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>10</integer></dict>
   </array>
-  <key>StandardOutPath</key><string>/Users/richardchen/FlexHaul/trader/logs/launchd.out</string>
-  <key>StandardErrorPath</key><string>/Users/richardchen/FlexHaul/trader/logs/launchd.err</string>
+  <key>StandardOutPath</key><string>/Users/richardchen/trader/logs/launchd.out</string>
+  <key>StandardErrorPath</key><string>/Users/richardchen/trader/logs/launchd.err</string>
 </dict>
 </plist>
 EOF
 
 mkdir -p logs
-launchctl load ~/Library/LaunchAgents/com.flexhaul.trader.daily.plist
+launchctl load ~/Library/LaunchAgents/com.trader.daily-run.plist
 ```
 
 ## Stop autonomous trading
@@ -62,7 +62,7 @@ launchctl load ~/Library/LaunchAgents/com.flexhaul.trader.daily.plist
 python scripts/halt.py on "vacation"
 
 # Hard stop (uninstall the cron)
-launchctl unload ~/Library/LaunchAgents/com.flexhaul.trader.daily.plist
+launchctl unload ~/Library/LaunchAgents/com.trader.daily-run.plist
 ```
 
 ## How to know if something broke

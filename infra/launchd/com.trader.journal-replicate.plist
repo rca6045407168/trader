@@ -8,7 +8,7 @@
   its row), keeps 7 daily + 4 weekly snapshots.
 
   Pairs StartCalendarInterval with StartInterval (1hr) for sleep-
-  resilience per the FlexHaul launchd lesson. Uses sqlite3 .backup
+  resilience per the launchd sleep-skip lesson. Uses sqlite3 .backup
   command for transactional consistency — safe even while the
   dashboard or daily orchestrator is mid-write.
 -->
@@ -32,7 +32,7 @@
     <key>Minute</key><integer>0</integer>
   </dict>
 
-  <!-- v3.73.9 sleep-resilience (FlexHaul lesson): pair calendar with
+  <!-- v3.73.9 sleep-resilience (launchd sleep-skip pattern): pair calendar with
        interval. The script is idempotent (overwrites today's snapshot)
        so over-firing is harmless. -->
   <key>StartInterval</key>

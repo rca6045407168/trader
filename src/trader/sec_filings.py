@@ -44,7 +44,7 @@ from typing import Optional
 
 SEC_USER_AGENT = os.getenv(
     "SEC_USER_AGENT",
-    "trader-research richard@flexhaul.ai"
+    "trader-research richard.chen.1989@gmail.com"
 )
 TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"

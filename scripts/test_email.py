@@ -18,7 +18,7 @@ def main():
         print("   To enable email:")
         print("   1. Visit https://myaccount.google.com/apppasswords (need 2FA on)")
         print("   2. Create an app password named 'trader'")
-        print("   3. Add to /Users/richardchen/FlexHaul/trader/.env:")
+        print("   3. Add to /Users/richardchen/trader/.env:")
         print("        SMTP_USER=<your-gmail>@gmail.com")
         print("        SMTP_PASS=<the-16-char-app-password>")
         print("   4. Re-run this script.")

@@ -139,7 +139,7 @@ def check_heartbeat(now: datetime | None = None,
         f"Observed: most recent run started "
         f"{last_started or '(no rows)'}.\n\n"
         f"What this means:\n"
-        f"- The launchd job ai.flexhaul.trader-daily-run did not fire,\n"
+        f"- The launchd job com.trader.daily-run did not fire,\n"
         f"  OR fired but failed before writing the journal row,\n"
         f"  OR fired and wrote the row but on a different day boundary\n"
         f"  (timezone bug worth investigating).\n\n"
@@ -147,7 +147,7 @@ def check_heartbeat(now: datetime | None = None,
         f"1. Check launchctl list | grep trader-daily-run\n"
         f"2. Check ~/openclaw-workspace/trader-jobs/logs/ for today's run\n"
         f"3. If the run is missing entirely, kickstart it manually:\n"
-        f"   launchctl kickstart -p gui/$(id -u)/ai.flexhaul.trader-daily-run\n\n"
+        f"   launchctl kickstart -p gui/$(id -u)/com.trader.daily-run\n\n"
         f"This alert is sent at most once per day; the marker file\n"
         f"data/.last_heartbeat_alert prevents repeat sends."
     )

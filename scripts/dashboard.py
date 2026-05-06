@@ -365,7 +365,7 @@ v3.65.0 — UI BENCHMARK pass (per docs/UI_BENCHMARK.md):
     (1D 5D 1M 3M 6M YTD 1Y 5Y) replacing the "Lookback" selectbox
   - Sidebar version label bumped
 
-v3.55.0 — LEFT SIDEBAR NAV refactor (FlexHaul-style):
+v3.55.0 — LEFT SIDEBAR NAV refactor (operator-style):
   Sidebar (left): vertical nav with sections:
     - Primary action: 🤖 Chat (default selected)
     - VIEWS: Overview, Live positions, Decisions, Lots, Performance,
@@ -375,7 +375,7 @@ v3.55.0 — LEFT SIDEBAR NAV refactor (FlexHaul-style):
   Main area: renders the selected view (one at a time, no horizontal tabs).
 
 This replaces v3.54.x's 'top metrics + chat above 14 tabs' layout. The user
-wanted FlexHaul-app-style left nav with chat as the primary surface and
+wanted operator-style left nav with chat as the primary surface and
 settings (journal path, sync, refresh) moved out of the sidebar into a
 dedicated Settings view.
 
@@ -833,11 +833,11 @@ from typing import Optional  # noqa: E402  — used by _build_info_drift_seconds
 
 
 # ============================================================
-# Sidebar — left nav (FlexHaul-style)
+# Sidebar — left nav (operator-style)
 # ============================================================
 with st.sidebar:
     st.markdown("### 📊 trader")
-    st.caption("v3.73.14 · chat-first AI dashboard")
+    st.caption("v3.73.15 · chat-first AI dashboard")
     # v3.73.1: build-info badge — surfaces the commit + build timestamp
     # baked into the running image, plus a drift warning when host
     # code has moved past what's in the container. Catches the
@@ -6841,7 +6841,7 @@ def view_risk_roadmap():
         "_From [ROUND_2_SYNTHESIS.md](../docs/ROUND_2_SYNTHESIS.md):_\n\n"
         "> 127 hours on a $10k Roth at +0.4 expected Sharpe lift "
         "produces ~$400-800/year of additional return. The same "
-        "hours on FlexHaul GTM at pre-seed produce orders of "
+        "hours on the operator's primary work at pre-seed produce orders of "
         "magnitude more value. The honest framing of v5 remains: "
         "this is a learning / discipline / hobby asset, valuable "
         "for what it teaches but not a wealth-creation asset until "
@@ -7107,40 +7107,59 @@ def view_strategy_leaderboard():
     cols = st.columns(3)
     with cols[0]:
         st.metric(
-            "Leader",
+            "Leader (by α-adjusted)",
             leader["strategy"],
-            delta=f"+{leader['cum_active_pct']:.2f}pp vs SPY",
+            delta=f"cum α: +{leader['cum_alpha_pct']:.1f}pp",
             delta_color="normal",
-            help="Highest cumulative active return over the lookback.",
+            help=("Sorted by cum alpha (active return minus β × benchmark "
+                  "return). Strategies whose 'edge' is mostly leveraged "
+                  "beta drop in this ranking."),
         )
     with cols[1]:
         st.metric(
-            "Cum portfolio",
-            f"{leader['cum_port_pct']:+.2f}%",
-            help="Leader's cumulative return over the lookback.",
+            "Beta to SPY",
+            f"{leader['beta']:+.2f}",
+            help=("Leader's regression beta to SPY. β > 1 means the "
+                  "strategy's swings amplify SPY's; β < 1 means dampened. "
+                  "α decomposition strips this out."),
         )
     with cols[2]:
         st.metric(
-            "Cum SPY",
-            f"{leader['cum_spy_pct']:+.2f}%",
-            help="Benchmark cumulative return over the same window.",
+            "Max relative DD",
+            f"{leader['max_relative_dd_pct']:.1f}%",
+            help=("Worst sustained underperformance vs SPY (peak-to-trough "
+                  "on the relative-equity curve)."),
         )
 
-    # Full table
+    # v3.73.15: dual-view leaderboard.
+    # Row sort = by cum_alpha (already sorted by leaderboard()).
+    # Show both cum_active (the headline number) AND cum_alpha (the
+    # beta-decomposed honest number) so the operator sees how much of
+    # the apparent edge is real factor edge vs leveraged beta.
     rows = [
         {
             "rank": i + 1,
             "strategy": r["strategy"],
             "n obs": r["n_obs"],
-            "cum active vs SPY": f"{r['cum_active_pct']:+.2f}pp",
-            "cum port": f"{r['cum_port_pct']:+.2f}%",
-            "cum SPY": f"{r['cum_spy_pct']:+.2f}%",
+            "β": f"{r['beta']:+.2f}",
+            "cum α (β-adj)": f"{r['cum_alpha_pct']:+.1f}pp",
+            "α annualized": f"{r['alpha_ann_pct']:+.1f}%",
+            "α IR": f"{r['alpha_ir']:+.2f}",
+            "cum active": f"{r['cum_active_pct']:+.1f}pp",
+            "cum-active IR": f"{r['ir']:+.2f}",
+            "max rel DD": f"{r['max_relative_dd_pct']:.1f}%",
             "win rate": f"{r['win_rate']*100:.0f}%",
-            "IR": f"{r['ir']:+.2f}",
         }
         for i, r in enumerate(lb)
     ]
     st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.caption(
+        "**Cum α (β-adjusted)** is the column to anchor on. Cum active "
+        "is shown for comparison so you can see how much of apparent "
+        "edge was just leveraged beta. A β-1.5 long-only in a +20% "
+        "SPY year produces +30% return and +10pp 'active' even at "
+        "zero alpha."
+    )
 
     # Honest caveats
     obs = leader["n_obs"]

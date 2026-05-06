@@ -1,6 +1,6 @@
 # trader
 
-Personal automated equity trading system. Lives in `~/trader/` (not `~/FlexHaul/trader/` — moved out 2025‑Q4). Goal: **maximize after‑tax CAGR in a Roth IRA** with auditable, defense‑in‑depth controls and ruthless honesty about what we know vs. what we hope.
+Personal automated equity trading system. Lives in `~/trader/` (not `~/trader/` — moved out 2025‑Q4). Goal: **maximize after‑tax CAGR in a Roth IRA** with auditable, defense‑in‑depth controls and ruthless honesty about what we know vs. what we hope.
 
 > **Standing directives from Richard:**
 > 1. Iterate autonomously. Don't ask permission for reversible work.

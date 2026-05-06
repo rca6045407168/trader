@@ -156,15 +156,15 @@ def build():
             s["body"],
         ),
         _para(
-            "The owner-operator's day job is running a logistics startup "
-            "(FlexHaul). The trader is, in his own framing, a "
+            "The owner-operator has a separate day job that is the primary "
+            "wealth-creation engine. The trader is, in his own framing, a "
             "<i>learning / discipline / hobby asset</i> — valuable for what "
             "it teaches about operating an autonomous system under "
             "uncertainty, not for the financial return it produces at "
             "current scale. The 127 hours of work it would take to add "
             "another 0.4 of expected Sharpe lift on a $10K Roth IRA "
             "produces ~$400-800/year of additional return; the same hours "
-            "spent on FlexHaul GTM at pre-seed produce orders of magnitude "
+            "spent on the operator's primary work at pre-seed produce orders of magnitude "
             "more value. This honest framing is reproduced in the "
             "dashboard's Risk Roadmap view; it should be reproduced "
             "wherever a reader is tempted to evaluate this system as a "
@@ -219,10 +219,13 @@ def build():
     headline = [
         ["Metric", "Value", "Note"],
         ["Cumulative active vs SPY", "+76.60pp", "60-month, 47 settled obs"],
-        ["Information ratio (annualized)", "0.62",
-         "monthly returns × √12 — corrected"],
-        ["vs Boglehead 3-fund", "+103.0pp", "passive baseline empirical"],
-        ["vs Classic 60/40", "+114.7pp", "passive baseline empirical"],
+        ["Cumulative α (β-adjusted)", "+24.7pp",
+         "after stripping out leveraged-beta exposure"],
+        ["Annualized α", "+6.7%", "α-IR 0.44"],
+        ["β to SPY", "+1.15", "regression on monthly returns"],
+        ["Max relative DD", "-11.2%", "peak-to-trough vs SPY"],
+        ["vs Boglehead 3-fund (cum-active)", "+103.0pp", "passive baseline"],
+        ["vs Classic 60/40 (cum-active)", "+114.7pp", "passive baseline"],
         ["Beta to SPY (live, 7-day)", "+1.72",
          "small sample; not statistically meaningful"],
         ["Live equity", "$107,296", "Alpaca paper, 2026-05-05"],
@@ -360,7 +363,7 @@ def build():
         Paragraph("Scheduled jobs (launchd)", s["h2"]),
         Paragraph(
             "All scheduled jobs now pair StartCalendarInterval with "
-            "StartInterval for sleep-resilience (per the FlexHaul launchd "
+            "StartInterval for sleep-resilience (per the documented launchd "
             "lesson — calendar fires alone are silently skipped on a "
             "sleeping laptop, which is what caused multiple started-but-"
             "never-completed rows in journal.runs).",
@@ -369,7 +372,7 @@ def build():
     ]
     jobs = [
         ["Job", "Cadence", "Purpose"],
-        ["ai.flexhaul.trader-daily-run", "Mon-Fri 13:10 UTC + 1hr",
+        ["com.trader.daily-run", "Mon-Fri 13:10 UTC + 1hr",
          "Rebalance + journal eval"],
         ["com.trader.daily-heartbeat", "Mon-Fri 14:30 UTC + 30min",
          "Alert if daily run didn't fire"],
@@ -546,46 +549,100 @@ def build():
             "max equity — a vol-state filter on top of the momentum factor.",
             s["body"],
         ),
-        Paragraph("15-strategy comparison (5y, post-fix, passive baselines included)", s["h2"]),
+        Paragraph("15-strategy comparison — beta-adjusted (v3.73.15)", s["h2"]),
         _para(
-            "The eval harness evaluates 15 candidate strategies at every "
-            "rebalance: 12 active candidates plus 3 passive baselines "
-            "(buy-and-hold SPY, Boglehead 3-fund, classic 60/40) added in "
-            "v3.73.14 in response to the Reddit research. Numbers are "
-            "cost-aware (5bps × turnover) and exclude warmup periods. "
-            "The passive baselines are the most important addition: they "
-            "force the system to <i>measure</i> whether active is "
-            "actually beating the simplest alternatives, rather than "
-            "claiming so in prose.",
+            "The eval harness evaluates 15 candidates at every rebalance "
+            "(12 active + 3 passive baselines). v3.73.15 added a "
+            "beta-adjusted decomposition: each strategy's monthly "
+            "returns are regressed against SPY to get β; the residual "
+            "becomes α. Sorting by cumulative α (rather than cumulative "
+            "active) demotes strategies whose 'edge' is mostly leveraged "
+            "beta and elevates strategies with lower beta but real "
+            "factor edge. This is the more honest scoreboard.",
             s["body"],
         ),
     ]
     leaderboard = [
-        ["Rank", "Strategy", "Cum Active", "IR", "Win %"],
-        ["1 ★", "xs_top15_min_shifted (LIVE)", "+76.60pp", "0.62", "49%"],
-        ["2", "score_weighted_xs", "+47.07pp", "0.52", "49%"],
-        ["3", "xs_top8 (concentrated)", "+46.26pp", "0.45", "51%"],
-        ["4", "xs_top15 (equal-wt)", "+0.97pp", "0.03", "47%"],
-        ["5", "buy_and_hold_spy [PASSIVE]", "-0.09pp", "-0.45", "0%"],
-        ["6", "xs_top15_capped", "-1.64pp", "-0.02", "43%"],
-        ["7", "dual_momentum", "-2.31pp", "-0.02", "45%"],
-        ["8", "xs_top25", "-8.23pp", "-0.26", "43%"],
-        ["9", "equal_weight_universe", "-12.12pp", "-0.48", "47%"],
-        ["10", "long_short_momentum", "-15.37pp", "-0.07", "45%"],
-        ["11", "vertical_winner", "-15.55pp", "-0.27", "43%"],
-        ["12", "inv_vol_xs", "-18.83pp", "-0.39", "45%"],
-        ["13", "sector_rotation_top3", "-22.02pp", "-0.29", "47%"],
-        ["14", "boglehead_three_fund [PASSIVE]", "-26.44pp", "-0.86", "43%"],
-        ["15", "simple_60_40 [PASSIVE]", "-38.06pp", "-1.03", "37%"],
+        ["Rank", "Strategy", "β", "Cum α", "α ann", "α IR", "Cum Active", "Max Rel DD"],
+        ["1 ★", "xs_top15_min_shifted (LIVE)", "1.15", "+24.7pp", "+6.7%", "0.44", "+76.6pp", "-11.2%"],
+        ["2", "xs_top8", "1.07", "+16.8pp", "+4.9%", "0.35", "+46.3pp", "-13.8%"],
+        ["3", "score_weighted_xs", "1.08", "+16.6pp", "+4.6%", "0.39", "+47.1pp", "-11.5%"],
+        ["4", "long_short_momentum", "0.68", "+14.4pp", "+4.9%", "0.28", "-15.4pp", "-33.1%"],
+        ["5", "vertical_winner", "0.73", "+10.5pp", "+2.8%", "0.37", "-15.6pp", "-21.2%"],
+        ["6", "xs_top25", "0.87", "+4.7pp", "+1.3%", "0.29", "-8.2pp", "-12.1%"],
+        ["7", "xs_top15 (equal-wt)", "0.94", "+4.2pp", "+1.3%", "0.17", "+1.0pp", "-14.1%"],
+        ["8", "xs_top15_capped", "0.92", "+4.2pp", "+1.3%", "0.18", "-1.6pp", "-15.1%"],
+        ["9", "sector_rotation_top3", "0.77", "+3.9pp", "+1.4%", "0.15", "-22.0pp", "-19.1%"],
+        ["10", "inv_vol_xs", "0.80", "+3.8pp", "+1.1%", "0.18", "-18.8pp", "-18.5%"],
+        ["11", "equal_weight_universe", "0.82", "+3.3pp", "+0.7%", "0.29", "-12.1pp", "-11.9%"],
+        ["12", "dual_momentum", "0.94", "+2.7pp", "+1.0%", "0.13", "-2.3pp", "-14.8%"],
+        ["13", "buy_and_hold_spy [P]", "1.00", "-0.0pp", "-0.0%", "-0.42", "-0.1pp", "-0.0%"],
+        ["14", "simple_60_40 [P]", "0.70", "-5.9pp", "-1.2%", "-0.59", "-38.1pp", "-20.6%"],
+        ["15", "boglehead_three_fund [P]", "0.86", "-7.4pp", "-1.5%", "-0.45", "-26.4pp", "-17.1%"],
     ]
     story.append(_table(leaderboard,
-                          col_widths=[0.5 * inch, 2.4 * inch, 1.2 * inch,
-                                      0.7 * inch, 0.7 * inch]))
+                          col_widths=[0.4 * inch, 2.0 * inch, 0.4 * inch,
+                                      0.7 * inch, 0.6 * inch, 0.5 * inch,
+                                      0.8 * inch, 0.8 * inch]))
     story += [Spacer(1, 0.15 * inch)]
 
     story += [
-        Paragraph(
-            "<b>Findings worth noting:</b> "
+        _para(
+            "<b>What changes when we sort by α instead of cum-active:</b>",
+            s["body"],
+        ),
+        _para(
+            "(1) <b>The LIVE strategy is still the leader, but its lead "
+            "shrinks dramatically.</b> Cum-active +76.6pp becomes cum-α "
+            "+24.7pp. The other 52pp was leveraged beta (β=1.15) on a "
+            "+83.5% SPY market. Annualized α is +6.7% with α-IR of 0.44 "
+            "— still a winning strategy, but a much more honest number "
+            "to live with than the headline cum-active.",
+            s["body"],
+        ),
+        _para(
+            "(2) <b>long_short_momentum looks completely different on α "
+            "basis.</b> 4th place at +14.4pp cum-α (vs 10th at -15.4pp "
+            "cum-active). Its low beta (0.68) was the right structural "
+            "property; it just couldn't keep up with bull-market beta. "
+            "The α decomposition recovers what cum-active hides: real "
+            "alpha at low beta is genuinely valuable. The catch: "
+            "max relative DD of -33.1% is the worst in the table — the "
+            "low-beta property collapses in the 2022 episode where the "
+            "shorts mean-reverted hard.",
+            s["body"],
+        ),
+        _para(
+            "(3) <b>vertical_winner rises</b> to 5th on α (+10.5pp) "
+            "from 11th on cum-active (-15.6pp). Same mechanism: lower "
+            "beta (0.73) was held against it on cum-active.",
+            s["body"],
+        ),
+        _para(
+            "(4) <b>xs_top15 (equal-wt) and xs_top15_capped both have "
+            "positive α</b> (+4.2pp). On cum-active xs_top15 was "
+            "essentially flat. Equal-weight momentum produces real but "
+            "modest alpha; the cap reduces that slightly but not "
+            "punishingly.",
+            s["body"],
+        ),
+        _para(
+            "(5) <b>buy_and_hold_spy α is essentially zero</b> "
+            "(definitionally — it IS SPY). Sanity check passed.",
+            s["body"],
+        ),
+        _para(
+            "(6) <b>Boglehead 3-fund and 60/40 have NEGATIVE α</b> "
+            "(-7.4% and -5.9%). The 30% international + 10% bond drag "
+            "in the 3-fund and the 40% bond drag in 60/40 wasn't just "
+            "bull-regime drag — it was a structural negative alpha "
+            "against the SPY-only benchmark. Honest finding: in this "
+            "regime, the boring index recommendation was right but the "
+            "specific 3-fund recipe was wrong.",
+            s["body"],
+        ),
+        _para(
+            "<b>Findings worth noting (legacy framings):</b> "
             "(1) score_weighting beats equal-weighting by +44pp on the same "
             "picks — leaning into conviction is real edge. "
             "(2) xs_top15 equal-weight is essentially tied with SPY (-0.52pp); "
@@ -724,8 +781,8 @@ def build():
             s["body"],
         ),
         _para(
-            "The cause turned out to be the documented FlexHaul launchd "
-            "lesson: macOS silently skips StartCalendarInterval fires "
+            "The cause turned out to be a known launchd quirk: macOS "
+            "silently skips StartCalendarInterval fires "
             "when the laptop is asleep at the scheduled time. The daily-"
             "run plist at the time used StartCalendarInterval alone, "
             "with no StartInterval safety net. If the laptop was asleep "
@@ -1017,7 +1074,7 @@ def build():
         ),
         _para(
             "<b>13:10 UTC</b> (9:10 ET): launchd fires the "
-            "<b>ai.flexhaul.trader-daily-run</b> job. The plist's "
+            "<b>com.trader.daily-run</b> job. The plist's "
             "ProgramArguments invoke a wrapper script "
             "(<b>~/openclaw-workspace/trader-jobs/run-trader-task.sh</b>) "
             "which sources the operator's environment, activates the "
@@ -1605,7 +1662,7 @@ def build():
         ["4",
          "All launchd plists sleep-fragile",
          "Used StartCalendarInterval alone. Patched all to pair with "
-         "StartInterval per the FlexHaul lesson."],
+         "StartInterval per the launchd sleep-skip lesson."],
         ["5",
          "Warmup-period drag inflated cum_active",
          "Empty-picks rows journaled at start of backfill (no momentum "
@@ -1917,9 +1974,9 @@ def build():
             s["body"],
         ),
         _para(
-            "The operator's logistics startup (FlexHaul) is the "
-            "wealth-creation engine. The trader is the operating-"
-            "discipline gym. Both are valuable; both deserve rigor; "
+            "The operator's primary day-job is the wealth-creation engine. "
+            "The trader is the operating-discipline gym. Both are valuable; "
+            "both deserve rigor; "
             "neither should be confused for the other. This document is "
             "intended to capture the trader honestly enough that the "
             "operator can show it to anyone — an LP, a peer, a future "

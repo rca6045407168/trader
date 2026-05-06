@@ -162,7 +162,7 @@ but PIT showed top-3 vs top-15 mom-weighted are statistically equivalent.
 Risk gates in `risk_manager.py` (per-name 30%, gross 95%, daily-loss halt -3%,
 DD halt -8% on 180-day window, VIX scaling).
 
-Email goes to **richard.chen.1989@gmail.com** (personal). Not the FlexHaul work
+Email goes to **richard.chen.1989@gmail.com** (personal). Personal email — keep separate from any work account
 address. Stub guard in `notify.py` blocks `<80 char` bodies. Don't trigger emails
 for normal iterations — only for material findings or daily report.
 

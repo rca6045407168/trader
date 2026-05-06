@@ -1,6 +1,6 @@
-"""[v3.59.2 — SCAFFOLD] FlexHaul operator-alpha thesis ledger.
+"""[v3.59.2 — SCAFFOLD] operator-alpha thesis ledger.
 
-Per BLINDSPOTS.md §1: as Head of Growth at FlexHaul, you observe public-
+Per BLINDSPOTS.md §1: in your day-job role, you observe public-
 carrier signal (ODFL, SAIA, KNX, XPO, JBHT, CHRW, EXPD, ARCB, FDX, UPS)
 weeks before it diffuses to public data. This module is the persistence
 layer for those observations so a sleeve can later backtest them.

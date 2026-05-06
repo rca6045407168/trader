@@ -1,4 +1,4 @@
-"""Tests for v3.59.2 — thesis ledger (FlexHaul operator-alpha scaffold)."""
+"""Tests for v3.59.2 — thesis ledger (operator-alpha scaffold)."""
 from __future__ import annotations
 
 from pathlib import Path

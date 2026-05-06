@@ -93,7 +93,7 @@ To mitigate: (a) All LLM signals should be validated on data *not* in the traini
 
 Based on the above, Richard should implement:
 
-1. **Deployment Review Gate**: GitHub Actions workflow includes Slack notification to richard@flexhaul.ai with 5-minute hold-window before options orders execute. Requires explicit Slack reaction (✅) to proceed.
+1. **Deployment Review Gate**: GitHub Actions workflow includes Slack notification to richard.chen.1989@gmail.com with 5-minute hold-window before options orders execute. Requires explicit Slack reaction (✅) to proceed.
 
 2. **Barbell Options Kill Switch**: If VIX > 85th percentile OR daily realized vol > 2x trailing 20d average OR daily P&L on options sleeve < -10%, auto-close entire barbell position. Log the event.
 

@@ -199,7 +199,7 @@ Two questions follow.
 
 The most likely explanations, in priority order:
 
-1. **The orchestrator process is being killed mid-run** by macOS App Nap or sleep. The plist sets `ProcessType=Adaptive` (fix from v3.68.4), which *should* prevent throttling — but the plist was changed for the *daemon* (long-running) process, not the *daily-run* job. Daily-run is a `launchd StartCalendarInterval` invocation, and on a sleeping laptop a calendar-interval fire is silently skipped. This matches the FlexHaul launchd lesson logged in `MEMORY.md`: *"`StartCalendarInterval` silently skips missed fires when laptop is asleep."*
+1. **The orchestrator process is being killed mid-run** by macOS App Nap or sleep. The plist sets `ProcessType=Adaptive` (fix from v3.68.4), which *should* prevent throttling — but the plist was changed for the *daemon* (long-running) process, not the *daily-run* job. Daily-run is a `launchd StartCalendarInterval` invocation, and on a sleeping laptop a calendar-interval fire is silently skipped. This matches the launchd sleep-skip lesson logged in `MEMORY.md`: *"`StartCalendarInterval` silently skips missed fires when laptop is asleep."*
 2. **The orchestrator is logging "started" before doing real work and crashing inside data fetch.** Possible if yfinance breaks or Alpaca rate-limits.
 3. **The journal-write for `completed` is failing**, e.g. the SQLite file is locked by the dashboard during a long-running rebalance. Less likely; SQLite WAL handles this.
 
@@ -214,7 +214,7 @@ This is the silent-failure mode v3.73.0 was supposed to catch. **There is no rec
 | # | Action | Effort | Leverage |
 |---|--------|--------|----------|
 | 1 | Verify `~/Library/Logs/trader-daily-heartbeat.*.log` exists and contains today's run. **If not, the heartbeat itself isn't firing — the plist is loaded but is being skipped.** | 10 min | **Critical** |
-| 2 | Pair the daily-run plist with `StartInterval=<seconds>` *in addition* to `StartCalendarInterval`, per the FlexHaul lesson. Each fire needs to be idempotent (it is — the orchestrator no-ops if a run today already completed). | 20 min | **Critical** |
+| 2 | Pair the daily-run plist with `StartInterval=<seconds>` *in addition* to `StartCalendarInterval`, per the launchd sleep-skip lesson. Each fire needs to be idempotent (it is — the orchestrator no-ops if a run today already completed). | 20 min | **Critical** |
 | 3 | Add a `RunAtLoad=true` to the heartbeat plist, so a missed-overnight fire backfills on next laptop wake. | 5 min | High |
 | 4 | Test-fire the heartbeat in dev mode (force the failure condition: rename `journal.db` temporarily) to confirm the email/Slack reach the inbox. | 30 min | High |
 | 5 | Add a *simpler* "I am alive" ping, separate from the failure alarm — once a day, regardless of state, the orchestrator emits a single line to a known channel. *No alert is the loudest alert.* | 1 hr | Medium |
@@ -310,7 +310,7 @@ The code quality is *good for a one-person shop*, *not enterprise-grade*. The da
 **Tier 1 — operational. Blockers for sized capital:**
 
 1. **Verify the heartbeat actually ran today** (10 min). If not, the v3.73.0 ship didn't land. This is the very first thing.
-2. **Pair every launchd plist with `StartInterval` for sleep-resilience** (2 hr). Apply the FlexHaul lesson universally.
+2. **Pair every launchd plist with `StartInterval` for sleep-resilience** (2 hr). Apply the launchd sleep-skip lesson universally.
 3. **Test-fire the heartbeat alert end-to-end** by inducing the failure condition, confirming email + Slack arrive (1 hr).
 4. **Migrate `data/journal.db` to a replicated location** — at minimum a daily SQLite dump to an iCloud-synced or S3-backed folder (3 hr).
 5. **Document the manual recovery procedure** for "the daemon was down for 4 days" — what is the operator's checklist? Currently there is no such doc.

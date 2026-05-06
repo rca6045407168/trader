@@ -4,9 +4,9 @@
 
 ---
 
-## 1. The biggest one — operator-grade alpha from FlexHaul
+## 1. The biggest one — operator-grade alpha from the operator's primary work
 
-You are Head of Growth at FlexHaul.ai, a multi-modal logistics platform covering ocean, air, FTL, LTL, drayage, parcel. You see real-time signal from operating in this market that no public quant can buy:
+You are Head of Growth at the operator's primary work, a operator-relevant industry platform covering ocean, air, FTL, LTL, drayage, parcel. You see real-time signal from operating in this market that no public quant can buy:
 
 - LTL / FTL spot-rate moves before they show up on TruckStop or DAT
 - Carrier-specific customer-satisfaction data on ODFL, SAIA, KNX, XPO, JBHT, CHRW, EXPD, ARCB, ODFL, FDX, UPS — names that are publicly traded
@@ -16,7 +16,7 @@ You are Head of Growth at FlexHaul.ai, a multi-modal logistics platform covering
 
 This is structural information asymmetry. It is not insider information (you are not an insider at any of these public companies); it is the same kind of signal a Bloomberg-terminal industry analyst tries to construct from scratch out of channel checks, except you produce it as a byproduct of your day job. The edge half-life before it diffuses to public data is probably 2-6 weeks.
 
-A logistics-sector tilt or pair-trade sleeve built on this signal is in a different category than the v5 sleeves (VRP / FOMC / ML-PEAD), which are all public-information factor strategies. This sleeve would be **proprietary alpha**. The right way to wire it is a "thesis ledger" — every meaningful FlexHaul observation about a public-carrier or shipper public-co gets logged with date, ticker, direction (positive/negative for the company's fundamentals), and confidence. Then a backtest on the ledger answers whether the signals translated to forward returns. If yes, that becomes a 10-15% sleeve allocation, monthly-rebalanced or event-rebalanced.
+A sector tilt or pair-trade sleeve built on this signal is in a different category than the v5 sleeves (VRP / FOMC / ML-PEAD), which are all public-information factor strategies. This sleeve would be **proprietary alpha**. The right way to wire it is a "thesis ledger" — every meaningful operator observation about a public-co in the operator-relevant industry gets logged with date, ticker, direction (positive/negative for the company's fundamentals), and confidence. Then a backtest on the ledger answers whether the signals translated to forward returns. If yes, that becomes a 10-15% sleeve allocation, monthly-rebalanced or event-rebalanced.
 
 The right operational guardrail: ledger is mandatory for every observation regardless of trade outcome (so survivorship bias doesn't creep in over time), and there is a 72-hour minimum lag between observation and trade (so you cannot accidentally enter material non-public information territory if a private-co customer says something about a public-co partner).
 
@@ -66,11 +66,11 @@ This is the paradigm shift larger than VRP. Effort to build the ledger: ~10 hour
 
 **Founder's regret at LIVE arming.** v5 ships, paper-trades for 90 days, hits the LIVE arming gate. You hesitate. You say "let me run another 30 days of shadow." This is the most common pattern in research-to-production transitions. Pre-commit answer: a written "if I am hesitating to arm LIVE on the day the gate clears, here is my rule" — either a fixed deadline (arm on day 91 regardless) or a fixed condition (arm if in-window Sharpe > 1.0, else kill the project).
 
-**Life-event auto-pause.** If FlexHaul has a fundraise, acquisition, customer crisis, or personnel emergency that needs your full attention, the trading system should auto-pause for N days. Currently it has no concept of "Richard is too busy to monitor this safely." Fix: a manual `PAUSE_REASON` env var and a reminder to set it during the obvious life events. Or a simpler version: every Sunday night, you must explicitly type "ARMED" into a one-shot prompt, otherwise the system stays paused all week.
+**Life-event auto-pause.** If the primary work has a fundraise, acquisition, customer crisis, or personnel emergency that needs your full attention, the trading system should auto-pause for N days. Currently it has no concept of "Richard is too busy to monitor this safely." Fix: a manual `PAUSE_REASON` env var and a reminder to set it during the obvious life events. Or a simpler version: every Sunday night, you must explicitly type "ARMED" into a one-shot prompt, otherwise the system stays paused all week.
 
 **Health change.** Same pattern. Document the rule.
 
-**Cognitive overload.** You manage 70+ files in trader, ~50+ skills + scheduled tasks for FlexHaul, an Apollo pipeline, LinkedIn engagement, customer operations. The trader codebase has more methodology than the actual capital justifies. **Honest self-test: is the trader system generating attention residue that costs you 5+ hrs/week of focus you should be spending on FlexHaul GTM?** If yes, that's a real cost not currently in the EV calc. (See section 8.)
+**Cognitive overload.** You manage 70+ files in trader, ~50+ skills + scheduled tasks, an Apollo pipeline, LinkedIn engagement, customer operations. The trader codebase has more methodology than the actual capital justifies. **Honest self-test: is the trader system generating attention residue that costs you 5+ hrs/week of focus you should be spending on the operator's primary work?** If yes, that's a real cost not currently in the EV calc. (See section 8.)
 
 **The "1.5 Sharpe" success failure mode.** If v5 hits 1.5 Sharpe consistently for 6 months, will you scale capital correctly or torpedo it? The Munger answer is "back the truck up." The correct retail-investor answer is much more conservative because retail attribution-to-luck is high. Pre-commit a scaling rule *now* before the temptation is real. Suggested rule: only scale Roth IRA capital up to the legal contribution cap. Do not move taxable money in until 3 years of LIVE Sharpe > 1.0 with deflated-Sharpe-significant edge.
 
@@ -83,11 +83,11 @@ The right question is not "what Sharpe does my Roth IRA earn?" — it's "given t
 - Emergency fund (3-6 months expenses) — does it exist, where is it, what's the yield?
 - Liquid taxable brokerage — current allocation? SPY-equivalent index? Concentration?
 - Any 401(k) — current balance and allocation? Probably target-date fund?
-- FlexHaul founder equity — concentration risk (you're already long freight-tech via your job; do you really want a logistics-sector trading sleeve on top of that?)
+- primary-work founder equity — concentration risk (you're already long the relevant sector via your job; do you really want a logistics-sector trading sleeve on top of that?)
 - Real estate, crypto, other
 - Spousal income and assets
 
-A v5 strategy that earns +1.5 Sharpe on $10k and adds 0.05 to total household Sharpe is great. The same strategy that consumes 5 hrs/week of your attention is bad if those 5 hrs would otherwise be spent on FlexHaul (which is your highest-EV asset by orders of magnitude).
+A v5 strategy that earns +1.5 Sharpe on $10k and adds 0.05 to total household Sharpe is great. The same strategy that consumes 5 hrs/week of your attention is bad if those 5 hrs would otherwise be spent on the primary work (which is your highest-EV asset by orders of magnitude).
 
 This is not a numerical claim, it's a framing one. The trading system is one bucket in a larger portfolio. Optimize the bucket only after you're sure the larger portfolio is structured correctly.
 
@@ -125,9 +125,9 @@ The honest top-down EV calculation, brutal version:
 
 - v5 build: ~100 focused hours. Plus 5-10 hrs/week of monitoring overhead during the 90-day shadow → live transition. Call it 200 hours total over 6 months.
 - Expected v5 lift over v3.42: ~+0.4 Sharpe at $10k AUM. In dollar terms on a $10k account, that's roughly +$400-800/year of additional expected return.
-- Same 200 hours spent on FlexHaul GTM at pre-seed stage: realistically the marginal ARR contribution is probably $50k-500k+ in deal value at your conversion rates. EV is *3-4 orders of magnitude higher.*
+- Same 200 hours spent on the operator's primary work at pre-seed stage: realistically the marginal ARR contribution is probably $50k-500k+ in deal value at your conversion rates. EV is *3-4 orders of magnitude higher.*
 
-The trader system has non-financial value: it's a learning platform, it builds discipline, it's a hedge against career risk if FlexHaul fails, it's interesting. None of that is zero. But the EV math says **the trader system is a lifestyle / hobby asset, not a wealth-creation asset, until it has 3+ years of LIVE evidence and you can scale beyond the Roth IRA cap.**
+The trader system has non-financial value: it's a learning platform, it builds discipline, it's a hedge against career risk if the primary work fails, it's interesting. None of that is zero. But the EV math says **the trader system is a lifestyle / hobby asset, not a wealth-creation asset, until it has 3+ years of LIVE evidence and you can scale beyond the Roth IRA cap.**
 
 The actionable implication: time-box v5 hard. If Phase 1-3 (audit, PIT swap, virtual shadow) doesn't ship in 30 days of focused work, that signals a deeper engineering problem and the project should be paused, not extended. A research project that overruns its budget is usually telling you something is wrong with the underlying premise.
 

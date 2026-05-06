@@ -327,6 +327,8 @@ def leaderboard(
         if n == 0:
             continue
         mean_active = sum(active) / n
+        mean_port = sum(port) / n
+        mean_spy = sum(spy) / n
         wins = sum(1 for a in active if a > 0)
         cum_port = 1.0
         cum_spy = 1.0
@@ -343,6 +345,57 @@ def leaderboard(
         # by sqrt(252/12) ≈ 4.58x for the entire v3.73.7 → v3.73.12
         # leaderboard. Caught by the cross-validation harness.
         ir = (mean_active / sd_a * (12 ** 0.5)) if sd_a > 0 else 0
+
+        # v3.73.15: beta-adjusted scoreboard. The cum-active number
+        # mixes "real factor edge" with "leveraged beta exposure to
+        # the same market direction." A high-beta long-only strategy
+        # in a bull market shows huge cum-active without necessarily
+        # producing alpha. Decompose:
+        #
+        #   beta = cov(port, spy) / var(spy)
+        #   alpha_per_period = mean(port) - beta * mean(spy)
+        #   cum_alpha (compound) = product(1 + (port_t - beta*spy_t)) - 1
+        #
+        # Strategies whose "edge" is mostly leveraged beta will have
+        # high cum_active but small cum_alpha. Strategies with real
+        # factor edge keep both.
+        if n > 1:
+            sd_spy_sq = sum((s - mean_spy) ** 2 for s in spy) / (n - 1)
+            cov_ps = sum((p - mean_port) * (s - mean_spy)
+                          for p, s in zip(port, spy)) / (n - 1)
+            beta = cov_ps / sd_spy_sq if sd_spy_sq > 0 else 0.0
+        else:
+            beta = 0.0
+
+        # Cumulative beta-adjusted alpha (compound)
+        cum_alpha = 1.0
+        rel_eq = 1.0  # cumulative port / cumulative spy — for max relative DD
+        peak_rel = 1.0
+        max_rel_dd = 0.0
+        for p, sp_ret in zip(port, spy):
+            alpha_t = (p or 0) - beta * (sp_ret or 0)
+            cum_alpha *= (1 + alpha_t)
+            # Track relative equity (port_NAV / spy_NAV) for max relative DD
+            rel_eq *= (1 + (p or 0)) / (1 + (sp_ret or 0))
+            if rel_eq > peak_rel:
+                peak_rel = rel_eq
+            dd = rel_eq / peak_rel - 1
+            if dd < max_rel_dd:
+                max_rel_dd = dd
+
+        # Annualized alpha per Jensen's: mean(alpha_t) * 12 (monthly→annual)
+        alpha_periods = [(p or 0) - beta * (s or 0) for p, s in zip(port, spy)]
+        alpha_ann = (sum(alpha_periods) / n) * 12 if n > 0 else 0.0
+
+        # Information ratio of the alpha series (vs. of active series).
+        # Same number when beta is exactly 1; differs when beta != 1.
+        if n > 1:
+            mean_alpha = sum(alpha_periods) / n
+            sd_alpha = (sum((a - mean_alpha) ** 2 for a in alpha_periods) / (n - 1)) ** 0.5
+            alpha_ir = (mean_alpha / sd_alpha * (12 ** 0.5)) if sd_alpha > 0 else 0
+        else:
+            alpha_ir = 0
+
         out.append({
             "strategy": strategy,
             "n_obs": n,
@@ -352,6 +405,15 @@ def leaderboard(
             "mean_active_pct": mean_active * 100,
             "win_rate": wins / n,
             "ir": ir,
+            # v3.73.15 additions:
+            "beta": beta,
+            "cum_alpha_pct": (cum_alpha - 1) * 100,
+            "alpha_ann_pct": alpha_ann * 100,
+            "alpha_ir": alpha_ir,
+            "max_relative_dd_pct": max_rel_dd * 100,
         })
-    out.sort(key=lambda x: -x["cum_active_pct"])
+    # Sort by cum_alpha (beta-adjusted) — the strategy whose edge
+    # survives the beta decomposition deserves the top slot, not the
+    # one whose edge is mostly leveraged beta.
+    out.sort(key=lambda x: -x["cum_alpha_pct"])
     return out

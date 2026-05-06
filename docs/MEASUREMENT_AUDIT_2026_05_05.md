@@ -171,7 +171,7 @@ Even with the new harness, these remain:
 | No frozen-snapshot regression test for `rank_momentum` | Medium | One pytest that asserts known-input → known-output (~30 min) |
 | No transaction-cost model | Medium | 5-10bps slippage in backtest harness (~4 hrs) |
 | No cross-regime backfill (2018, 2020, 2022) | Medium | Extend `fetch_history` to 5+ years (~4 hrs) |
-| Multiple `runs` rows show `started` without `completed` | High | Investigate (likely App Nap on calendar fire — apply `StartInterval` per FlexHaul lesson) |
+| Multiple `runs` rows show `started` without `completed` | High | Investigate (likely App Nap on calendar fire — apply `StartInterval` per the launchd sleep-skip lesson) |
 | Dashboard test coverage is text-presence, not rendered | Low | Streamlit testing harness (~12 hrs) |
 
 The first three are the dominant blockers for sized capital. Tier-1 ops is gating; alpha extensions are below.

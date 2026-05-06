@@ -47,7 +47,7 @@ Once the GitHub Actions runs are confirmed working, you can disable the local Cl
 
 ```bash
 # Disable each one (won't auto-run anymore):
-launchctl unload ~/Library/LaunchAgents/com.flexhaul.trader.daily.plist  # if you ever installed it
+launchctl unload ~/Library/LaunchAgents/com.trader.daily-run.plist  # if you ever installed it
 # OR via the Claude Code Scheduled Tasks UI: toggle each "trader-*" task off
 ```
 

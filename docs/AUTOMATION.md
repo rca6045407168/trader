@@ -108,7 +108,7 @@ bash scripts/install_launchd_earnings.sh --uninstall
 
 ## Layer 3 — daily orchestrator (Mon-Fri 13:10 UTC)
 
-`ai.flexhaul.trader-daily-run` (a separate launchd job, lives in
+`com.trader.daily-run` (a separate launchd job, lives in
 `~/openclaw-workspace/trader-jobs/`, not in this repo). Fires the
 monthly rebalance check, computes new target weights, submits orders
 to Alpaca paper. **This is the only automation that places orders.**

@@ -8,7 +8,7 @@
 
 The codebase is well-architected for research (PIT validation, CPCV gates, killed-candidate discipline) and **security-naive for production**. The most realistic attack at current scale is silent PyPI exfiltration of credentials over a 48-hour window before the malicious package is reported and yanked. The highest-impact attack once LIVE arms with real money is insider-threat liquidation. Both are addressable with standard tooling (dependency pinning, secret-scanning, 2FA, hardware key) deployed in a few hours. Most mitigations are free.
 
-The threat profile changes sharply at three points: (a) when paper goes LIVE with $10k of real money, (b) when v5 wires Alpaca options (broader API surface), (c) when the FlexHaul thesis-ledger sleeve introduces proprietary day-job signal that has competitive value. None of those are happening today; all of them are happening within the v5 timeline. Ship mitigations now, before any of them.
+The threat profile changes sharply at three points: (a) when paper goes LIVE with $10k of real money, (b) when v5 wires Alpaca options (broader API surface), (c) when the operator thesis-ledger sleeve introduces proprietary day-job signal that has competitive value. None of those are happening today; all of them are happening within the v5 timeline. Ship mitigations now, before any of them.
 
 ---
 
@@ -20,7 +20,7 @@ Three tiers, ranked by realism for a single-developer system at $10k–$100k AUM
 
 **Adversarial ML / LLM attackers (medium probability, rises with v5).** Anyone who can manipulate inputs into your LLM-in-path components (`copilot.py`, `adversarial_review.py`, `postmortem.py`) can attempt to inject instructions into Claude. Inputs come from yfinance, Finnhub (planned), Alpaca, FRED. The vector is unique to LLM-augmented systems and largely unaddressed in the existing security literature for trading.
 
-**Targeted / state-level (low probability, catastrophic if real).** Realistic targets only post-FlexHaul-success, when Richard becomes Google-able and his trading system becomes a competitive-intelligence target. Not a current concern; document for when it becomes one.
+**Targeted / state-level (low probability, catastrophic if real).** Realistic targets only post-primary-work-success, when Richard becomes Google-able and his trading system becomes a competitive-intelligence target. Not a current concern; document for when it becomes one.
 
 **Insider threat (low probability now, rises with capital and family situation).** Spouse, future co-founder, IT contractor, anyone with physical access to the laptop or password manager. Most retail-trader losses to insiders are unintentional (a partner deletes the wrong file, a kid runs a script "to see what it does"); fewer but real cases are deliberate. Documented runbooks + offsite encrypted backups + spousal pre-brief addresses both modes.
 
@@ -204,9 +204,9 @@ Total cumulative effort: ~25 hours, mostly free tooling. Roughly the cost of one
 
 **Roth IRA scaled ($25k+ via contribution accumulation):** PDT rule triggers options-execution sensitivity; broker compromise becomes higher-payoff. Add scoped keys, hardware keys.
 
-**FlexHaul thesis-ledger sleeve LIVE:** proprietary signal becomes competitive-intelligence target. Adversarial ML and model-extraction become real attack classes. Add input-distribution monitoring, model-output watermarking if feasible.
+**operator thesis-ledger sleeve LIVE:** proprietary signal becomes competitive-intelligence target. Adversarial ML and model-extraction become real attack classes. Add input-distribution monitoring, model-output watermarking if feasible.
 
-**FlexHaul success / Richard becomes Google-able:** targeted attacks become realistic. Threat model expands to include social engineering, phishing, business-email-compromise. Mitigations expand to include: dedicated trading laptop with no other use, separate identity for trading-related accounts, no public mention of which broker hosts the funds.
+**Operator-success / Richard becomes Google-able:** targeted attacks become realistic. Threat model expands to include social engineering, phishing, business-email-compromise. Mitigations expand to include: dedicated trading laptop with no other use, separate identity for trading-related accounts, no public mention of which broker hosts the funds.
 
 ---
 

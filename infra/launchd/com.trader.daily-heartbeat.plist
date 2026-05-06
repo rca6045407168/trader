@@ -3,7 +3,7 @@
   v3.73.0 — Daily-orchestrator heartbeat alert.
 
   Fires weekdays at 14:30 UTC (= 10:30 ET). By that time, a healthy
-  daily run (which the separate ai.flexhaul.trader-daily-run job
+  daily run (which the separate com.trader.daily-run job
   triggers at 13:10 UTC) should have written a row to journal.runs.
   If not, the heartbeat script emails + Slacks an alert.
 
@@ -39,7 +39,7 @@
        next wake. The check_daily_heartbeat.py script is idempotent
        (date-stamped marker), so over-firing is harmless. 1800s = 30min;
        small enough to catch a sleep within an hour, large enough to
-       avoid burning resources on a healthy day. Per the FlexHaul
+       avoid burning resources on a healthy day. Per the documented
        lesson: never use StartCalendarInterval alone. -->
   <key>StartInterval</key>
   <integer>1800</integer>

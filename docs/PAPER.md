@@ -1,6 +1,6 @@
 # Building an Automated Trading System That Judges and Improves Itself
 
-*A working paper from the FlexHaul trader project, April 2026.*
+*A working paper from the trader project.*
 
 ---
 

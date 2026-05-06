@@ -28,7 +28,7 @@ Three real contradictions worth resolving before Claude Code ships v5.
 
 **Contradiction 2 — research velocity vs over-engineering.** Round-1's architect agent argued for ~93 hours of research-velocity infrastructure (feature store, virtual shadows, etc.); the BLINDSPOTS.md bear case (section 8) said this is over-engineering at $10k AUM. Round-2's RISK_FRAMEWORK adds another ~32 hours of risk infrastructure. ADVERSARIAL_THREAT_MODEL adds ~25 hours of security mitigations. INFORMATION_THEORY_ALPHA adds ~16 hours. **Total Round-2 incremental work: ~73 hours on top of v5's existing ~97 hours.** That pushes total v5 budget toward 170 hours.
 
-The honest framing from BLINDSPOTS.md still applies: 170 hours of work for ~$400-800/year of expected return improvement at $10k AUM is a brutal opportunity-cost calculation against FlexHaul GTM time. **Resolution: keep v5 build time-boxed. Mandatory pre-LIVE: the security Days-1-3 mitigations (3 hours), the four-threshold drawdown protocol from RISK_FRAMEWORK (4 hours), the GPD tail-VaR gate from TAIL_RISK_PLAYBOOK (10 hours), and the MI pre-screen from INFORMATION_THEORY_ALPHA (4 hours). The rest is post-LIVE iteration. Total mandatory pre-LIVE addition: ~21 hours, not 73.**
+The honest framing from BLINDSPOTS.md still applies: 170 hours of work for ~$400-800/year of expected return improvement at $10k AUM is a brutal opportunity-cost calculation against the operator's primary work time. **Resolution: keep v5 build time-boxed. Mandatory pre-LIVE: the security Days-1-3 mitigations (3 hours), the four-threshold drawdown protocol from RISK_FRAMEWORK (4 hours), the GPD tail-VaR gate from TAIL_RISK_PLAYBOOK (10 hours), and the MI pre-screen from INFORMATION_THEORY_ALPHA (4 hours). The rest is post-LIVE iteration. Total mandatory pre-LIVE addition: ~21 hours, not 73.**
 
 **Contradiction 3 — kill-switch threshold.** Existing system kills at portfolio -8% on 180d window. RISK_FRAMEWORK adds three more thresholds (-5% yellow, -12% escalation, -15% catastrophic). TAIL_RISK_PLAYBOOK implies -8% may be too tight if the tail distribution is fat enough that 1-in-100-year events naturally produce -10 to -15% portfolio loss. **Resolution: keep -8% as the existing red-alert threshold and add the -5/-12/-15 protocol *as additional response actions*, not as relaxations. The framework gets stricter, not looser. Document explicitly that -8% is the existing kill, not a new one.**
 
@@ -80,7 +80,7 @@ Combining all Round-1 + Round-2 inputs into one sequence. Items in **bold** are 
 
 ### Block D — explicitly defer
 
-The architect's full feature-store proposal, the v3.44 OTM call barbell (already approved-deferred), the FlexHaul thesis-ledger sleeve (paradigm-shift but needs separate v5.x cycle, not v5.0), the SPA / White's Reality Check on the variant cohort (worth 12h but not pre-LIVE).
+The architect's full feature-store proposal, the v3.44 OTM call barbell (already approved-deferred), the operator thesis-ledger sleeve (paradigm-shift but needs separate v5.x cycle, not v5.0), the SPA / White's Reality Check on the variant cohort (worth 12h but not pre-LIVE).
 
 ---
 
@@ -93,7 +93,7 @@ The architect's full feature-store proposal, the v3.44 OTM call barbell (already
 
 Realistic minimum to ship LIVE-ready v5: ~127 hours (Block A + B + original v5 build). At 10 hours/week part-time pace, 12-13 weeks. Tighter timelines require dropping Block B items to post-LIVE (Block C), which is acceptable but accumulates risk.
 
-The brutal reframe from BLINDSPOTS.md still applies: ~127 hours on a $10k Roth at +0.4 expected Sharpe lift produces ~$400-800/year of additional return. The same hours on FlexHaul GTM at pre-seed produce orders of magnitude more value. The honest framing of v5 remains: this is a learning / discipline / hobby asset, valuable for what it teaches but not a wealth-creation asset until it scales beyond the IRA cap with multi-year LIVE Sharpe evidence.
+The brutal reframe from BLINDSPOTS.md still applies: ~127 hours on a $10k Roth at +0.4 expected Sharpe lift produces ~$400-800/year of additional return. The same hours on the operator's primary work at pre-seed produce orders of magnitude more value. The honest framing of v5 remains: this is a learning / discipline / hobby asset, valuable for what it teaches but not a wealth-creation asset until it scales beyond the IRA cap with multi-year LIVE Sharpe evidence.
 
 ---
 

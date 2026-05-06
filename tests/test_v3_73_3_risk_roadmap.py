@@ -148,7 +148,7 @@ def test_view_includes_honest_framing():
     assert "honest framing" in body.lower() or "Honest framing" in body
     # Must include the actual reframe — not just say "see the doc"
     assert "$10k" in body or "10k" in body
-    assert "FlexHaul" in body or "GTM" in body
+    assert "GTM" in body or "primary work" in body
 
 
 # ============================================================
