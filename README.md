@@ -18,8 +18,9 @@ Personal automated equity trading system. Lives in `~/trader/`. Goal: **understa
 | LIVE variant | `momentum_top15_mom_weighted_v1` (top-15 by 12-1 momentum, min-shifted weights, 80% gross target × VIX-gate × deployment-anchor) |
 | Brokerage (paper) | Alpaca paper — actively running |
 | Paper account equity | **$109,789** (+9.79% since funding; +27pp vs SPY over the most recent 5y backfill window post-fix) |
-| 25y backtest (302 obs) | **+546pp cum-α / α-IR 0.70 / β 0.90** (long-window, see §3.5 in writeup) |
-| 5y backtest (47 obs) | +25.6pp cum-α / α-IR 0.46 / β 1.15 |
+| **SP500 BEAT (25y, dollar terms)** | **$1 → $54.73 vs SPY's $10.53. Active +4,419pp / +7.78%/yr over 25 years.** |
+| 25y backtest (302 obs) | +546pp cum-α / α-IR 0.70 / β 0.90 (3 of 5 regime windows beat SPY; lost in GFC -44.9pp + COVID -6.7pp) |
+| 5y backtest (47 obs) | +25.6pp cum-α / α-IR 0.46 / β 1.15; cum-active +77pp |
 | Tests | **149 v3.73.* + 800+ legacy = 950+ total**, all green in CI |
 | Strategies tracked | **25** in eval harness (12 active + 6 sizing-aware + 7 passive baselines) |
 | Live armed? | **No.** Paper only. The Tier-0 gates have not cleared (0/30 clean daily runs, 0/30 post-fix benchmark days, drawdown protocol still ADVISORY). |
@@ -43,18 +44,45 @@ Personal automated equity trading system. Lives in `~/trader/`. Goal: **understa
 
 ---
 
-## Honest performance expectations (v3.73.19 — corrected)
+## SP500 benchmark — did we beat it? (v3.73.20)
 
-These come from cross-validated backtests after caught-and-fixed bugs (warmup-drag, sqrt(252) IR overstatement); not from pre-fix overstated numbers.
+The system's stated goal is to beat SP500. **Empirical answer over 25 years**:
 
-| Window | n obs | Cum-α | α-IR | β | Cum-active |
-|---|---:|---:|---:|---:|---:|
-| **25y full (2001-2026)** | 302 | **+546pp** | **0.70** | 0.90 | (universe varies) |
-| Dot-com 2001-2003 | 24 | +31pp | **1.16** | **0.59** | (defensive!) |
-| GFC 2007-2010 | 24 | **-19pp** | **-0.93** | 0.90 | (real weakness) |
-| Long-bull 2010-2019 | 120 | +142pp | 0.86 | 0.90 | |
-| COVID 2020 | 12 | -3pp | -0.29 | 0.80 | |
-| Post-COVID 2021-2026 | 50 | +27pp | 0.46 | 1.07 | +77pp |
+| Strategy | Cum return | $1 → $X | Annualized | Beat SPY? |
+|---|---:|---:|---:|---:|
+| **LIVE (momentum_top15_mom_weighted_v1)** | **+5,372.9%** | **$54.73** | **17.4%/yr** | **YES** |
+| SPY | +953.2% | $10.53 | 9.6%/yr | benchmark |
+| **Active (LIVE − SPY)** | **+4,419.6pp** | — | **+7.78%/yr** | — |
+
+**$1 invested in LIVE 25 years ago grew to $54.73. The same $1 in SPY grew to $10.53.** LIVE made 5.2× more in dollar terms.
+
+Per-regime breakdown (won 3 of 5; lost 2):
+
+| Period | LIVE | SPY | Active | Beat? |
+|---|---:|---:|---:|:---:|
+| Full 2001-2026 | +5,372.9% | +953.2% | +4,419.6pp | ✅ |
+| Dot-com 2001-2003 | +37.6% | +6.8% | +30.8pp | ✅ |
+| **GFC 2007-2010** | +46.2% | +91.1% | **-44.9pp** | ❌ |
+| Long-bull 2010-2019 | +659.6% | +257.7% | +401.9pp | ✅ |
+| **COVID 2020** | +9.7% | +16.4% | -6.7pp | ❌ |
+| Post-COVID 2021-2026 | +130.3% | +74.8% | +55.6pp | ✅ |
+
+**The GFC weakness is real and severe** (-44.9pp over 2 years, -17.3%/yr underperformance). The COVID -6.7pp is small. Net across all regimes: clear SPY beat.
+
+**v3.73.20 adds an automated assertion test** (`tests/test_v3_73_20_spy_benchmark.py`) that fails CI if LIVE stops beating SPY on either the long-window doc or the recorded eval-harness data. This forces an explicit retraction in code rather than silent doc drift.
+
+## β-adjusted alpha breakdown (v3.73.19 long-window)
+
+These come from cross-validated backtests after caught-and-fixed bugs (warmup-drag, sqrt(252) IR overstatement).
+
+| Window | n obs | Cum-α | α-IR | β |
+|---|---:|---:|---:|---:|
+| **25y full (2001-2026)** | 302 | **+546pp** | **0.70** | 0.90 |
+| Dot-com 2001-2003 | 24 | +31pp | **1.16** | **0.59** |
+| GFC 2007-2010 | 24 | **-19pp** | **-0.93** | 0.90 |
+| Long-bull 2010-2019 | 120 | +142pp | 0.86 | 0.90 |
+| COVID 2020 | 12 | -3pp | -0.29 | 0.80 |
+| Post-COVID 2021-2026 | 50 | +27pp | 0.46 | 1.07 |
 
 **What this says, honestly:** The LIVE strategy survives 25 years with statistically meaningful α-IR (SE ≈ 0.06 at 302 obs; the 0.70 result is many sigmas above zero). It was *defensive* through dot-com (lower β AND higher α than the naive baseline). It *underperformed* through the GFC — a real, documented weakness. Over the full 25y, LIVE has 3x naive's cumulative alpha at essentially identical α-IR (0.70 vs 0.72).
 

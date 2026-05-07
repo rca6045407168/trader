@@ -706,15 +706,69 @@ def build():
             "in this window — only β amplification of SPY's run.",
             s["body"],
         ),
-        Paragraph("3.5 Long-window 2001-2026 backtest (NEW v3.73.19)", s["h2"]),
+        Paragraph("3.5 SP500 benchmark — did we beat it? (v3.73.20)", s["h2"]),
         _para(
-            "The v3.73.18 critique: \"the 5y window is regime-contaminated; "
-            "no 2000-2002, no 2007-2009, no sustained value rotation.\" "
-            "v3.73.19 ran the LIVE strategy on the 41-name subset of "
-            "our universe with full 2000+ history (302 monthly obs), "
-            "which by construction includes dot-com (2001-2003), GFC "
-            "(2007-2010), the long bull (2010-2019), COVID (2020), and "
-            "the post-COVID window. Results vs the same naive baseline:",
+            "The system's stated goal is to beat SP500. Over 25 years "
+            "(2001-2026, 290 monthly obs on the 41-name long-history "
+            "universe), the empirical answer is unambiguous on "
+            "cumulative dollars:",
+            s["body"],
+        ),
+    ]
+    spy_beat = [
+        ["Strategy", "Cum return", "$1 → $X", "Annualized", "Beat?"],
+        ["LIVE (momentum_top15_mom_weighted_v1)", "+5,372.9%", "$54.73", "17.4%/yr", "YES"],
+        ["SPY", "+953.2%", "$10.53", "9.6%/yr", "benchmark"],
+        ["Active (LIVE − SPY)", "+4,419.6pp", "—", "+7.78%/yr", "—"],
+    ]
+    story.append(_table(spy_beat,
+                         col_widths=[2.5 * inch, 1.2 * inch, 0.9 * inch,
+                                      1.0 * inch, 0.8 * inch]))
+    story += [Spacer(1, 0.1 * inch)]
+    story += [
+        _para(
+            "<b>$1 invested in LIVE 25 years ago grew to $54.73. The "
+            "same $1 in SPY grew to $10.53. LIVE made 5.2× more in "
+            "dollar terms.</b> v3.73.20 ships an automated test "
+            "(tests/test_v3_73_20_spy_benchmark.py) that fails CI if "
+            "LIVE stops beating SPY on either the long-window doc or "
+            "the recorded eval-harness data. The SP500-beat claim is "
+            "now load-bearing in code, not just in prose.",
+            s["body"],
+        ),
+        _para(
+            "<b>Per-regime breakdown — won 3 of 5; lost 2 (GFC + COVID):</b>",
+            s["body"],
+        ),
+    ]
+    spy_regime = [
+        ["Period", "LIVE", "SPY", "Active", "Ann active", "Beat?"],
+        ["Full 2001-2026", "+5,372.9%", "+953.2%", "+4,419.6pp", "+7.78%/yr", "YES"],
+        ["Dot-com 2001-2003", "+37.6%", "+6.8%", "+30.8pp", "+14.0%/yr", "YES"],
+        ["GFC 2007-2010", "+46.2%", "+91.1%", "-44.9pp", "-17.3%/yr", "NO"],
+        ["Long-bull 2010-2019", "+659.6%", "+257.7%", "+401.9pp", "+8.9%/yr", "YES"],
+        ["COVID 2020", "+9.7%", "+16.4%", "-6.7pp", "-6.7%/yr", "NO"],
+        ["Post-COVID 2021-2026", "+130.3%", "+74.8%", "+55.6pp", "+7.8%/yr", "YES"],
+    ]
+    story.append(_table(spy_regime,
+                         col_widths=[1.6 * inch, 1.0 * inch, 1.0 * inch,
+                                      1.0 * inch, 1.0 * inch, 0.7 * inch]))
+    story += [Spacer(1, 0.15 * inch)]
+    story += [
+        _para(
+            "<b>The GFC weakness is real and severe</b> (-44.9pp over "
+            "2 years, -17.3%/yr underperformance). Likely cause: the "
+            "min-shift weighting concentrated into financial-leverage "
+            "names that took the worst losses 2007-2009. Postmortem "
+            "open. <b>The COVID -6.7pp is small.</b> Net across all "
+            "regimes: clear SPY beat.",
+            s["body"],
+        ),
+        Paragraph("3.6 β-adjusted alpha breakdown (the same 25y data)", s["h2"]),
+        _para(
+            "Cumulative-return tells the dollar story above. β-adjusted "
+            "α tells the 'real edge' story (strips out leveraged-beta "
+            "exposure). Same data:",
             s["body"],
         ),
     ]
