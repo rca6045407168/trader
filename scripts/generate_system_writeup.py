@@ -891,11 +891,13 @@ def build():
          "LIVE -19pp cum-α (vs naive's -8.7pp); complexity tax visible "
          "in financial crisis. Postmortem open."],
         ["Time-versioned universe (no hindsight)",
-         "OPEN",
-         "Universe in src/trader/sectors.py was hand-curated 2024+; "
-         "names selected with knowledge of post-2021 leaders. "
-         "True out-of-sample requires reconstructing the investable "
-         "universe at each historical point. Major lift; not done."],
+         "v0 DONE v3.73.23",
+         "Augmented universe with 4 fetchable GFC casualties (AIG, "
+         "FNMA, FMCC, C). Strategy DID pick FNMA+FMCC at 7-15% weight "
+         "in 2001-2005 (housing bull) BUT correctly rotated OUT by "
+         "2007. Net casualty contribution: +221.84pp positive across "
+         "25y. Gap: LEH/BSC/WAMU/WB/NCC absent from yfinance. v1 "
+         "needs paid data feed."],
         ["Caps verified live in broker positions",
          "PARTIALLY DONE",
          "Today's run (2026-05-06): all 15 broker positions ≤ 8% "
