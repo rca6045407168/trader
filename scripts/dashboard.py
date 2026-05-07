@@ -1,4 +1,4 @@
-"""Live local dashboard for the trader (v3.73.24).
+"""Live local dashboard for the trader (v3.73.25).
 
 v3.73.3 — Risk roadmap dashboard view. Surfaces the 6 Round-2
 advisory-swarm docs (RISK_FRAMEWORK / ADVERSARIAL_THREAT_MODEL /
@@ -6845,6 +6845,37 @@ def view_risk_roadmap():
         "[ROUND_2_SYNTHESIS.md](../docs/ROUND_2_SYNTHESIS.md) is the "
         "anchor doc; the other five are referenced from it."
     )
+
+    # v3.73.25 — ENFORCING-mode 30-run clock. The user's gate before
+    # meaningful capital is "30 clean autonomous runs with ENFORCING
+    # enabled in paper". This widget makes progress visible at the
+    # top of the risk roadmap so we can't lose track of it.
+    try:
+        from trader.enforcing_clock import get_status
+        status = get_status()
+        st.subheader("⏱️ ENFORCING-mode 30-run clock (paper)")
+        cols = st.columns(4)
+        cols[0].metric("Clean runs",
+                        f"{status.completed_runs}/{status.target_runs}",
+                        f"{status.fraction*100:.0f}%")
+        cols[1].metric("Days elapsed", status.days_elapsed)
+        cols[2].metric("Halted", status.halted_runs,
+                        delta_color="inverse" if status.halted_runs else "off")
+        cols[3].metric("Failed", status.failed_runs,
+                        delta_color="inverse" if status.failed_runs else "off")
+        flag = "✅ GATE CLEARED" if status.gate_cleared else (
+            "🟢 streak clean" if status.streak_clean else "🔴 streak BROKEN")
+        st.caption(
+            f"{flag} — counting completed runs in the `runs` table since "
+            f"{status.start_date} (ENFORCING flipped). A single "
+            f"halted/failed run breaks the streak; reset the clock by "
+            f"setting `ENFORCING_CLOCK_START=YYYY-MM-DD` in `.env` after "
+            f"you've fixed the underlying issue."
+        )
+        st.divider()
+    except Exception as e:
+        st.caption(f"_ENFORCING-clock widget failed: {e}_")
+        st.divider()
 
     base = ROOT / "docs"
 

@@ -23,7 +23,7 @@ from reportlab.platypus import (
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_07.pdf"
+OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_07_v25.pdf"
 
 
 def _styles():
@@ -119,16 +119,69 @@ def build():
         ),
         Spacer(1, 0.25 * inch),
         Paragraph(f"As of: {datetime.now():%Y-%m-%d}", s["subtitle"]),
-        Paragraph("Version: v3.73.24 (paper-run integration + dd-recovery + universe v1)",
+        Paragraph("Version: v3.73.25 (ENFORCING flipped in paper + 30-run clock)",
                    s["subtitle"]),
         PageBreak(),
     ]
 
     # ============================================================
-    # v3.73.24 UPDATE BOX (front-of-book delta from v3.73.23)
+    # v3.73.25 UPDATE BOX (front-of-book delta from v3.73.24)
     # ============================================================
     story += [
-        Paragraph("v3.73.24 update — what changed since v3.73.23", s["h1"]),
+        Paragraph("v3.73.25 update — what changed since v3.73.24", s["h1"]),
+        _para(
+            "<b>The 30-run clock is now ticking.</b> The user's gate before "
+            "meaningful capital — \"30 clean autonomous runs with ENFORCING "
+            "enabled in paper\" — only starts tracking the moment ENFORCING "
+            "is actually flipped in the live paper environment AND a counter "
+            "exists to make progress visible. Both happened in v3.73.25.",
+            s["body"],
+        ),
+        _para(
+            "<b>1. ENFORCING flipped in paper .env.</b> "
+            "<i>DRAWDOWN_PROTOCOL_MODE=ENFORCING</i> appended to .env "
+            "(gitignored, local-paper only). Smoke-tested against current "
+            "real journal data: today's DD = +0.00% from $109,810 180d "
+            "peak → tier=GREEN, targets unchanged, mode confirmed. The "
+            "brake is armed and inert (correct behavior). The next time "
+            "drawdown breaches an EARLY/ESCALATION/CATASTROPHIC threshold "
+            "the protocol will mutate targets in production paper instead "
+            "of just warning.",
+            s["body"],
+        ),
+        _para(
+            "<b>2. Clean-runs counter shipped.</b> "
+            "<i>src/trader/enforcing_clock.py</i> + a Risk-roadmap "
+            "dashboard widget. Reads the journal's runs table and counts "
+            "completed runs since the ENFORCING-flip date "
+            "(2026-05-06 default). A single halted/failed run breaks the "
+            "streak; the clock can be rearmed by setting "
+            "ENFORCING_CLOCK_START=YYYY-MM-DD after the underlying "
+            "issue is fixed. 5 unit tests cover zero/counted/broken-"
+            "streak/gate-cleared/rendering.",
+            s["body"],
+        ),
+        _para(
+            "<b>3. The gate is now observable.</b> Every day the dashboard "
+            "shows X/30 with a streak indicator. Until X≥30 with "
+            "streak_clean=True, the meaningful-capital gate is "
+            "explicitly not closed. The previous \"time-bound and "
+            "unmeasured\" status is now \"time-bound and measured\".",
+            s["body"],
+        ),
+        _para(
+            "<b>What v3.73.25 does NOT do.</b> It doesn't accelerate "
+            "real-world clock time. The 30-run window is genuinely 30 "
+            "trading days at minimum (~6 weeks calendar). The system "
+            "now records its driving record honestly; it still has to "
+            "actually drive cleanly for that window. v3.73.25 is the "
+            "moment the engine starts; v3.73.55-ish (when the gate "
+            "actually clears) is when the meaningful-capital case "
+            "becomes defensible.",
+            s["body"],
+        ),
+        PageBreak(),
+        Paragraph("v3.73.24 update — what changed in the prior cut", s["h1"]),
         _para(
             "<b>1. ENFORCING paper-run integration is now empirically proven.</b> "
             "scripts/enforcing_paper_run_integration.py wires a synthetic "
