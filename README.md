@@ -14,22 +14,29 @@ Personal automated equity trading system. Lives in `~/trader/`. Goal: **understa
 
 | Field | Value |
 |---|---|
-| Version | **v3.73.19** |
+| Version | **v3.73.24** |
 | LIVE variant | `momentum_top15_mom_weighted_v1` (top-15 by 12-1 momentum, min-shifted weights, 80% gross target × VIX-gate × deployment-anchor) |
 | Brokerage (paper) | Alpaca paper — actively running |
 | Paper account equity | **$109,789** (+9.79% since funding; +27pp vs SPY over the most recent 5y backfill window post-fix) |
 | **SP500 BEAT (25y, dollar terms)** | **$1 → $54.73 vs SPY's $10.53. Active +4,419pp / +7.78%/yr over 25 years.** |
 | 25y backtest (302 obs) | +546pp cum-α / α-IR 0.70 / β 0.90 (3 of 5 regime windows beat SPY; lost in GFC -44.9pp + COVID -6.7pp) |
 | 5y backtest (47 obs) | +25.6pp cum-α / α-IR 0.46 / β 1.15; cum-active +77pp |
-| Tests | **149 v3.73.* + 800+ legacy = 950+ total**, all green in CI |
-| Strategies tracked | **25** in eval harness (12 active + 6 sizing-aware + 7 passive baselines) |
+| Tests | **903 total**, all green in CI |
+| Strategies tracked | **27** in eval harness (12 active + 6 sizing-aware + 7 passive baselines + 2 recovery-aware) |
 | Live armed? | **No.** Paper only. The Tier-0 gates have not cleared (0/30 clean daily runs, 0/30 post-fix benchmark days, drawdown protocol still ADVISORY). |
 | Capital recommendation | **Paper + plumbing-test live ($500-$2,000) only.** Not for return generation. |
-| Full writeup | **`docs/TRADER_SYSTEM_WRITEUP_2026_05_05.pdf`** (31 pages) |
+| Full writeup | **`docs/TRADER_SYSTEM_WRITEUP_2026_05_07.pdf`** (33 pages) |
 
 ---
 
-## What it actually does (v3.73.19 LIVE behavior)
+## v3.73.24 increments (most recent)
+
+- **ENFORCING paper-run integration** (`scripts/enforcing_paper_run_integration.py` + `docs/ENFORCING_INTEGRATION_2026_05_07.md`). Synthetic -13% DD injected → orchestrator runs end-to-end with `DRAWDOWN_PROTOCOL_MODE=ENFORCING` + `DRY_RUN=true` → tier escalates to CATASTROPHIC → targets MUTATED to 0.0 (LIQUIDATE_ALL). All 3 assertions PASS. Closes the v3.73.22 "loaded fire extinguisher vs working sprinkler" critique.
+- **Drawdown-based recovery rule** (`xs_top15_dd_recovery_aware`). Detects deep DD + fresh rebound from SPY price (not VIX). Fires 4× during the GFC vs 0× for the VIX rule. P&L delta is mixed (-1.24pp vs production); detector works, response (6-1 momentum) is not the right action. Honest negative result documented in `docs/DD_RECOVERY_GFC_TEST_2026_05_07.md`.
+- **Universe v1 candidate list** (`docs/UNIVERSE_V1_2026_05_07.md` + regression in `docs/UNIVERSE_V0_V1_REGRESSION_2026_05_07.md`). Probed 80 large-cap candidates → 77 qualify with full 2000+ history. Merged 120-name universe regression-tested vs 43-name V0: IR drop 0.04 (within 0.10), DD worsening 0.91pp (within 5pp). **Decision: SHIP** — but the swap is gated as a follow-up commit, not flipped in this version.
+- 27 strategies tracked (was 26).
+
+## What it actually does (v3.73.24 LIVE behavior)
 
 1. **Monthly rebalance** to the top-15 momentum names from a 50-name curated US large-cap universe, weighted via min-shift formula `weight ∝ (score - min(score) + 0.01)`, scaled to 80% gross.
 2. **Multiple vol-scaling layers stack** to produce the actual target gross:

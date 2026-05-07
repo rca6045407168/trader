@@ -78,12 +78,19 @@ def test_daily_loss_halt(monkeypatch):
 
 
 def test_daily_loss_below_threshold_proceeds(monkeypatch):
-    """v3.46: 95k from 100k yesterday is -5% → above -6% threshold → proceed."""
+    """v3.46: 95k from 100k yesterday is -5% → above -6% threshold → proceed.
+
+    v3.73.24: also disable the v3.58 all-time-peak circuit breaker for
+    this test — it would otherwise trip on the synthetic snapshots.
+    """
     snaps = [
         {"date": "2026-04-25", "equity": 95_000},
         {"date": "2026-04-24", "equity": 100_000},
     ]
     monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: snaps)
+    monkeypatch.setattr("trader.journal.recent_snapshots",
+                         lambda days=180: snaps)
+    monkeypatch.setenv("DRAWDOWN_BREAKER_STATUS", "SHADOW")
     decision = check_account_risk(equity=95_000, targets={"AAPL": 0.05}, vix=15)
     assert decision.proceed
 
@@ -142,7 +149,11 @@ def test_position_near_cap_warns(monkeypatch):
 # v3.46 NEW: deployment-DD gate tests
 
 def test_deploy_dd_freeze_at_minus_25pct(monkeypatch, tmp_path):
-    """v3.46: -25% from deployment anchor triggers 30-day freeze."""
+    """v3.46: -25% from deployment anchor triggers 30-day freeze.
+
+    v3.73.24: also disable the v3.58 all-time-peak circuit breaker for
+    this test — it would otherwise trip first on the synthetic equity.
+    """
     # Set up deployment anchor at $100k
     anchor_data = {
         "equity_at_deploy": 100_000.0,
@@ -153,6 +164,8 @@ def test_deploy_dd_freeze_at_minus_25pct(monkeypatch, tmp_path):
     (tmp_path / "anchor.json").write_text(json.dumps(anchor_data))
     monkeypatch.setattr("trader.deployment_anchor.ANCHOR_PATH", tmp_path / "anchor.json")
     monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: [])
+    monkeypatch.setattr("trader.journal.recent_snapshots", lambda days=180: [])
+    monkeypatch.setenv("DRAWDOWN_BREAKER_STATUS", "SHADOW")
     # Equity at $74k = -26% from $100k → triggers freeze
     decision = check_account_risk(equity=74_000, targets={"AAPL": 0.05}, vix=15)
     assert not decision.proceed
@@ -171,6 +184,8 @@ def test_deploy_dd_liquidation_at_minus_33pct(monkeypatch, tmp_path):
     (tmp_path / "anchor.json").write_text(json.dumps(anchor_data))
     monkeypatch.setattr("trader.deployment_anchor.ANCHOR_PATH", tmp_path / "anchor.json")
     monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: [])
+    monkeypatch.setattr("trader.journal.recent_snapshots", lambda days=180: [])
+    monkeypatch.setenv("DRAWDOWN_BREAKER_STATUS", "SHADOW")
     # Equity at $66k = -34% from $100k → liquidation gate
     decision = check_account_risk(equity=66_000, targets={"AAPL": 0.05}, vix=15)
     assert not decision.proceed
@@ -188,6 +203,8 @@ def test_deploy_dd_warns_at_minus_15pct(monkeypatch, tmp_path):
     (tmp_path / "anchor.json").write_text(json.dumps(anchor_data))
     monkeypatch.setattr("trader.deployment_anchor.ANCHOR_PATH", tmp_path / "anchor.json")
     monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: [])
+    monkeypatch.setattr("trader.journal.recent_snapshots", lambda days=180: [])
+    monkeypatch.setenv("DRAWDOWN_BREAKER_STATUS", "SHADOW")
     decision = check_account_risk(equity=83_000, targets={"AAPL": 0.05}, vix=15)
     assert decision.proceed
     assert any("deployment dd" in w.lower() for w in decision.warnings)

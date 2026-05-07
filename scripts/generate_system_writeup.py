@@ -23,7 +23,7 @@ from reportlab.platypus import (
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_05.pdf"
+OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_07.pdf"
 
 
 def _styles():
@@ -119,8 +119,84 @@ def build():
         ),
         Spacer(1, 0.25 * inch),
         Paragraph(f"As of: {datetime.now():%Y-%m-%d}", s["subtitle"]),
-        Paragraph("Version: v3.73.13 (after the May 5 hallucination-defense pass)",
+        Paragraph("Version: v3.73.24 (paper-run integration + dd-recovery + universe v1)",
                    s["subtitle"]),
+        PageBreak(),
+    ]
+
+    # ============================================================
+    # v3.73.24 UPDATE BOX (front-of-book delta from v3.73.23)
+    # ============================================================
+    story += [
+        Paragraph("v3.73.24 update — what changed since v3.73.23", s["h1"]),
+        _para(
+            "<b>1. ENFORCING paper-run integration is now empirically proven.</b> "
+            "scripts/enforcing_paper_run_integration.py wires a synthetic "
+            "-13% drawdown into the journal, runs the full trader.main "
+            "orchestrator with DRAWDOWN_PROTOCOL_MODE=ENFORCING and "
+            "DRY_RUN=true, and asserts that the tier fires, the targets "
+            "MUTATE, and the orchestrator's order plan reflects the "
+            "mutated targets. All three assertions pass. The actual tier "
+            "reached was CATASTROPHIC (not ESCALATION) because the live "
+            "broker equity put the DD deeper than the synthetic injection "
+            "alone — that escalation is what the protocol is designed to "
+            "do. Targets reduced to 0.0 (LIQUIDATE_ALL). Proof: "
+            "docs/ENFORCING_INTEGRATION_2026_05_07.md.",
+            s["body"],
+        ),
+        _para(
+            "<b>2. Drawdown-based recovery rule shipped — honest negative "
+            "result documented.</b> The v3.73.22 VIX-based recovery rule "
+            "(xs_top15_recovery_aware) failed to fire during the GFC "
+            "because VIX never crossed below 25 during the actual "
+            "March-June 2009 recovery. The new xs_top15_dd_recovery_aware "
+            "uses SPY price action instead: deep DD (>-25%) AND fresh "
+            "rebound (1-month return >+5%). The detector successfully "
+            "fires 4 times during the GFC vs 0 times for the VIX rule. "
+            "But the response (switch from 12-1 to 6-1 momentum) does "
+            "not improve P&amp;L: -1.24pp vs production over the GFC "
+            "window. The detector is correct; the action is wrong. "
+            "Worth exploring alternative responses (defensive sectors, "
+            "lower gross). Proof: docs/DD_RECOVERY_GFC_TEST_2026_05_07.md.",
+            s["body"],
+        ),
+        _para(
+            "<b>3. Broader universe v1 candidate built and regression-"
+            "tested.</b> Probed 80 large-cap candidates against yfinance; "
+            "77 qualify with full 2000+ history. Merged 120-name "
+            "universe regression-tested vs 43-name V0 over 25 years: "
+            "IR drop 0.04 (within 0.10 threshold), max-DD worsening "
+            "0.91pp (within 5pp threshold), cum return 59.6× vs 79.6× "
+            "(broader universe naturally dilutes the high-conviction "
+            "concentration but stays well within decision rule). "
+            "Decision: SHIP — the swap is gated as a follow-up commit, "
+            "not flipped in v3.73.24, to avoid changing actual paper "
+            "trading picks until the next clean-runs window. Proof: "
+            "docs/UNIVERSE_V1_2026_05_07.md + "
+            "docs/UNIVERSE_V0_V1_REGRESSION_2026_05_07.md.",
+            s["body"],
+        ),
+        _para(
+            "<b>4. Test count reconciled at 903 green.</b> 4 pre-existing "
+            "test_risk_manager failures (unrelated to v3.73.24 work) "
+            "fixed by adding monkeypatch for the v3.58 all-time-peak "
+            "circuit breaker. 27 strategies tracked in the eval harness "
+            "(was 26).",
+            s["body"],
+        ),
+        _para(
+            "<b>What this version is honest about not solving.</b> The "
+            "GFC remains the strategy's worst regime even after the "
+            "drawdown-recovery rule. The detector now fires correctly "
+            "but the 6-1 response is not the right action. The broader-"
+            "universe v1 dilutes returns slightly while preserving IR — "
+            "it improves representativeness but is not a return-"
+            "enhancement story. The live-arming gates (30 clean autonomous "
+            "runs, 30+ days post-fix benchmark tracking, drawdown "
+            "protocol promoted from ADVISORY to ENFORCING in production) "
+            "remain time-bound and have not cleared.",
+            s["body"],
+        ),
         PageBreak(),
     ]
 

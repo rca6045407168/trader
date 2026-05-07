@@ -688,3 +688,74 @@ def long_short_momentum(asof, prices):
 
     # Combine
     return {**long_weights, **short_weights}
+
+
+# ============================================================
+# 19. v3.73.24 — drawdown-based recovery rule
+#
+# The VIX-based recovery rule (xs_top15_recovery_aware) failed
+# in the GFC because VIX never crossed back below 25 during
+# the actual recovery turn (March-June 2009). VIX bottomed at
+# ~30 in early-2009 and only fell below 25 in mid-2009 after
+# the rebound was 6 months old.
+#
+# A drawdown-based detector should fire IN the GFC because it
+# uses SPY's own price action as the regime signal:
+#   recovery_active = (
+#     SPY 180d_drawdown < -25%   # we are in a deep crash
+#     AND SPY 1m_return > +5%    # rebound has started
+#   )
+#
+# When recovery_active, switch to 6-1 momentum (faster
+# rotation), same as the VIX rule. Rule must NOT activate
+# during normal market operation (low DD = no signal).
+#
+# This is a "compound" detector: needs BOTH a deep crash
+# context AND a fresh rebound. Either alone is insufficient.
+# ============================================================
+@register("xs_top15_dd_recovery_aware",
+          "PRODUCTION + drawdown-based recovery rule: switches "
+          "12-1 → 6-1 when SPY is in deep DD AND has just bounced "
+          "(addresses GFC where VIX-based rule failed to fire)")
+def xs_top15_dd_recovery_aware(asof, prices):
+    """Use 6-1 momentum when SPY shows deep-DD-with-rebound; else 12-1."""
+    recovery_active = False
+    try:
+        if "SPY" in prices.columns:
+            spy = prices["SPY"].dropna()
+            spy = spy[spy.index <= asof]
+            if len(spy) >= 180:
+                last_180 = spy.iloc[-180:]
+                peak_180 = float(last_180.max())
+                current = float(spy.iloc[-1])
+                dd_180 = current / peak_180 - 1
+                # 1-month trailing return (~21 trading days)
+                one_month_ago = spy.iloc[-22] if len(spy) >= 22 else spy.iloc[0]
+                ret_1m = current / float(one_month_ago) - 1
+                # Deep crash + fresh rebound
+                recovery_active = (dd_180 < -0.25) and (ret_1m > 0.05)
+    except Exception:
+        pass
+
+    p = _stock_panel(prices)
+    p = p[p.index <= asof]
+    if len(p) < 252:
+        return {}
+    lookback = 6 if recovery_active else 12
+    skip = 1
+    scored = []
+    for sym in p.columns:
+        s = p[sym].dropna()
+        m = momentum_score(s, lookback, skip)
+        if not pd.isna(m):
+            scored.append((sym, float(m)))
+    scored.sort(key=lambda x: -x[1])
+    top15 = scored[:15]
+    if not top15:
+        return {}
+    min_s = min(s for _, s in top15)
+    shifted = [(t, s - min_s + 0.01) for t, s in top15]
+    total = sum(s for _, s in shifted)
+    if total <= 0:
+        return {t: 0.80 / len(top15) for t, _ in top15}
+    return {t: 0.80 * (s / total) for t, s in shifted}
