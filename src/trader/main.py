@@ -231,6 +231,60 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
             print(f"  max-loss check failed (non-fatal): "
                   f"{type(e).__name__}: {e}")
 
+    # v3.73.21: drawdown protocol enforcement. Reads recent
+    # daily_snapshot rows from the journal to compute the rolling-peak
+    # drawdown, evaluates the tier, and (if mode is ENFORCING) mutates
+    # targets per the pre-committed response. Default mode is ADVISORY
+    # (warns only). Flipping to ENFORCING is an explicit operator
+    # decision via DRAWDOWN_PROTOCOL_MODE=ENFORCING in .env.
+    #
+    # The user critique flagged this as the most important production
+    # blocker: "A risk rule that warns but does not act is not a risk
+    # control." This wires the action path so flipping the env-flag is
+    # all it takes to make the rule binding.
+    if momentum_targets:
+        try:
+            from .risk_manager import (
+                apply_drawdown_protocol, drawdown_protocol_mode,
+            )
+            from .journal import _conn
+            with _conn() as c:
+                snap_rows = c.execute(
+                    "SELECT date, equity FROM daily_snapshot "
+                    "WHERE equity > 0 ORDER BY date DESC LIMIT 200"
+                ).fetchall()
+            snapshots = [
+                {"date": r[0], "equity": float(r[1])} for r in snap_rows
+            ]
+            current_equity = (
+                float(get_client().get_account().equity)
+                if not DRY_RUN else 100_000.0
+            )
+            momentum_ranks = sorted(
+                momentum_targets.keys(),
+                key=lambda t: -momentum_targets[t],
+            )
+            adjusted, tier, warnings_dd = apply_drawdown_protocol(
+                equity=current_equity,
+                targets=momentum_targets,
+                snapshots=snapshots,
+                momentum_ranks=momentum_ranks,
+            )
+            mode = drawdown_protocol_mode()
+            for w in warnings_dd:
+                print(f"  -> drawdown protocol[{mode}]: {w}")
+            if mode == "ENFORCING" and adjusted != momentum_targets:
+                print(f"  -> drawdown ENFORCING: targets MUTATED. "
+                      f"Tier={tier.name}, action={tier.enforce_action}")
+                momentum_targets = adjusted
+            elif tier.name != "GREEN":
+                print(f"  -> drawdown ADVISORY: tier {tier.name} fired "
+                      f"but targets unchanged (set DRAWDOWN_PROTOCOL_MODE="
+                      f"ENFORCING in .env to enable mutation)")
+        except Exception as e:
+            print(f"  drawdown protocol check failed (non-fatal): "
+                  f"{type(e).__name__}: {e}")
+
     approved_bottoms: list[dict] = []
     for c in bottoms[:MAX_BOTTOMS_TO_DEBATE]:
         if not USE_DEBATE:

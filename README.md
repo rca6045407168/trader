@@ -105,7 +105,8 @@ These six gates were prescribed by an internal due-diligence review (v3.73.4) an
 | Caps verified live | PARTIAL | Today's broker positions all ≤ 8% (max GOOGL 6.82%); Tech 21.4% (under 25%). Cap math verified live; not yet verified through 30 consecutive rebalances. |
 | 80% target vs actual gross gap explained | DONE | Resolved 2026-05-06: VIX × 0.85 risk gate. Decomposition panel surfaces it permanently. |
 | Drawdown protocol enforced | OPEN | Currently DRAWDOWN_PROTOCOL_MODE=ADVISORY (warns only). Flip to ENFORCING is a deliberate operator decision, not yet made. |
-| GFC weakness postmortem | OPEN | LIVE -19pp vs naive -8.7pp during 2007-2010. Cause likely the min-shift weighting concentrating into financial-leverage names. Not yet investigated. |
+| GFC weakness postmortem | DONE v3.73.21 | docs/GFC_POSTMORTEM_2026_05_07.md. Financials-concentration hypothesis REFUTED (only 10.6% avg). Actual failure mode: **momentum whipsaw at the 2009 Q1 recovery** — strategy was correctly defensive during the 2008 crash but missed the high-beta rebound because 12-1 signals still pointed at WMT/MCD/NFLX. |
+| Drawdown protocol enforced | WIRED v3.73.21 | main.py now calls apply_drawdown_protocol after caps. Default still ADVISORY; flip to ENFORCING is one env-var change (DRAWDOWN_PROTOCOL_MODE=ENFORCING). Code path complete. |
 
 ---
 

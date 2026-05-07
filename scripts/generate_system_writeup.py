@@ -757,11 +757,21 @@ def build():
     story += [
         _para(
             "<b>The GFC weakness is real and severe</b> (-44.9pp over "
-            "2 years, -17.3%/yr underperformance). Likely cause: the "
-            "min-shift weighting concentrated into financial-leverage "
-            "names that took the worst losses 2007-2009. Postmortem "
-            "open. <b>The COVID -6.7pp is small.</b> Net across all "
-            "regimes: clear SPY beat.",
+            "2 years, -17.3%/yr underperformance). <b>v3.73.21 shipped "
+            "the GFC postmortem</b> (<i>docs/GFC_POSTMORTEM_2026_05_07.md</i>) "
+            "which REFUTES the prior hypothesis (financial-leverage "
+            "concentration — financials averaged only 10.6% during the "
+            "GFC) and identifies the actual failure mode: <b>momentum "
+            "whipsaw at the recovery</b>. The strategy was correctly "
+            "defensive during the 2008 crash itself (positive monthly "
+            "active in most months, including +2.5pp through Lehman). "
+            "The bleed was 2009 Q1-Q2: when the recovery rally fired, "
+            "12-1 momentum signals were still pointing at staples (WMT) "
+            "and lower-beta tech (NFLX), so the strategy missed the "
+            "high-beta bounce. Mar 2009: -8.3pp active. Apr 2009: -6.7pp. "
+            "By the time the signal rotated into AMD/AMZN/BAC late 2009, "
+            "the biggest gains were already past. <b>The COVID -6.7pp is "
+            "small.</b> Net across all regimes: clear SPY beat.",
             s["body"],
         ),
         Paragraph("3.6 β-adjusted alpha breakdown (the same 25y data)", s["h2"]),
@@ -900,10 +910,18 @@ def build():
          "OPEN — 7 / 30",
          "v3.73.6 ship started accumulating; need 23 more days"],
         ["Drawdown protocol enforced (not just advisory)",
-         "OPEN",
-         "Currently DRAWDOWN_PROTOCOL_MODE=ADVISORY. "
-         "Flip to ENFORCING requires explicit operator decision; "
-         "v3.73.2 ships the math, not the trigger."],
+         "WIRED v3.73.21",
+         "main.py now calls apply_drawdown_protocol() after caps. "
+         "Default mode still ADVISORY (warns); flipping to ENFORCING "
+         "is a single env-var change (DRAWDOWN_PROTOCOL_MODE=ENFORCING). "
+         "Code path from threshold-fired → targets-mutated → orders-"
+         "generated → broker-reconciled → journaled is now complete."],
+        ["GFC failure-mode postmortem",
+         "DONE v3.73.21",
+         "docs/GFC_POSTMORTEM_2026_05_07.md. Financials hypothesis "
+         "REFUTED (10.6% avg). Actual failure mode: momentum whipsaw "
+         "at the 2009 Q1 recovery — strategy stayed defensive while "
+         "high-beta names rebounded."],
     ]
     story.append(_table(kill_list,
                           col_widths=[2.5 * inch, 1.2 * inch, 3.2 * inch]))
