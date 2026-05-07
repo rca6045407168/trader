@@ -27,11 +27,6 @@ by the dashboard's binding-constraint panel — without this surface,
 operators don't know whether the cap is doing real work or sitting
 idle).
 
-References:
-  - docs/DUE_DILIGENCE_2026_05_05.md §"What I think we should actually
-    ship" — the data-driven justification for shipping the sector cap
-    but skipping the name cap. We ship both anyway because the name
-    cap is cheap defense for a future top-N change.
 """
 from __future__ import annotations
 

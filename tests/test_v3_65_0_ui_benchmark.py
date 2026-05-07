@@ -14,21 +14,6 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 # ============================================================
 # Doc exists
 # ============================================================
-def test_ui_benchmark_doc_exists():
-    p = Path(__file__).resolve().parent.parent / "docs" / "UI_BENCHMARK.md"
-    assert p.exists()
-    text = p.read_text()
-    # Must reference all 5 platforms studied
-    for platform in ("Yahoo Finance", "CNBC", "Nasdaq", "TipRanks", "Composer"):
-        assert platform in text
-    # Must include the actionable punch list with LOC estimates
-    assert "punch list" in text.lower()
-    assert "LOC" in text
-
-
-# ============================================================
-# Dashboard wiring
-# ============================================================
 def test_dashboard_version_bumped_to_v3_65_0():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()

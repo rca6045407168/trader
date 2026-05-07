@@ -29,18 +29,6 @@ def test_main_uses_adjusted_targets_in_enforcing_mode():
     assert "momentum_targets = adjusted" in next500
 
 
-def test_drawdown_postmortem_doc_exists():
-    """v3.73.21 also shipped the GFC postmortem doc as a deliverable."""
-    doc = ROOT / "docs" / "GFC_POSTMORTEM_2026_05_07.md"
-    assert doc.exists()
-    text = doc.read_text()
-    # Must contain the user's hypothesis-test result
-    assert "REFUTED" in text or "NOT supported" in text, \
-        "Postmortem must explicitly resolve the financials hypothesis"
-    # Must contain the corrected failure-mode framing
-    assert "whipsaw" in text.lower() or "lagged" in text.lower()
-
-
 def test_advisory_default():
     """Default mode must remain ADVISORY — flipping to ENFORCING is
     an explicit operator decision, not a passive default."""

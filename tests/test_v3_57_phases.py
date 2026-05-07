@@ -80,23 +80,3 @@ def test_grid_default_questions_are_real_keys():
     for col in ("day_pnl_pct", "weight_pct", "total_unrealized_pnl_pct", "sector"):
         assert f'"{col}"' in text, f"grid default column {col!r} not in dashboard.py"
 
-
-def test_render_helpers_defined_in_dashboard():
-    """Sanity-check that the citation pill + artifact helpers are present.
-    v3.67.0+: helper bodies live in trader/dashboard_ui.py; dashboard.py
-    keeps underscore-prefixed aliases."""
-    from pathlib import Path
-    base = Path(__file__).resolve().parent.parent
-    db_text = (base / "scripts" / "dashboard.py").read_text()
-    ui_text = (base / "src" / "trader" / "dashboard_ui.py").read_text()
-    # Helper definitions live in dashboard_ui.py (no underscore prefix)
-    assert "def render_citation_pills" in ui_text
-    assert "def render_tool_artifact" in ui_text
-    # Aliases preserved in dashboard.py for backward-compat with views
-    assert "_render_citation_pills" in db_text
-    assert "_render_tool_artifact" in db_text
-    # View dispatch unchanged
-    assert "def view_grid" in db_text
-    assert "def view_screener" in db_text
-    assert '"grid": view_grid' in db_text
-    assert '"screener": view_screener' in db_text

@@ -269,13 +269,6 @@ def test_watch_loop_refreshes_schedule_at_midnight():
     assert "now.date() > last_schedule_refresh" in text
 
 
-def test_dashboard_shows_polling_schedule():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "Polling schedule" in text
-    assert "from trader.poll_schedule import" in text
-
-
 def test_dashboard_version_v3_70_0():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()

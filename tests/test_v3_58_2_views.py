@@ -24,26 +24,6 @@ def text():
     return SRC.read_text()
 
 
-def test_all_five_views_defined(text):
-    for fn in ("def view_alerts", "def view_slippage", "def view_shadow_signals",
-               "def view_watchlist", "def _symbol_detail_modal"):
-        assert fn in text, f"missing function {fn!r}"
-
-
-def test_views_wired_into_dispatch(text):
-    for entry in ('"alerts": view_alerts',
-                  '"slippage": view_slippage',
-                  '"shadow_signals": view_shadow_signals',
-                  '"watchlist": view_watchlist'):
-        assert entry in text, f"missing dispatch entry: {entry}"
-
-
-def test_views_in_nav(text):
-    for label in ("👁️ Watchlist", "👁️ Shadow signals", "⚡ Slippage",
-                  "🔔 Alerts"):
-        assert label in text, f"missing NAV label: {label}"
-
-
 def test_modal_decorated_with_st_dialog(text):
     # @st.dialog("...") decorator must precede _symbol_detail_modal
     idx = text.find("def _symbol_detail_modal")

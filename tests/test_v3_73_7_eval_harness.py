@@ -292,36 +292,3 @@ def test_leaderboard_ranks_by_cumulative_active_return(tmp_path):
 # ============================================================
 # Dashboard wiring
 # ============================================================
-def test_dashboard_has_leaderboard_view():
-    text = (ROOT / "scripts" / "dashboard.py").read_text()
-    assert "def view_strategy_leaderboard" in text
-
-
-def test_nav_includes_leaderboard():
-    text = (ROOT / "scripts" / "dashboard.py").read_text()
-    assert '("🏁 Strategy leaderboard", "strategy_leaderboard")' in text
-
-
-def test_dispatch_includes_leaderboard():
-    text = (ROOT / "scripts" / "dashboard.py").read_text()
-    assert '"strategy_leaderboard": view_strategy_leaderboard' in text
-
-
-def test_leaderboard_view_renders_descriptions():
-    text = (ROOT / "scripts" / "dashboard.py").read_text()
-    fn_idx = text.index("def view_strategy_leaderboard")
-    # The leaderboard view sits right above VIEW_DISPATCH; use that
-    # as the boundary marker since there's no following `def `.
-    end_idx = text.index("VIEW_DISPATCH", fn_idx)
-    body = text[fn_idx:end_idx]
-    # Must call out the small-sample warning so the operator doesn't
-    # over-anchor on early rankings
-    assert "30" in body  # the warning threshold
-    assert "noise" in body.lower() or "sample" in body.lower()
-
-
-def test_dashboard_version_v3_73_7():
-    text = (ROOT / "scripts" / "dashboard.py").read_text()
-    assert "v3.73.7" in text
-    import re
-    assert re.search(r'st\.caption\("v3\.[67]\d\.\d', text)

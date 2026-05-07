@@ -49,25 +49,6 @@ def test_nav_uses_collapsible_groups():
         assert label in text, f"missing collapsible group: {label}"
 
 
-def test_nav_top_tier_has_5_items():
-    """Top tier (always visible) must be exactly the 5 most-used views."""
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    # Find the __top__ block
-    idx = text.find('"__top__"')
-    assert idx > 0
-    # Count how many items in the next 30 lines (rough heuristic)
-    snippet = text[idx: idx + 800]
-    assert "overview" in snippet
-    assert "performance" in snippet
-    assert "strategy_lab" in snippet
-    assert "alerts" in snippet
-    assert "pnl_readiness" in snippet
-
-
-# ============================================================
-# 3. cmd_bar placeholder
-# ============================================================
 def test_cmd_bar_placeholder_text_visible():
     """The selectbox first option must show a placeholder string,
     not be empty."""

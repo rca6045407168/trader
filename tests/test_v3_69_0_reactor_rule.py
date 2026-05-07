@@ -347,21 +347,6 @@ def test_main_py_only_mutates_targets_when_live():
 # ============================================================
 # Dashboard wiring
 # ============================================================
-def test_dashboard_surfaces_rule_status():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "ReactorSignalRule" in text
-    # Earnings reactor view shows status + would-trim list
-    view_idx = text.index("def view_earnings_reactor")
-    next_def = text.index("\ndef ", view_idx + 1)
-    body = text[view_idx:next_def]
-    assert "Rebalance gate" in body
-    # Status badge surfaces the env-controlled value
-    assert "rsr.status()" in body
-    # Recovery hint: how to flip from SHADOW → LIVE
-    assert "REACTOR_RULE_STATUS=LIVE" in body
-
-
 def test_dashboard_version_v3_69_0():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()

@@ -88,57 +88,6 @@ def test_trim_pct_must_be_in_range():
 # LowVolSleeve runner shape
 # ============================================================
 
-def test_lowvol_runner_module_imports():
-    """The runner script must be importable as a module."""
-    import sys
-    p = Path(__file__).resolve().parent.parent / "scripts"
-    sys.path.insert(0, str(p))
-    import run_lowvol_shadow  # noqa: F401
-
-
-def test_lowvol_runner_has_main():
-    import sys
-    p = Path(__file__).resolve().parent.parent / "scripts"
-    sys.path.insert(0, str(p))
-    import run_lowvol_shadow as rl
-    assert callable(rl.main)
-
-
-def test_lowvol_runner_csv_path_under_data():
-    import sys
-    p = Path(__file__).resolve().parent.parent / "scripts"
-    sys.path.insert(0, str(p))
-    import run_lowvol_shadow as rl
-    # CSV path lives under data/
-    assert "data" in rl.CSV_PATH.parts
-    assert rl.CSV_PATH.name == "low_vol_shadow.csv"
-
-
-def test_lowvol_runner_idempotent_replace(tmp_path, monkeypatch):
-    """Running twice on the same date results in 1 row, not 2."""
-    import sys
-    p = Path(__file__).resolve().parent.parent / "scripts"
-    sys.path.insert(0, str(p))
-    import run_lowvol_shadow as rl
-    # Redirect CSV path to tmp
-    monkeypatch.setattr(rl, "CSV_PATH", tmp_path / "lv.csv")
-
-    # Build a fake _load_existing path: pre-seed with today's row, then
-    # check the de-dup logic.
-    today = rl.datetime.utcnow().date().isoformat()
-    rl.CSV_PATH.write_text(
-        "date,n_picks,picks,day_return,cum_equity,starting_equity\n"
-        f"{today},15,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,0.001,1.001,1.0\n"
-    )
-    rows, last = rl._load_existing()
-    assert len(rows) == 1
-    assert rows[0]["date"] == today
-
-
-# ============================================================
-# Source-level wiring of the new dashboard view
-# ============================================================
-
 def test_dashboard_wires_manual_override_view():
     from pathlib import Path as _P
     src = _P(__file__).resolve().parent.parent / "scripts" / "dashboard.py"

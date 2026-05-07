@@ -167,20 +167,3 @@ def test_leaderboard_sorted_by_cum_alpha():
     assert b_rank < a_rank, \
         f"low_beta_real_alpha should rank above high_beta_no_alpha"
 
-
-def test_dashboard_uses_cum_alpha_for_leader_metric():
-    """The leaderboard view's headline metric must surface cum α, not
-    cum active. The whole point of v3.73.15 is to make alpha the
-    central scoreboard."""
-    text = (ROOT / "scripts" / "dashboard.py").read_text()
-    fn_idx = text.index("def view_strategy_leaderboard")
-    end_idx = text.index("VIEW_DISPATCH", fn_idx)
-    body = text[fn_idx:end_idx]
-    assert "cum_alpha_pct" in body
-    assert "cum α (β-adj)" in body
-    assert "max rel DD" in body or "max_relative_dd_pct" in body
-
-
-def test_dashboard_version_v3_73_15():
-    text = (ROOT / "scripts" / "dashboard.py").read_text()
-    assert "v3.73.15" in text

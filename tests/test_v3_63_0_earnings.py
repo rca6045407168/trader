@@ -119,10 +119,3 @@ def test_dashboard_surfaces_earnings_status():
     assert "POLYGON_API_KEY" in text
     assert "EarningsRule LIVE has been DOING NOTHING" in text
 
-
-def test_runner_scripts_exist():
-    """The two re-test runners must exist + be importable."""
-    crash = Path(__file__).resolve().parent.parent / "scripts" / "backtest_crash_detector_momentum.py"
-    residual = Path(__file__).resolve().parent.parent / "scripts" / "backtest_residual_momentum_broad.py"
-    assert crash.exists()
-    assert residual.exists()

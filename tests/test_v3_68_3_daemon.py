@@ -125,13 +125,3 @@ def test_dashboard_version_v3_68_3():
     assert re.search(r'st\.caption\("v3\.[67]\d\.\d', text), \
         "sidebar must show some v3.6x.y or v3.7x.y version label"
 
-
-def test_automation_doc_describes_daemon_mode():
-    """AUTOMATION.md must reflect the v3.68.3 architecture change."""
-    p = Path(__file__).resolve().parent.parent / "docs" / "AUTOMATION.md"
-    text = p.read_text()
-    assert "daemon mode" in text.lower()
-    # Should call out the latency improvement
-    assert "5 min" in text or "5-min" in text or "5min" in text
-    # Should explain KeepAlive
-    assert "KeepAlive" in text

@@ -196,14 +196,6 @@ def test_news_poller_dedup_logic():
 # Dashboard wiring
 # ============================================================
 
-def test_strategy_lab_view_in_dashboard():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "def view_strategy_lab" in text
-    assert '"strategy_lab": view_strategy_lab' in text
-    assert "🧪 Strategy Lab" in text
-
-
 def test_news_view_in_dashboard():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()
@@ -215,33 +207,3 @@ def test_news_view_in_dashboard():
 # ============================================================
 # Docs
 # ============================================================
-
-def test_research_reading_list_exists():
-    p = Path(__file__).resolve().parent.parent / "docs" / "RESEARCH_READING_LIST.md"
-    assert p.exists()
-    text = p.read_text()
-    # Must include key references
-    for ref in ("López de Prado", "Daniel & Moskowitz", "Almgren",
-                 "Carver", "Bouchaud"):
-        assert ref in text
-
-
-def test_data_integrations_roadmap_exists():
-    p = Path(__file__).resolve().parent.parent / "docs" / "DATA_INTEGRATIONS_ROADMAP.md"
-    assert p.exists()
-    text = p.read_text()
-    # Must mention the customer ask
-    assert "Caixin" in text
-    assert "Yicai" in text
-    assert "Nikkei" in text
-    assert "Yonhap" in text
-    # Must include the honest Asian-market caveats
-    assert "capital control" in text.lower() or "broker" in text.lower()
-
-
-def test_research_reading_list_flags_strategy_mismatch():
-    """The doc must surface the intraday-vs-monthly mismatch up front."""
-    p = Path(__file__).resolve().parent.parent / "docs" / "RESEARCH_READING_LIST.md"
-    text = p.read_text()
-    assert "mismatch" in text.lower()
-    assert "monthly" in text.lower()

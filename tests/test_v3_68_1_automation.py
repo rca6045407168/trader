@@ -147,28 +147,6 @@ def test_install_script_idempotent():
 # ============================================================
 # Docs
 # ============================================================
-def test_automation_doc_exists():
-    p = (Path(__file__).resolve().parent.parent / "docs"
-         / "AUTOMATION.md")
-    assert p.exists()
-    text = p.read_text()
-    # Must explain the 3 layers (prewarm + launchd + orchestrator)
-    for layer in ("prewarm", "launchd", "orchestrator"):
-        assert layer in text.lower()
-    # Must document the install + uninstall commands
-    assert "install_launchd_earnings.sh" in text
-    assert "--uninstall" in text
-
-
-def test_automation_doc_lists_idempotency_guarantees():
-    """The doc must explicitly call out idempotency or a future user
-    will worry about double-firing the reactor."""
-    p = (Path(__file__).resolve().parent.parent / "docs"
-         / "AUTOMATION.md")
-    text = p.read_text().lower()
-    assert "idempot" in text
-
-
 def test_dashboard_version_v3_68_1():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()

@@ -734,44 +734,11 @@ def main(force: bool = False) -> dict:
     except Exception as e:
         print(f"  decision_report write failed (non-fatal): {type(e).__name__}: {e}")
 
-    # v3.73.7: write a row to strategy_eval for every candidate
-    # strategy on every rebalance run. The eval runner is cheap
-    # (pure functions on the same price panel; ~1-2s for all 15),
-    # and accumulating rows is what turns the leaderboard into a
-    # real signal over time. Failures here MUST NOT fail the run.
-    #
-    # v3.73.14: also fetch ETFs (VTI/VXUS/BND/AGG) alongside SPY so
-    # the passive baselines (buy_and_hold_spy, boglehead_three_fund,
-    # simple_60_40) can price their picks. The active stock-picking
-    # strategies filter to the stock universe via _stock_panel(),
-    # so adding ETFs to the panel doesn't contaminate them.
-    try:
-        from .eval_runner import evaluate_at, settle_returns
-        from .data import fetch_history
-        import pandas as pd
-        end = pd.Timestamp.today()
-        start = (end - pd.DateOffset(months=18)).strftime("%Y-%m-%d")
-        ETF_TICKERS = [
-            # Original passive baselines
-            "SPY", "VTI", "VXUS", "BND", "AGG",
-            # v3.73.18 harsher-baselines: tech, growth, momentum,
-            # equal-weight, sector-pure. Tests our active edge against
-            # appropriate-difficulty passive alternatives.
-            "QQQ", "MTUM", "SCHG", "VUG", "XLK", "RSP",
-        ]
-        prices = fetch_history(universe + ETF_TICKERS, start=start)
-        prices = prices.dropna(axis=1, how="any")
-        if not prices.empty:
-            asof = prices.index[-1]
-            # Pass full panel (incl. ETFs) so passive baselines work;
-            # stock strategies filter to universe internally.
-            n = evaluate_at(asof, universe, prices=prices)
-            print(f"  -> strategy_eval: recorded {n} new picks for {asof.date()}")
-            settled = settle_returns(asof, prices=prices)
-            if settled:
-                print(f"  -> strategy_eval: settled {settled} prior windows")
-    except Exception as e:
-        print(f"  strategy_eval hook failed (non-fatal): {type(e).__name__}: {e}")
+    # v4.0.0 freeze: the daily strategy_eval hook is removed. The
+    # eval_runner / eval_strategies modules remain importable for
+    # ad-hoc research but are no longer called on the schedule.
+    # "Tracked candidates" running daily implied a decision was being
+    # made between them; no decision is being made.
 
     if not DRY_RUN:
         finish_run(run_id, status="completed",

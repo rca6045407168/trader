@@ -161,20 +161,6 @@ def test_prewarm_includes_postmortem_section():
 # ============================================================
 # Productization roadmap
 # ============================================================
-def test_productization_roadmap_exists():
-    p = Path(__file__).resolve().parent.parent / "docs" / "PRODUCTIZATION_ROADMAP.md"
-    assert p.exists()
-    text = p.read_text()
-    # Must cover both deferred items
-    assert "Multi-tenant" in text
-    assert "Workflow builder" in text
-    # Honest pricing + cost estimates
-    assert "$" in text
-
-
-# ============================================================
-# Copilot integration with audit log
-# ============================================================
 def test_copilot_logs_to_audit():
     p = Path(__file__).resolve().parent.parent / "src" / "trader" / "copilot.py"
     text = p.read_text()

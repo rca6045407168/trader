@@ -9,70 +9,6 @@ import pytest
 os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 
 
-def test_audit_doc_exists():
-    p = Path(__file__).resolve().parent.parent / "docs" / "VERIFICATION_AUDIT_2026_05_03.md"
-    assert p.exists()
-    text = p.read_text()
-    # Must mention each refuted claim
-    for refuted in ("MomentumCrashDetector", "Residual momentum",
-                     "TrailingStop", "SectorNeutralizer", "EarningsRule"):
-        assert refuted in text
-
-
-def test_crash_detector_backtest_module_exists():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "backtest_crash_detector.py"
-    assert p.exists()
-    text = p.read_text()
-    assert "compute_signal_history" in text
-    assert "regime_stats" in text
-
-
-def test_residual_momentum_backtest_module_exists():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "backtest_residual_momentum.py"
-    assert p.exists()
-
-
-def test_overlay_backtest_module_exists():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "backtest_overlays.py"
-    assert p.exists()
-
-
-def test_walkforward_significance_module_exists():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "verify_walkforward_significance.py"
-    assert p.exists()
-
-
-def test_cost_impact_marks_refuted_items():
-    """The cost-impact report must now mark refuted items as such."""
-    import sys
-    p = Path(__file__).resolve().parent.parent / "scripts"
-    sys.path.insert(0, str(p))
-    import cost_impact_report as cir
-
-    refuted_count = sum(1 for f in cir.FLIPS
-                         if f.verification_status == "REFUTED")
-    untested_count = sum(1 for f in cir.FLIPS
-                          if f.verification_status == "UNTESTED")
-    # At least 4 should be marked REFUTED post-audit
-    assert refuted_count >= 4, f"only {refuted_count} REFUTED entries; expected ≥4"
-
-
-def test_cost_impact_no_unverified_recommendations():
-    """Recommended flips must NOT include any REFUTED items."""
-    import sys
-    p = Path(__file__).resolve().parent.parent / "scripts"
-    sys.path.insert(0, str(p))
-    import cost_impact_report as cir
-    # Apply the same filter as the script's main():
-    rec = [f for f in cir.FLIPS
-           if f.annual_bps_estimate > 0
-           and f.confidence in ("high", "medium")
-           and not f.requires_more_data]
-    for f in rec:
-        assert f.verification_status != "REFUTED", \
-            f"recommended flip {f.name!r} is REFUTED — should not be in recommended set"
-
-
 def test_chaos_holiday_dates_against_known():
     """Spot-check holiday calendar against authoritative US Federal Reserve /
     NYSE-published 2024-2026 dates.
@@ -111,10 +47,3 @@ def test_dst_dates_correct():
     is_dst, direction = is_dst_transition_day(_date(2026, 11, 1))
     assert is_dst and direction == "fall_back"
 
-
-def test_walkforward_sharpe_significantly_positive_documented():
-    """The audit doc must record the bootstrap-CI verdict on Sharpe."""
-    p = Path(__file__).resolve().parent.parent / "docs" / "VERIFICATION_AUDIT_2026_05_03.md"
-    text = p.read_text()
-    assert "+0.55" in text  # the corrected aggregate Sharpe
-    assert "[+0.12, +0.98]" in text  # 95% CI

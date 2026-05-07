@@ -127,9 +127,7 @@ def rank_vertical_winner(
       - Cumulative return 34.56% (XS top-15: 34.30%)
 
     Caveat: 18 obs, single regime. We feature-flag this mode behind
-    STRATEGY_MODE=VERTICAL_WINNER for in-prod comparison. See
-    docs/DUE_DILIGENCE_2026_05_05.md §"What I think we should actually
-    ship" for the analysis.
+    STRATEGY_MODE=VERTICAL_WINNER for in-prod comparison.
     """
     from .sectors import get_sector  # avoid circular import on package init
 

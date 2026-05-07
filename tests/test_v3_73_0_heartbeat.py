@@ -1,7 +1,6 @@
-"""Tests for v3.73.0 — daily-orchestrator heartbeat alert.
+"""Tests for the daily-orchestrator heartbeat alert.
 
-Per ROUND_2_SYNTHESIS Block A item #6: detect when the daily run
-silently didn't fire.
+Detect when the daily run silently didn't fire.
 """
 from __future__ import annotations
 

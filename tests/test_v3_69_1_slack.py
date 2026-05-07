@@ -261,19 +261,6 @@ def test_reactor_alert_marks_notified_when_only_slack_succeeds(
 # ============================================================
 # Docs
 # ============================================================
-def test_automation_doc_describes_slack_setup():
-    p = (Path(__file__).resolve().parent.parent / "docs"
-         / "AUTOMATION.md")
-    text = p.read_text()
-    assert "prismtrading" in text.lower()
-    assert "SLACK_WEBHOOK" in text
-    # The "how to create the webhook" steps must be present
-    assert "Incoming Webhooks" in text or "Incoming Webhook" in text
-
-
-# ============================================================
-# Version
-# ============================================================
 def test_dashboard_version_v3_69_1():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()

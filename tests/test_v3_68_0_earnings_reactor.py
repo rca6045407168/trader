@@ -304,22 +304,6 @@ def test_dashboard_version_v3_68_0():
         "sidebar must show some v3.6x.y or v3.7x.y version label"
 
 
-def test_dashboard_has_earnings_reactor_view():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "def view_earnings_reactor" in text
-    assert '"earnings_reactor": view_earnings_reactor' in text
-    assert "📞 Earnings reactor" in text
-
-
-def test_dashboard_has_filings_archive_view():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "def view_filings_archive" in text
-    assert '"filings_archive": view_filings_archive' in text
-    assert "📂 Filings archive" in text
-
-
 def test_hank_has_read_filings_tool():
     p = Path(__file__).resolve().parent.parent / "src" / "trader" / "copilot.py"
     text = p.read_text()

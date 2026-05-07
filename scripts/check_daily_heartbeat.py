@@ -1,10 +1,5 @@
 """Cron heartbeat — alert when the daily orchestrator silently didn't fire.
 
-Per Round-2 RISK_FRAMEWORK + ROUND_2_SYNTHESIS Block A item #6:
-"Cron heartbeat alert (2h): 'did the daily run actually fire' check
-that emails if missing. Trivial; eliminates a known operational
-blindspot."
-
 Silent cron failure is the failure mode at the top of the operational-
 risk list. Real evidence: at the time this script was built, May 4
 (a Monday) had ZERO rows in the journal.runs table — meaning Monday's

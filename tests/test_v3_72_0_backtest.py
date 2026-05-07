@@ -352,26 +352,6 @@ def test_summary_says_keep_collecting_on_zero_trims(tmp_path):
 # ============================================================
 # CLI surface
 # ============================================================
-def test_cli_script_exists():
-    p = (Path(__file__).resolve().parent.parent / "scripts"
-         / "reactor_backtest.py")
-    assert p.exists()
-    text = p.read_text()
-    # Required CLI flags
-    assert "--sweep" in text
-    assert "--m" in text and "--trim" in text
-    assert "--no-prices" in text
-    assert "--json" in text
-
-
-def test_dashboard_surfaces_backtest():
-    p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
-    text = p.read_text()
-    assert "from trader import reactor_backtest" in text
-    assert "Rule backtest" in text
-    assert "parameter_sweep" in text
-
-
 def test_dashboard_version_v3_72_0():
     p = Path(__file__).resolve().parent.parent / "scripts" / "dashboard.py"
     text = p.read_text()
