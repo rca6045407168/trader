@@ -76,13 +76,23 @@ def test_5y_eval_harness_shows_live_beats_spy():
     explicitly in CI."""
     db = ROOT / "data" / "journal.db"
     if not db.exists():
-        # In CI on a fresh checkout the journal won't exist; skip
-        # rather than fail. The on-machine version of this test
-        # is the binding one.
+        # Fresh checkout — skip rather than fail. The on-machine
+        # version of this test is the binding one.
         import pytest
         pytest.skip("journal.db not present in CI checkout")
 
     con = sqlite3.connect(db)
+    # The strategy_eval table only exists after the v3.73.7 backfill
+    # has been run. CI checkouts may have a smaller journal.db
+    # without it. Skip rather than fail.
+    has_table = con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='strategy_eval'"
+    ).fetchone()
+    if not has_table:
+        con.close()
+        import pytest
+        pytest.skip("strategy_eval table absent in CI journal")
+
     rows = con.execute(
         """SELECT period_return, spy_return
            FROM strategy_eval
