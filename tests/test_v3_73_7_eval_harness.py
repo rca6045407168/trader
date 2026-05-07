@@ -23,30 +23,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # ============================================================
 # Registry
 # ============================================================
-def test_twenty_six_strategies_registered():
-    """v3.73.18: 12 active + 3 baseline (Boglehead) + 3 sizing-aware +
-    7 harsher-passive (QQQ/MTUM/SCHG/VUG/XLK/RSP equal-weight + naive
-    top15 12mo). Total 25.
-
-    Wait — count again:
-      Original 12 active: xs_top15, xs_top15_capped, vertical_winner,
-        xs_top8, xs_top25, score_weighted_xs, inv_vol_xs,
-        dual_momentum, sector_rotation_top3, equal_weight_universe,
-        xs_top15_min_shifted, long_short_momentum
-      3 boglehead baselines: buy_and_hold_spy, boglehead_three_fund,
-        simple_60_40
-      3 sizing-aware: xs_top15_vol_targeted, score_weighted_vol_parity,
-        xs_top15_reactor_trimmed
-      7 harsher-baselines: buy_and_hold_qqq, buy_and_hold_mtum,
-        buy_and_hold_schg, buy_and_hold_vug, buy_and_hold_xlk,
-        equal_weight_sp500, naive_top15_12mo_return
-
-    12 + 3 + 3 + 7 = 25.
-    """
+def test_twentysix_strategies_registered():
+    """v3.73.22: 25 prior + 1 recovery-aware (xs_top15_recovery_aware) = 26."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 25, \
-        f"expected 25 strategies, got {len(specs)}: {[s.name for s in specs]}"
+    assert len(specs) == 26, \
+        f"expected 26 strategies, got {len(specs)}: {[s.name for s in specs]}"
 
 
 def test_canonical_strategy_names_present():
@@ -76,6 +58,8 @@ def test_canonical_strategy_names_present():
         "equal_weight_sp500",
         # Adversarial active baseline (1)
         "naive_top15_12mo_return",
+        # Recovery-aware (1) — v3.73.22
+        "xs_top15_recovery_aware",
     }
     assert names == expected, f"missing: {expected - names}, extra: {names - expected}"
 
@@ -219,15 +203,16 @@ def test_evaluate_at_inserts_rows_and_is_idempotent(tmp_path, monkeypatch):
     #     all return SPY fallback when their ETF isn't in panel
     #   1 naive_top15_12mo_return: returns picks if 252+ days
     # Expected inserts: 11 + 3 + 3 + 6 + 1 = 24 (long_short fails).
+    # v3.73.22: 24 prior + recovery_aware (1 more producing picks) = 25
     n1 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
-    assert n1 == 24, f"first call should insert 24 rows; got {n1}"
+    assert n1 == 25, f"first call should insert 25 rows; got {n1}"
     n2 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
     assert n2 == 0, f"second call should be idempotent; got {n2} new rows"
 
     con = sqlite3.connect(db)
     total = con.execute("SELECT COUNT(*) FROM strategy_eval").fetchone()[0]
     con.close()
-    assert total == 24
+    assert total == 25
 
 
 def test_settle_returns_only_settles_unsettled_rows(tmp_path):

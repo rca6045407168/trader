@@ -528,6 +528,78 @@ def score_weighted_vol_parity(asof, prices):
 
 
 # ============================================================
+# 16c. Recovery-aware momentum (v3.73.22) — addresses GFC whipsaw
+#
+# The v3.73.21 GFC postmortem identified the failure mode:
+# 12-1 momentum lagged the 2009 Q1 recovery rally because the
+# signal still pointed at defensives (WMT, NFLX, MCD) that had
+# won by losing-less, while high-beta names (AMD, AMZN, BAC)
+# were leading the bounce.
+#
+# This candidate uses a VIX-compression-after-panic signal as a
+# regime detector:
+#   recovery_active = (current_vix < 25) AND (max_vix_30d > 35)
+# When recovery_active, use 6-1 momentum (faster rotation)
+# instead of 12-1. Otherwise use the standard 12-1.
+#
+# 6-1 instead of 3-1 because 3-1 is noisier; 6-1 still gives
+# reasonable signal stability while dropping the lagging
+# defensive names that 12-1 over-weights at regime turns.
+# ============================================================
+@register("xs_top15_recovery_aware",
+          "PRODUCTION + recovery rule: switches from 12-1 to 6-1 "
+          "momentum when VIX compression after panic suggests a "
+          "rally is starting (addresses 2009-Q1 whipsaw)")
+def xs_top15_recovery_aware(asof, prices):
+    """Use 6-1 momentum when recovery_active; else 12-1 (production)."""
+    # Detect recovery: VIX compression after panic
+    recovery_active = False
+    try:
+        if "^VIX" in prices.columns:
+            vix_series = prices["^VIX"].dropna()
+        elif "VIX" in prices.columns:
+            vix_series = prices["VIX"].dropna()
+        else:
+            vix_series = None
+
+        if vix_series is not None:
+            vix_now = vix_series[vix_series.index <= asof]
+            if not vix_now.empty:
+                current_vix = float(vix_now.iloc[-1])
+                last_30 = vix_now.iloc[-30:] if len(vix_now) >= 30 else vix_now
+                max_30 = float(last_30.max())
+                # Recovery: current low + recent panic
+                recovery_active = (current_vix < 25) and (max_30 > 35)
+    except Exception:
+        pass
+
+    p = _stock_panel(prices)
+    p = p[p.index <= asof]
+    if len(p) < 252:
+        return {}
+    # Choose lookback: 6 months in recovery, 12 otherwise
+    lookback = 6 if recovery_active else 12
+    skip = 1
+    scored = []
+    for sym in p.columns:
+        s = p[sym].dropna()
+        m = momentum_score(s, lookback, skip)
+        if not pd.isna(m):
+            scored.append((sym, float(m)))
+    scored.sort(key=lambda x: -x[1])
+    top15 = scored[:15]
+    if not top15:
+        return {}
+    # Min-shift weighting (same as production)
+    min_s = min(s for _, s in top15)
+    shifted = [(t, s - min_s + 0.01) for t, s in top15]
+    total = sum(s for _, s in shifted)
+    if total <= 0:
+        return {t: 0.80 / len(top15) for t, _ in top15}
+    return {t: 0.80 * (s / total) for t, s in shifted}
+
+
+# ============================================================
 # 17. Production picks + reactor-driven trims (v3.73.17)
 #
 #     Same picks + min-shift weights as the production LIVE
