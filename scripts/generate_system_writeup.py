@@ -23,7 +23,7 @@ from reportlab.platypus import (
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_07_v26.pdf"
+OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_07_v27.pdf"
 
 
 def _styles():
@@ -119,16 +119,70 @@ def build():
         ),
         Spacer(1, 0.25 * inch),
         Paragraph(f"As of: {datetime.now():%Y-%m-%d}", s["subtitle"]),
-        Paragraph("Version: v3.73.26 (weekly ENFORCING canary — silent-brake regression catcher)",
+        Paragraph("Version: v3.73.27 (tier-sweep canary + stale-data halt)",
                    s["subtitle"]),
         PageBreak(),
     ]
 
     # ============================================================
-    # v3.73.26 UPDATE BOX (front-of-book delta from v3.73.25)
+    # v3.73.27 UPDATE BOX (front-of-book delta from v3.73.26)
     # ============================================================
     story += [
-        Paragraph("v3.73.26 update — what changed since v3.73.25", s["h1"]),
+        Paragraph("v3.73.27 update — what changed since v3.73.26", s["h1"]),
+        _para(
+            "<b>Same vein as v3.73.26: gate integrity, not capital "
+            "readiness.</b> The user's correctly-calibrated verdict on "
+            "v3.73.26 was \"silent-brake regression catcher — quality "
+            "control upgrade, not capital-readiness.\" v3.73.27 extends "
+            "that paranoia in two directions.",
+            s["body"],
+        ),
+        _para(
+            "<b>1. Tier-by-tier canary coverage.</b> v3.73.26 caught "
+            "\"brake totally inert.\" v3.73.27 catches \"brake works for "
+            "one tier but quietly broken for another\" — e.g. ESCALATION "
+            "still trims to 30% but CATASTROPHIC silently stops "
+            "liquidating. The Sunday canary now sweeps every tier "
+            "(GREEN, YELLOW, RED, ESCALATION, CATASTROPHIC) and asserts "
+            "the EXACT expected behavior: tier name, action enum, AND "
+            "specific final gross (80% / 80% / 80% / 30% / 0%). Today's "
+            "sweep: 5/5 PASS. Slack/email on any single failure.",
+            s["body"],
+        ),
+        _para(
+            "<b>2. Stale-data drift halt.</b> The kill_switch module's "
+            "header docstring has claimed since day one that it halts "
+            "if yfinance data is &gt;5 days stale. The check was never "
+            "actually implemented. v3.73.27 closes that gap: a "
+            "positive-confirmation freshness check fetches SPY's "
+            "latest close, asserts it's within 3 business days of "
+            "today, and halts the run with an explicit reason if it "
+            "isn't. Bypass via SKIP_DATA_FRESHNESS_CHECK=true for "
+            "offline tests / weekend backfills. 6 new tests cover "
+            "recent / stale / empty / exception / skip-flag paths.",
+            s["body"],
+        ),
+        _para(
+            "<b>Why this matters for the 30-run gate.</b> The user's "
+            "blunt framing was \"30 trading days without lying, drifting, "
+            "crashing, or needing you.\" Stale-data picks would be a "
+            "form of \"drifting\" — the model trades on prices that "
+            "don't reflect reality, with real positions moving "
+            "underneath them. Now that path is a clean halt instead of "
+            "a quiet bad trade. 921 tests total green (was 911).",
+            s["body"],
+        ),
+        _para(
+            "<b>What v3.73.27 does NOT do.</b> Same caveat as the prior "
+            "two cuts: cannot accelerate calendar time. The clock still "
+            "ticks ~6 weeks calendar minimum. v3.73.27 just makes more "
+            "of the failure modes that could SHOULD halt the run "
+            "actually halt it cleanly, instead of leaving them as "
+            "silent corruption.",
+            s["body"],
+        ),
+        PageBreak(),
+        Paragraph("v3.73.26 update — what changed in the prior cut", s["h1"]),
         _para(
             "<b>The 30-run clock now has a regression catcher.</b> The "
             "v3.73.25 cut started the clock but left a real silent-failure "

@@ -6,3 +6,4 @@ Weekly verification that the drawdown protocol still mutates targets correctly u
 |---|---|---|---|---|
 | 2026-05-06T20:43:51 | ENFORCING | ESCALATION | ✅ | 80.00% → 30.00% |
 | 2026-05-06T20:45:26 | ENFORCING | ESCALATION | ✅ | 80.00% → 30.00% |
+| 2026-05-06T21:06:17 | ENFORCING | 5/5 | ✅ | GREEN, YELLOW, RED, ESCALATION, CATASTROPHIC |

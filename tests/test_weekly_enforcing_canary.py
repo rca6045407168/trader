@@ -70,3 +70,64 @@ def test_canary_synthetic_snaps_have_correct_dd():
     current = snaps[0]["equity"]  # newest first
     dd = current / peak - 1
     assert abs(dd - (-0.13)) < 0.001, f"expected ~-13%, got {dd*100:.2f}%"
+
+
+# ============================================================
+# v3.73.27 — tier-by-tier sweep tests. Each tier must produce
+# the exact expected behavior. A partial regression (e.g.
+# CATASTROPHIC silently broken but ESCALATION still works) would
+# pass v3.73.26's single-DD canary but FAIL these.
+# ============================================================
+def test_full_tier_sweep_passes_under_enforcing(monkeypatch):
+    """All 5 tiers must produce their exact expected behavior."""
+    monkeypatch.setenv("DRAWDOWN_PROTOCOL_MODE", "ENFORCING")
+    if "weekly_enforcing_canary" in sys.modules:
+        del sys.modules["weekly_enforcing_canary"]
+    import weekly_enforcing_canary as canary  # type: ignore
+    importlib.reload(canary)
+
+    sweep = canary.run_full_tier_sweep()
+    assert sweep["ok"] is True, (
+        f"Tier sweep FAILED: {sweep['passed']}/{sweep['total']} passed. "
+        f"Failed tiers: " + "; ".join(
+            r["detail"] for r in sweep["results"] if not r["ok"])
+    )
+    assert sweep["passed"] == 5
+    assert sweep["total"] == 5
+
+
+def test_green_tier_unchanged(monkeypatch):
+    monkeypatch.setenv("DRAWDOWN_PROTOCOL_MODE", "ENFORCING")
+    if "weekly_enforcing_canary" in sys.modules:
+        del sys.modules["weekly_enforcing_canary"]
+    import weekly_enforcing_canary as canary  # type: ignore
+    importlib.reload(canary)
+    r = canary.run_one_tier(-0.03, "GREEN", 0.7999, 0.8001, "NONE", "no DD")
+    assert r["ok"] is True
+    assert r["tier"] == "GREEN"
+    assert r["action"] == "NONE"
+
+
+def test_escalation_tier_trims_to_30pct(monkeypatch):
+    monkeypatch.setenv("DRAWDOWN_PROTOCOL_MODE", "ENFORCING")
+    if "weekly_enforcing_canary" in sys.modules:
+        del sys.modules["weekly_enforcing_canary"]
+    import weekly_enforcing_canary as canary  # type: ignore
+    importlib.reload(canary)
+    r = canary.run_one_tier(
+        -0.13, "ESCALATION", 0.2999, 0.3001, "TRIM_TO_TOP5", "trim")
+    assert r["ok"] is True
+    assert abs(r["final_gross"] - 0.30) < 0.001
+
+
+def test_catastrophic_tier_liquidates_all(monkeypatch):
+    monkeypatch.setenv("DRAWDOWN_PROTOCOL_MODE", "ENFORCING")
+    if "weekly_enforcing_canary" in sys.modules:
+        del sys.modules["weekly_enforcing_canary"]
+    import weekly_enforcing_canary as canary  # type: ignore
+    importlib.reload(canary)
+    r = canary.run_one_tier(
+        -0.17, "CATASTROPHIC", 0.0, 0.0001,
+        "LIQUIDATE_ALL", "liquidate")
+    assert r["ok"] is True
+    assert r["final_gross"] < 0.001

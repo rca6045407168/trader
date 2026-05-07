@@ -23,6 +23,52 @@ WEEK_LOSS_THRESHOLD = 0.10  # halt if down 10% in 7 days
 MONTH_LOSS_THRESHOLD = 0.20  # halt if down 20% in 30 days
 DD_FROM_PEAK_THRESHOLD = 0.15  # halt if down 15% from rolling 30d peak
 
+# v3.73.27 — data-freshness threshold. The header docstring of this
+# module has claimed "yfinance data is stale (>5 days behind)" since
+# day one but the actual check was never implemented. Closing that
+# gap now: any rebalance that runs against price data older than 3
+# business days is a "drifting" failure mode the user explicitly
+# called out — picks would be made on stale signals while real
+# positions move underneath them.
+DATA_STALENESS_BUSINESS_DAYS = 3
+
+
+def _check_data_freshness() -> tuple[bool, str | None]:
+    """Returns (is_fresh, message_if_stale).
+
+    Fetches the most recent SPY close and asserts it's within
+    DATA_STALENESS_BUSINESS_DAYS business days of today. yfinance
+    failure → not fresh (assume worst case).
+
+    NOTE: This is a positive-confirmation check (we want to PROVE
+    data is fresh; absence of confirmation halts).
+    """
+    try:
+        import pandas as pd
+        from .data import fetch_history
+        # 30-day window so we get at least a few prints even on
+        # weekends / holidays
+        end_d = pd.Timestamp.today()
+        start_d = (end_d - pd.DateOffset(days=30)).strftime("%Y-%m-%d")
+        df = fetch_history(["SPY"], start=start_d, force_refresh=True)
+        if df is None or df.empty:
+            return False, "yfinance returned empty SPY history"
+        latest = df.index[-1]
+        today_bd = pd.Timestamp.today().normalize()
+        # Count business days between latest data and today
+        business_days_stale = len(pd.bdate_range(
+            latest.normalize() + pd.Timedelta(days=1), today_bd))
+        if business_days_stale > DATA_STALENESS_BUSINESS_DAYS:
+            return False, (
+                f"yfinance SPY data stale: latest={latest.date()}, "
+                f"today={today_bd.date()}, "
+                f"{business_days_stale} business days behind "
+                f"(threshold {DATA_STALENESS_BUSINESS_DAYS})"
+            )
+        return True, None
+    except Exception as e:
+        return False, f"data freshness check failed: {type(e).__name__}: {e}"
+
 
 def check_kill_triggers(equity: float | None = None) -> tuple[bool, list[str]]:
     """Returns (should_halt, reasons). Run this BEFORE any order submission."""
@@ -59,6 +105,14 @@ def check_kill_triggers(equity: float | None = None) -> tuple[bool, list[str]]:
                 reasons.append(
                     f"drawdown {(equity/peak-1):+.2%} from 30d peak ${peak:.0f} > -{DD_FROM_PEAK_THRESHOLD:.0%}"
                 )
+
+    # 4. v3.73.27 — data freshness. Halt if yfinance is stale.
+    # Skippable via SKIP_DATA_FRESHNESS_CHECK=true (e.g. weekend backfills,
+    # offline tests). Stays on by default in production paper.
+    if os.getenv("SKIP_DATA_FRESHNESS_CHECK", "").lower() != "true":
+        is_fresh, msg = _check_data_freshness()
+        if not is_fresh:
+            reasons.append(msg or "data freshness check unknown failure")
 
     return (len(reasons) > 0, reasons)
 
