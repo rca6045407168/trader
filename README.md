@@ -14,7 +14,7 @@ Personal automated equity trading system. Lives in `~/trader/`. Goal: **understa
 
 | Field | Value |
 |---|---|
-| Version | **v3.73.27** |
+| Version | **v3.73.28** |
 | LIVE variant | `momentum_top15_mom_weighted_v1` (top-15 by 12-1 momentum, min-shifted weights, 80% gross target × VIX-gate × deployment-anchor) |
 | Brokerage (paper) | Alpaca paper — actively running |
 | Paper account equity | **$109,789** (+9.79% since funding; +27pp vs SPY over the most recent 5y backfill window post-fix) |
@@ -22,15 +22,22 @@ Personal automated equity trading system. Lives in `~/trader/`. Goal: **understa
 | 25y backtest (302 obs) | +546pp cum-α / α-IR 0.70 / β 0.90 (3 of 5 regime windows beat SPY; lost in GFC -44.9pp + COVID -6.7pp) |
 | 5y backtest (47 obs) | +25.6pp cum-α / α-IR 0.46 / β 1.15; cum-active +77pp |
 | Tests | **921 total**, all green in CI |
-| Strategies tracked | **27** in eval harness (12 active + 6 sizing-aware + 7 passive baselines + 2 recovery-aware) |
+| Strategies tracked | **28** in eval harness (12 active + 6 sizing-aware + 7 passive baselines + 3 recovery-aware) |
 | ENFORCING clock (paper) | **0/30 clean runs** since 2026-05-06 — clock started; surfaced on dashboard ⏱️ Risk-roadmap |
 | Live armed? | **No.** Paper only. The Tier-0 gates have not cleared (0/30 clean daily runs, 0/30 post-fix benchmark days, drawdown protocol still ADVISORY). |
 | Capital recommendation | **Paper + plumbing-test live ($500-$2,000) only.** Not for return generation. |
-| Full writeup | **`docs/TRADER_SYSTEM_WRITEUP_2026_05_07_v27.pdf`** (36 pages) |
+| Full writeup | **`docs/TRADER_SYSTEM_WRITEUP_2026_05_07_v28.pdf`** (38 pages) |
 
 ---
 
-## v3.73.27 increments (most recent)
+## v3.73.28 increments (most recent)
+
+- **Recovery-whipsaw research win.** v3.73.24's dd-recovery DETECTOR fires correctly during GFC but the 6-1 momentum RESPONSE degraded P&L by -1.24pp. Tested 3 alternative responses (defensive tilt, reduced gross, equal-weight) → **reduced-gross wins**: GFC P&L +1.15pp vs production AND max DD -2.78pp better. 25y full-window confirms no normal-regime degradation: 57.25× → 57.89× cum, max-DD -38.50% → -36.21%. Detector fires only 4× in 25 years (all GFC), so the response runs ~99% identically to production.
+- **Promoted to SHADOW candidate** as `xs_top15_dd_recovery_reduced_gross` in the eval harness. **Not flipped to LIVE** — the 30-run gate still hasn't cleared, and a single 28-month window is too short to claim production-readiness.
+- **Insight from the research**: when the detector says "you're in a regime where 12-1 is unreliable," the right response isn't a different SIGNAL, it's LESS RISK. Take less exposure during the regime and let the dust settle. This closes the v3.73.24 negative result honestly.
+- 28 strategies tracked (was 27). 921 tests still green.
+
+## v3.73.27 increments
 
 - **Tier-by-tier canary coverage** (`scripts/weekly_enforcing_canary.py`). v3.73.26 caught "brake totally inert"; v3.73.27 catches "brake works for one tier but quietly broken for another." The canary now sweeps GREEN/YELLOW/RED/ESCALATION/CATASTROPHIC and asserts the EXACT expected behavior: tier name, action enum, and final gross (80%/80%/80%/30%/0%). Today's sweep: 5/5 PASS.
 - **Stale-data drift check** wired in `kill_switch.py`. The header docstring claimed "halts on yfinance stale > 5 days" since day one but the check was never implemented. Closed: positive-confirmation freshness check halts if SPY data is more than 3 business days old (or yfinance fails entirely). Bypass with `SKIP_DATA_FRESHNESS_CHECK=true` for offline tests / weekend backfills. 6 new tests covering recent/stale/empty/exception/skip-flag.
@@ -56,7 +63,7 @@ Personal automated equity trading system. Lives in `~/trader/`. Goal: **understa
 - **Universe v1 candidate list** (`docs/UNIVERSE_V1_2026_05_07.md` + regression in `docs/UNIVERSE_V0_V1_REGRESSION_2026_05_07.md`). Probed 80 large-cap candidates → 77 qualify with full 2000+ history. Merged 120-name universe regression-tested vs 43-name V0: IR drop 0.04 (within 0.10), DD worsening 0.91pp (within 5pp). **Decision: SHIP** — but the swap is gated as a follow-up commit, not flipped in this version.
 - 27 strategies tracked (was 26).
 
-## What it actually does (v3.73.27 LIVE behavior)
+## What it actually does (v3.73.28 LIVE behavior)
 
 1. **Monthly rebalance** to the top-15 momentum names from a 50-name curated US large-cap universe, weighted via min-shift formula `weight ∝ (score - min(score) + 0.01)`, scaled to 80% gross.
 2. **Multiple vol-scaling layers stack** to produce the actual target gross:

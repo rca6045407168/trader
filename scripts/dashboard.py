@@ -1,4 +1,4 @@
-"""Live local dashboard for the trader (v3.73.27).
+"""Live local dashboard for the trader (v3.73.28).
 
 v3.73.3 — Risk roadmap dashboard view. Surfaces the 6 Round-2
 advisory-swarm docs (RISK_FRAMEWORK / ADVERSARIAL_THREAT_MODEL /

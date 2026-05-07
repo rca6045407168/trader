@@ -23,12 +23,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # ============================================================
 # Registry
 # ============================================================
-def test_twentyseven_strategies_registered():
-    """v3.73.24: 26 prior + 1 dd-recovery-aware = 27."""
+def test_twentyeight_strategies_registered():
+    """v3.73.28: 27 prior + 1 dd-recovery-reduced-gross = 28."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 27, \
-        f"expected 27 strategies, got {len(specs)}: {[s.name for s in specs]}"
+    assert len(specs) == 28, \
+        f"expected 28 strategies, got {len(specs)}: {[s.name for s in specs]}"
 
 
 def test_canonical_strategy_names_present():
@@ -62,6 +62,8 @@ def test_canonical_strategy_names_present():
         "xs_top15_recovery_aware",
         # Drawdown-based recovery-aware (1) — v3.73.24
         "xs_top15_dd_recovery_aware",
+        # Drawdown-recovery + reduced-gross response (1) — v3.73.28
+        "xs_top15_dd_recovery_reduced_gross",
     }
     assert names == expected, f"missing: {expected - names}, extra: {names - expected}"
 
@@ -207,15 +209,16 @@ def test_evaluate_at_inserts_rows_and_is_idempotent(tmp_path, monkeypatch):
     # Expected inserts: 11 + 3 + 3 + 6 + 1 = 24 (long_short fails).
     # v3.73.22: 24 prior + recovery_aware (1 more producing picks) = 25
     # v3.73.24: 25 prior + dd_recovery_aware (1 more producing picks) = 26
+    # v3.73.28: 26 prior + dd_recovery_reduced_gross (1 more) = 27
     n1 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
-    assert n1 == 26, f"first call should insert 26 rows; got {n1}"
+    assert n1 == 27, f"first call should insert 27 rows; got {n1}"
     n2 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
     assert n2 == 0, f"second call should be idempotent; got {n2} new rows"
 
     con = sqlite3.connect(db)
     total = con.execute("SELECT COUNT(*) FROM strategy_eval").fetchone()[0]
     con.close()
-    assert total == 26
+    assert total == 27
 
 
 def test_settle_returns_only_settles_unsettled_rows(tmp_path):

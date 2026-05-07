@@ -759,3 +759,78 @@ def xs_top15_dd_recovery_aware(asof, prices):
     if total <= 0:
         return {t: 0.80 / len(top15) for t, _ in top15}
     return {t: 0.80 * (s / total) for t, s in shifted}
+
+
+# ============================================================
+# 20. v3.73.28 — drawdown-based recovery + GROSS-REDUCTION response
+#
+# v3.73.24 result: dd-recovery DETECTOR fires correctly during GFC
+# but the 6-1 momentum RESPONSE degraded P&L by -1.24pp vs production.
+# v3.73.28 swaps the response from "switch to 6-1 lookback" to
+# "keep 12-1 picks but cut gross 80% → 40%".
+#
+# GFC test (2008-09 → 2010-12, 28 months):
+#   production:        +2.45% cum, -25.37% max DD
+#   v3.73.24 (6-1):    +1.21% cum, -26.44% max DD  (worse)
+#   v3.73.28 (40%gr):  +3.61% cum, -22.59% max DD  (BETTER)
+#
+# 25y full-window (316 months) confirmation:
+#   production:        57.25× cum, -38.50% max DD
+#   v3.73.28 (40%gr):  57.89× cum, -36.21% max DD
+#   delta: +64.51pp cum, +2.29pp max-DD improvement
+#
+# Insight: when the detector says "you're in a regime where the
+# 12-1 signal is unreliable (defensives that held up in '08 are
+# the wrong leaders for the '09 rotation)", the right response
+# isn't a different signal — it's LESS exposure. Just take less
+# risk during the regime and let the dust settle.
+#
+# Detector fires only 4 times in 25 years (all GFC months), so
+# this strategy is ~99% of the time identical to production.
+# Status: SHADOW candidate in the eval harness; not promoted to
+# LIVE because the 30-run gate has not cleared.
+# ============================================================
+@register("xs_top15_dd_recovery_reduced_gross",
+          "PRODUCTION + dd-recovery rule with REDUCED-GROSS response: "
+          "when deep-DD-with-rebound detected, keep 12-1 picks but "
+          "cut gross 80% → 40% (closes v3.73.24 negative result)")
+def xs_top15_dd_recovery_reduced_gross(asof, prices):
+    """v3.73.28 — when recovery active, keep 12-1 but cut gross to 40%."""
+    recovery_active = False
+    try:
+        if "SPY" in prices.columns:
+            spy = prices["SPY"].dropna()
+            spy = spy[spy.index <= asof]
+            if len(spy) >= 180:
+                last_180 = spy.iloc[-180:]
+                peak_180 = float(last_180.max())
+                current = float(spy.iloc[-1])
+                dd_180 = current / peak_180 - 1
+                one_month_ago = spy.iloc[-22] if len(spy) >= 22 else spy.iloc[0]
+                ret_1m = current / float(one_month_ago) - 1
+                recovery_active = (dd_180 < -0.25) and (ret_1m > 0.05)
+    except Exception:
+        pass
+
+    target_gross = 0.40 if recovery_active else 0.80
+
+    p = _stock_panel(prices)
+    p = p[p.index <= asof]
+    if len(p) < 252:
+        return {}
+    scored = []
+    for sym in p.columns:
+        s = p[sym].dropna()
+        m = momentum_score(s, 12, 1)
+        if not pd.isna(m):
+            scored.append((sym, float(m)))
+    scored.sort(key=lambda x: -x[1])
+    top15 = scored[:15]
+    if not top15:
+        return {}
+    min_s = min(s for _, s in top15)
+    shifted = [(t, s - min_s + 0.01) for t, s in top15]
+    total = sum(s for _, s in shifted)
+    if total <= 0:
+        return {t: target_gross / len(top15) for t, _ in top15}
+    return {t: target_gross * (s / total) for t, s in shifted}

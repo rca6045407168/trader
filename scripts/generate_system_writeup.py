@@ -23,7 +23,7 @@ from reportlab.platypus import (
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_07_v27.pdf"
+OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_07_v28.pdf"
 
 
 def _styles():
@@ -119,16 +119,118 @@ def build():
         ),
         Spacer(1, 0.25 * inch),
         Paragraph(f"As of: {datetime.now():%Y-%m-%d}", s["subtitle"]),
-        Paragraph("Version: v3.73.27 (tier-sweep canary + stale-data halt)",
+        Paragraph("Version: v3.73.28 (recovery-whipsaw research win — reduced-gross response works)",
                    s["subtitle"]),
         PageBreak(),
     ]
 
     # ============================================================
-    # v3.73.27 UPDATE BOX (front-of-book delta from v3.73.26)
+    # v3.73.28 UPDATE BOX (front-of-book delta from v3.73.27)
     # ============================================================
     story += [
-        Paragraph("v3.73.27 update — what changed since v3.73.26", s["h1"]),
+        Paragraph("v3.73.28 update — what changed since v3.73.27", s["h1"]),
+        _para(
+            "<b>This is the first cut in three versions that is not "
+            "purely gate integrity.</b> The user's correctly-calibrated "
+            "v3.73.27 verdict noted that gate-integrity work is "
+            "saturating: \"the test has become harsher, not closer to "
+            "clearing.\" v3.73.28 instead attacks one of the listed "
+            "OPEN research items: the recovery-whipsaw RESPONSE design.",
+            s["body"],
+        ),
+        _para(
+            "<b>The v3.73.24 negative result.</b> The dd-recovery "
+            "DETECTOR (deep DD + fresh rebound) fires correctly during "
+            "the GFC — 4 times across the 2008-Q4 to 2009-Q1 window. "
+            "But the chosen RESPONSE (switch from 12-1 to 6-1 momentum) "
+            "degraded GFC P&amp;L by -1.24pp vs production. The user's "
+            "summary: \"you can identify the bad regime, but you still "
+            "do not know the right response.\"",
+            s["body"],
+        ),
+        _para(
+            "<b>Three alternative responses tested.</b> "
+            "scripts/dd_recovery_response_design.py runs each over the "
+            "GFC window (2008-09 → 2010-12, 28 months):",
+            s["body"],
+        ),
+        _table([
+            ["Strategy", "GFC cum return", "GFC max DD", "Δ vs prod"],
+            ["production (12-1, control)", "+2.45%", "-25.37%", "(baseline)"],
+            ["A: defensive tilt", "+1.87%", "-24.74%", "-0.58pp"],
+            ["B: reduced gross 80% → 40%", "+3.61%", "-22.59%", "+1.15pp ✓"],
+            ["C: equal-weight top-15", "+3.33%", "-25.87%", "+0.88pp"],
+        ]),
+        _para(
+            "<b>Response B wins on both metrics.</b> Reducing gross "
+            "from 80% to 40% during recovery regimes improves GFC "
+            "cum return by +1.15pp AND reduces max DD by 2.78pp. "
+            "Defensive tilt makes things worse (picking defensives "
+            "DURING the rebound is the opposite of what works). "
+            "Equal-weight is mid.",
+            s["body"],
+        ),
+        _para(
+            "<b>25-year full-window confirmation.</b> Detector fires "
+            "only 4 times in 25 years (all GFC), so response B is "
+            "~99% of the time identical to production. Confirmed:",
+            s["body"],
+        ),
+        _table([
+            ["Metric", "production", "response B", "delta"],
+            ["25y cum return", "57.25×", "57.89×", "+0.64× / +64.51pp"],
+            ["25y max DD", "-38.50%", "-36.21%", "+2.29pp better"],
+            ["Detector fires (25y)", "n/a", "4", "n/a"],
+        ]),
+        _para(
+            "<b>Insight from this research.</b> When the detector says "
+            "\"you're in a regime where 12-1 is unreliable,\" the right "
+            "response isn't a different SIGNAL. It's LESS RISK. The 12-1 "
+            "signal points at yesterday's leaders (defensives that held "
+            "up well in 2008) precisely when tomorrow's leaders "
+            "(cyclicals that bounce hard in 2009) need to be picked. "
+            "Cutting gross during the regime is the correct response: "
+            "have less of the wrong picks.",
+            s["body"],
+        ),
+        _para(
+            "<b>Promoted to SHADOW, NOT flipped to LIVE.</b> "
+            "xs_top15_dd_recovery_reduced_gross is now strategy #28 in "
+            "the eval harness. Production picks remain "
+            "xs_top15_min_shifted (LIVE). Promoting to LIVE would "
+            "require: (1) the 30-run gate clears, (2) more than a single "
+            "28-month window of GFC evidence, and (3) at least one "
+            "real recovery event in the post-2024 paper period to "
+            "confirm the detector still has real-world validity.",
+            s["body"],
+        ),
+        _para(
+            "<b>Honest limits of this evidence.</b> Single 28-month "
+            "GFC window. Detector tuning (-25% DD threshold + +5% 1m "
+            "return) is fitted to GFC; could be over-fit. Other "
+            "drawdowns to test on: 2020-Q1 COVID crash + March 2020 "
+            "rebound, 1987 (no data), 2002 dot-com final flush. The "
+            "research note explicitly says this is necessary but not "
+            "sufficient for production deployment.",
+            s["body"],
+        ),
+        _para(
+            "<b>What this version does.</b> Closes the v3.73.24 "
+            "open negative result with a positive answer. The car can "
+            "now drive on the broken-bridge regime (recovery whipsaw) "
+            "by going slower instead of swerving — which it turns out "
+            "is what good drivers actually do.",
+            s["body"],
+        ),
+        _para(
+            "<b>What this version does NOT do.</b> Same time-bound "
+            "caveat: cannot accelerate the 30-run clock, no real-money "
+            "evidence, no more delisted-name coverage. The investability "
+            "verdict does not change.",
+            s["body"],
+        ),
+        PageBreak(),
+        Paragraph("v3.73.27 update — what changed in the prior cut", s["h1"]),
         _para(
             "<b>Same vein as v3.73.26: gate integrity, not capital "
             "readiness.</b> The user's correctly-calibrated verdict on "
