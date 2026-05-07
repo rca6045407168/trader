@@ -14,23 +14,30 @@ Personal automated equity trading system. Lives in `~/trader/`. Goal: **understa
 
 | Field | Value |
 |---|---|
-| Version | **v3.73.25** |
+| Version | **v3.73.26** |
 | LIVE variant | `momentum_top15_mom_weighted_v1` (top-15 by 12-1 momentum, min-shifted weights, 80% gross target × VIX-gate × deployment-anchor) |
 | Brokerage (paper) | Alpaca paper — actively running |
 | Paper account equity | **$109,789** (+9.79% since funding; +27pp vs SPY over the most recent 5y backfill window post-fix) |
 | **SP500 BEAT (25y, dollar terms)** | **$1 → $54.73 vs SPY's $10.53. Active +4,419pp / +7.78%/yr over 25 years.** |
 | 25y backtest (302 obs) | +546pp cum-α / α-IR 0.70 / β 0.90 (3 of 5 regime windows beat SPY; lost in GFC -44.9pp + COVID -6.7pp) |
 | 5y backtest (47 obs) | +25.6pp cum-α / α-IR 0.46 / β 1.15; cum-active +77pp |
-| Tests | **908 total**, all green in CI |
+| Tests | **911 total**, all green in CI |
 | Strategies tracked | **27** in eval harness (12 active + 6 sizing-aware + 7 passive baselines + 2 recovery-aware) |
 | ENFORCING clock (paper) | **0/30 clean runs** since 2026-05-06 — clock started; surfaced on dashboard ⏱️ Risk-roadmap |
 | Live armed? | **No.** Paper only. The Tier-0 gates have not cleared (0/30 clean daily runs, 0/30 post-fix benchmark days, drawdown protocol still ADVISORY). |
 | Capital recommendation | **Paper + plumbing-test live ($500-$2,000) only.** Not for return generation. |
-| Full writeup | **`docs/TRADER_SYSTEM_WRITEUP_2026_05_07_v25.pdf`** (34 pages) |
+| Full writeup | **`docs/TRADER_SYSTEM_WRITEUP_2026_05_07_v26.pdf`** (35 pages) |
 
 ---
 
-## v3.73.25 increments (most recent)
+## v3.73.26 increments (most recent)
+
+- **Weekly ENFORCING canary** (`scripts/weekly_enforcing_canary.py`). Defends against the silent-brake-failure mode where the protocol gets refactor-broken mid-clock and nobody notices because no real DD fires to test it. Re-runs the synthetic -13% drill in-process every Sunday, asserts ESCALATION fires + targets mutate (80% → 30%), Slacks/emails on FAIL, appends a green row to `docs/ENFORCING_CANARY_LOG.md` on PASS. Cannot touch the real journal; cannot break the 30-run streak.
+- **launchd Sunday-15:00-UTC plist** wired and verified by manual `launchctl kickstart`. Sleep-resilient (3-hour StartInterval).
+- **3 unit tests** that run as part of CI: ENFORCING-passes, ADVISORY-doesn't-mutate, synthetic-DD-math-correct. If any of these fails, the brake is broken; CI red.
+- 911 tests total (was 908), all green.
+
+## v3.73.25 increments
 
 - **ENFORCING flipped in paper.** `.env` now has `DRAWDOWN_PROTOCOL_MODE=ENFORCING`. Smoke-tested against today's actual equity (DD = +0.00% → tier=GREEN, targets unchanged). The brake is armed; it'll bite the next time DD breaches the EARLY/ESCALATION/CATASTROPHIC threshold instead of just warning.
 - **30-run clock counter** (`src/trader/enforcing_clock.py` + dashboard widget). Reads the journal's `runs` table and counts completed runs since the ENFORCING-flip date. A halted/failed run breaks the streak; rearm by setting `ENFORCING_CLOCK_START=YYYY-MM-DD` after the underlying issue is fixed. Surfaced at the top of the 🛡️ Risk roadmap view. 5 unit tests covering zero, counted, broken-streak, gate-cleared, and rendering.
@@ -43,7 +50,7 @@ Personal automated equity trading system. Lives in `~/trader/`. Goal: **understa
 - **Universe v1 candidate list** (`docs/UNIVERSE_V1_2026_05_07.md` + regression in `docs/UNIVERSE_V0_V1_REGRESSION_2026_05_07.md`). Probed 80 large-cap candidates → 77 qualify with full 2000+ history. Merged 120-name universe regression-tested vs 43-name V0: IR drop 0.04 (within 0.10), DD worsening 0.91pp (within 5pp). **Decision: SHIP** — but the swap is gated as a follow-up commit, not flipped in this version.
 - 27 strategies tracked (was 26).
 
-## What it actually does (v3.73.25 LIVE behavior)
+## What it actually does (v3.73.26 LIVE behavior)
 
 1. **Monthly rebalance** to the top-15 momentum names from a 50-name curated US large-cap universe, weighted via min-shift formula `weight ∝ (score - min(score) + 0.01)`, scaled to 80% gross.
 2. **Multiple vol-scaling layers stack** to produce the actual target gross:

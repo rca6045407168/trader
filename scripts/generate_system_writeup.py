@@ -23,7 +23,7 @@ from reportlab.platypus import (
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_07_v25.pdf"
+OUT = ROOT / "docs" / "TRADER_SYSTEM_WRITEUP_2026_05_07_v26.pdf"
 
 
 def _styles():
@@ -119,16 +119,78 @@ def build():
         ),
         Spacer(1, 0.25 * inch),
         Paragraph(f"As of: {datetime.now():%Y-%m-%d}", s["subtitle"]),
-        Paragraph("Version: v3.73.25 (ENFORCING flipped in paper + 30-run clock)",
+        Paragraph("Version: v3.73.26 (weekly ENFORCING canary — silent-brake regression catcher)",
                    s["subtitle"]),
         PageBreak(),
     ]
 
     # ============================================================
-    # v3.73.25 UPDATE BOX (front-of-book delta from v3.73.24)
+    # v3.73.26 UPDATE BOX (front-of-book delta from v3.73.25)
     # ============================================================
     story += [
-        Paragraph("v3.73.25 update — what changed since v3.73.24", s["h1"]),
+        Paragraph("v3.73.26 update — what changed since v3.73.25", s["h1"]),
+        _para(
+            "<b>The 30-run clock now has a regression catcher.</b> The "
+            "v3.73.25 cut started the clock but left a real silent-failure "
+            "mode: between today and v3.73.55-ish, some upstream refactor "
+            "could break apply_drawdown_protocol() in a way that doesn't "
+            "surface (because no real DD fires during the window to test "
+            "it). The clock would tick to 30/30 with the brake actually "
+            "inert. Gate \"cleared\", but bogus.",
+            s["body"],
+        ),
+        _para(
+            "<b>Defense: weekly synthetic-DD canary.</b> "
+            "scripts/weekly_enforcing_canary.py re-runs the proof drill "
+            "in-process every Sunday. Builds a synthetic -13% DD snapshot "
+            "list, calls apply_drawdown_protocol(), and asserts the "
+            "response is what we expect under ENFORCING (tier=ESCALATION "
+            "or worse, gross drops from 80% to 30% under TRIM_TO_TOP5). "
+            "On FAIL: Slack + email at warn level, with a message that "
+            "the 30-run clock should be considered SUSPENDED until "
+            "investigated. On PASS: appends a green row to "
+            "docs/ENFORCING_CANARY_LOG.md (paper trail of weekly "
+            "verifications).",
+            s["body"],
+        ),
+        _para(
+            "<b>The canary cannot break the streak.</b> It runs entirely "
+            "in-process against synthetic snapshots; it does NOT touch the "
+            "real journal, does NOT call into journal.start_run / "
+            "finish_run, and does NOT submit any orders. Even if the "
+            "canary itself has a bug, it can only generate a noisy "
+            "alert — never a halted/failed row in the runs table.",
+            s["body"],
+        ),
+        _para(
+            "<b>3 CI tests guard the canary itself.</b> "
+            "tests/test_weekly_enforcing_canary.py exercises (1) "
+            "ENFORCING mutates targets correctly, (2) ADVISORY tier "
+            "fires but targets are unchanged, (3) the synthetic snapshot "
+            "ramp produces the correct -13% DD math. If any of these "
+            "fails, CI goes red and we know the brake is broken before "
+            "it would have silently ticked to 30/30.",
+            s["body"],
+        ),
+        _para(
+            "<b>launchd plist installed and verified.</b> "
+            "infra/launchd/com.trader.weekly-enforcing-canary.plist "
+            "fires Sunday 15:00 UTC with a 3-hour StartInterval for "
+            "sleep-resilience. Verified end-to-end via "
+            "<i>launchctl kickstart</i> — log shows ESCALATION fired, "
+            "targets mutated 80% → 30%, green row appended to the log.",
+            s["body"],
+        ),
+        _para(
+            "<b>What v3.73.26 does NOT do.</b> Same caveat as v3.73.25: "
+            "it does not accelerate calendar time. The 30-run clock is "
+            "still ticking and will not clear before v3.73.55-ish. The "
+            "canary just makes sure that when it does clear, the brake "
+            "actually works — instead of being a paper achievement.",
+            s["body"],
+        ),
+        PageBreak(),
+        Paragraph("v3.73.25 update — what changed in the prior cut", s["h1"]),
         _para(
             "<b>The 30-run clock is now ticking.</b> The user's gate before "
             "meaningful capital — \"30 clean autonomous runs with ENFORCING "
