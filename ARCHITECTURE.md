@@ -6,7 +6,7 @@ This document is the canonical reference for the trader project. It is comprehen
 
 **This is the last document this repo will accept.** Per the v4.0.0 stop-rule, no new docs except this one. The README is two sentences and points here.
 
-**SUNSET (v4.1.0, 2026-05-08).** All 11 launchd daemons unloaded + plists removed from `~/Library/LaunchAgents/`. Dashboard Docker container stopped. Path C executed cleanly per the v4.0.0 disposition spec. The repo is no longer operational — it is a static reference. Existing paper positions on Alpaca remain where they are; nothing is liquidated. Future commits to this repo are restricted to security patches on pinned dependencies and deletions only. See §11.5.
+**SUNSET (v4.1.0, 2026-05-08).** All 11 launchd daemons unloaded + plists removed from `~/Library/LaunchAgents/`. Dashboard remains running as the viewer-only window into the paper book (per the v4.0.0 disposition's explicit "survives" list). Path C executed per the disposition spec. The repo is no longer trading — it is observable but inert. Existing paper positions on Alpaca remain where they are; nothing is liquidated. Future commits to this repo are restricted to security patches on pinned dependencies and deletions only. See §11.5.
 
 ---
 
@@ -666,7 +666,7 @@ Per the spec: "a v4.0.1 inside 90 days outside this list means A failed and you 
   - `com.trader.research-paper-scanner` — research/apparatus
   - `com.trader.weekly-degradation-check` — research/apparatus
   - (Note: 7 of these were apparatus that should have been removed at v4.0.0 but weren't.)
-- `trader-dashboard` Docker container stopped (`docker stop`, exit code 0).
+- `trader-dashboard` Docker container **kept running** — the original v4.0.0 disposition spec explicitly preserved "the dashboard as a viewer for the paper account." Daemons that *trade* stop; the read-only viewer survives so existing positions remain observable. (An earlier edit of this section incorrectly recorded the dashboard as stopped; it was stopped briefly during sunset execution and restarted on the same day after the over-shoot was caught.)
 - README rewritten to a two-sentence sunset tombstone.
 - Repo tagged `v4.1.0` with the suffix `sunset`.
 
