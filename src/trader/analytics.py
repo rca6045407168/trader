@@ -49,9 +49,19 @@ def _conn_ro() -> sqlite3.Connection:
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
 
 
-def _equity_series(days: int = 252) -> pd.Series:
-    """Equity time series from daily_snapshot, indexed by date."""
+def _equity_series(days: int = 252,
+                    live_equity: Optional[float] = None) -> pd.Series:
+    """Equity time series from daily_snapshot, indexed by date.
+
+    v4.0.1: optional live_equity appended (or overlaying) today's row
+    so the headline reflects current intraday state on every dashboard
+    load. Without this, the daily_snapshot row is always one day stale
+    until the orchestrator's end-of-day write.
+    """
     if not Path(DB_PATH).exists():
+        if live_equity is not None and live_equity > 0:
+            today = pd.Timestamp(date.today())
+            return pd.Series([float(live_equity)], index=[today])
         return pd.Series(dtype=float)
     try:
         with _conn_ro() as c:
@@ -60,11 +70,20 @@ def _equity_series(days: int = 252) -> pd.Series:
                 "ORDER BY date DESC LIMIT ?", (days,)
             ).fetchall()
         if not rows:
+            if live_equity is not None and live_equity > 0:
+                today = pd.Timestamp(date.today())
+                return pd.Series([float(live_equity)], index=[today])
             return pd.Series(dtype=float)
         df = pd.DataFrame(rows, columns=["date", "equity"])
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").set_index("date")
-        return df["equity"].astype(float)
+        s = df["equity"].astype(float)
+        if live_equity is not None and live_equity > 0:
+            today = pd.Timestamp(date.today())
+            # Replace today if already present, else append
+            s.loc[today] = float(live_equity)
+            s = s.sort_index()
+        return s
     except Exception:
         return pd.Series(dtype=float)
 
@@ -133,10 +152,17 @@ class PerformanceMetrics:
     excess_total_return: Optional[float] = None
 
 
-def compute_performance(window_days: int = 90) -> PerformanceMetrics:
-    """Return a complete PerformanceMetrics over the last N days."""
+def compute_performance(window_days: int = 90,
+                         live_equity: Optional[float] = None) -> PerformanceMetrics:
+    """Return a complete PerformanceMetrics over the last N days.
+
+    v4.0.1: pass `live_equity` to inject today's current broker
+    equity into the series. Without it, the most recent point is the
+    last daily_snapshot row (typically end-of-prior-day, which makes
+    the headline misleading mid-session).
+    """
     out = PerformanceMetrics()
-    eq = _equity_series(days=window_days)
+    eq = _equity_series(days=window_days, live_equity=live_equity)
     if eq.empty:
         return out
     out.n_obs = len(eq)

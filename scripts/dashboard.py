@@ -2400,25 +2400,35 @@ def view_lots():
 # ============================================================
 # View: Performance (equity vs SPY overlay)
 # ============================================================
-@st.cache_data(ttl=600, show_spinner="📊 Computing performance metrics...")
-def _cached_performance(window_days: int):
+# v4.0.1: TTL dropped from 600s to 30s. The headline was showing
+# end-of-prior-day numbers mid-session because (a) daily_snapshot is
+# only written at orchestrator close and (b) the cache held results
+# 10min anyway. live_equity is injected per-call so the headline
+# tracks the broker, not the journal write cycle. 30s ttl keeps
+# Streamlit's redraw bursts cheap without lying about staleness.
+@st.cache_data(ttl=30, show_spinner="📊 Computing performance metrics...")
+def _cached_performance(window_days: int, live_equity: float | None = None):
     from trader.analytics import compute_performance
-    return compute_performance(window_days=window_days)
+    return compute_performance(window_days=window_days, live_equity=live_equity)
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+# v4.0.1: TTL dropped 600s -> 60s on these three sibling Performance
+# panels. They feed off the same daily_snapshot table as the headline
+# and were getting cached-stale for up to 10 minutes. 60s is enough
+# to amortize Streamlit's redraw bursts without hiding new data on click.
+@st.cache_data(ttl=60, show_spinner=False)
 def _cached_rolling_sharpe(window: int, days: int):
     from trader.analytics import compute_rolling_sharpe
     return compute_rolling_sharpe(window=window, days=days)
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _cached_drawdown_periods(days: int):
     from trader.analytics import compute_drawdown_periods
     return compute_drawdown_periods(days=days)
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _cached_monthly_returns(days: int):
     from trader.analytics import compute_monthly_returns
     return compute_monthly_returns(days=days)
@@ -2434,7 +2444,26 @@ def view_performance():
     # selectbox which was unfamiliar to traders.
     window = _render_timeframe_chips("perf_window", default_label="3M")
 
-    perf = _cached_performance(window)
+    # v4.0.1: pull live broker equity once per click and inject into
+    # compute_performance so the headline reflects current intraday
+    # state, not the last journal write.
+    _live_state = _get_equity_state()
+    _live_eq = _live_state.equity_now if _live_state.error is None else None
+    perf = _cached_performance(window, live_equity=_live_eq)
+
+    # Freshness caption — explicit about WHAT the headline is computed from
+    if _live_eq is not None:
+        st.caption(
+            f"_As of {datetime.now():%Y-%m-%d %H:%M:%S} · headline includes "
+            f"live broker equity ${_live_eq:,.2f} (source: "
+            f"{_live_state.source}) · cache 30s_"
+        )
+    else:
+        # Live broker unreachable — fall back to last journal snapshot
+        st.caption(
+            f"_⚠️ Live broker unreachable ({_live_state.error}). Headline "
+            f"reflects last journal snapshot only (typically end-of-prior-day)._"
+        )
     if perf.n_obs < 2:
         st.warning(
             f"⚠️ **Performance metrics need ≥2 daily snapshots; we have "
@@ -2789,7 +2818,7 @@ Snapshots are written to `data/journal.db` table `daily_snapshot`.
 # ============================================================
 # View: Attribution (per-position waterfall + Brinson + sector pie)
 # ============================================================
-@st.cache_data(ttl=300, show_spinner="📊 Computing attribution...")
+@st.cache_data(ttl=60, show_spinner="📊 Computing attribution...")
 def _cached_brinson():
     """Brinson decomposition with current live data + SPDR sector ETF benchmark."""
     from trader.brinson_attribution import compute_brinson, SECTOR_ETF_MAP
