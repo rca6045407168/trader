@@ -1472,6 +1472,34 @@ def view_chat():
         if sug_cols[i].button(sg, key=f"sg_{i}", use_container_width=True):
             st.session_state["_pending_user_input"] = sg
 
+    # v4.0.x viewer-honesty: surface conversation cost/budget so users
+    # can see when they're approaching the 200K context window. Zero new
+    # deps — char/4 heuristic, ~15% error vs cl100k_base, enough for a
+    # budget-feel readout. No live keystroke counter — the React-style
+    # "updates as you type" UX is structurally impossible in Streamlit;
+    # the widget loop is server-side and only reruns on submit. Per-
+    # conversation total is what's actually useful in this stack.
+    if st.session_state.copilot_messages:
+        try:
+            _chat_chars = 0
+            for _m in st.session_state.copilot_messages:
+                _chat_chars += len(str(_m.get("display_text", "")))
+                _chat_chars += len(str(_m.get("content", "")))
+                for _tc in _m.get("tool_calls", []) or []:
+                    _chat_chars += len(str(_tc.get("input", "")))
+                    _chat_chars += len(str(_tc.get("result", "")))
+            _est_tokens = max(1, _chat_chars // 4)
+            _ctx_window = 200_000  # claude-sonnet-4-6 / claude-opus-4-7
+            _pct = _est_tokens / _ctx_window * 100
+            _flag = "🟢" if _pct < 50 else "🟡" if _pct < 80 else "🔴"
+            st.caption(
+                f"{_flag} Conversation: **~{_est_tokens:,} tokens** / "
+                f"{_ctx_window:,} context window ({_pct:.1f}%) — "
+                f"approximate (chars÷4). Anthropic billing uses exact tokens."
+            )
+        except Exception:
+            pass
+
     # Fixed-height chat box
     chat_box = st.container(height=520, border=True)
     with chat_box:
