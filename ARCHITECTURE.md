@@ -613,11 +613,20 @@ Verbatim from the disposition spec:
 - **All four production daemons** — daily-run, daily-heartbeat, earnings-reactor, journal-replicate.
 - **810 tests** — verify code does what code claims.
 
-### 11.3 The stop-rule
+### 11.3 Exit criterion (replaces the v4.0.0 stop-rule)
 
-From the v4.0.0 commit message, verbatim:
+The v4.0.0 stop-rule was: "any commit beyond security patches / deletion / daemon-bugfixes inside 90 days means A failed and you owe yourself C — and you do C without negotiating."
 
-> Any commit after v4.0.0 is restricted to: security patch on a pinned dependency, deletion of code, or a bug fix required to keep the journal/replication daemon honest. No new features. No new strategies. No new tests. No new measurement layers. No new docs. A v4.0.1 inside 90 days outside this list means A failed and the next move is C.
+The stop-rule didn't hold. Three bypasses landed inside four weeks (`11f2480` freshness fix, `0bc70ca` token counter, `62d6f39` this document). Each was rationalized as a defensible one-off. That is the same pattern v3.x's 28 versioned point-releases were. A freeze that gets renegotiated three times in four weeks is not a freeze.
+
+**The replacement is an exit criterion, not another stop-rule:**
+
+- **Exit fired on 2026-05-08.** All daemons unloaded, dashboard stopped, repo no longer operational. See §11.5.
+- **Reactivation requires v5.0.0** — explicit new disposition document, not a stop-rule bypass.
+- **The IR finding stands as the falsification.** `naive_top15_12mo_return` outperformed the LIVE variant on annualized monthly IR (0.60 vs 0.46) over the recorded eval-harness window. The disposition's job was to act on that. The valid responses were: flip LIVE to naive, ablate the complexity component-by-component, or shut down. The disposition picked the third — belatedly, on 2026-05-08, when the daemons stopped. (Caveat: the IR comparison runs on the same survivor-biased panel that killed the long-window CI test in §11.1. The complexity-tax finding is *directional* — the simpler variant beats the complex one — but the *magnitude* lives on the same contaminated data and should not be quoted as a precise number.)
+- **No further commits to this repo unless they are: security patches on pinned deps, or deletions.** Documentation additions count as bypasses by the same logic that made `0bc70ca` and `62d6f39` bypasses. The next addition triggers nothing automatic, because there is nothing left running to trigger — but it would be the third costume the project's accumulated to avoid the underlying decision, after "strategy iteration" (v3.x) and "viewer-honesty" (v4.0.x).
+
+The document does not warrant a future v6 freeze framing. The exit happened.
 
 ### 11.4 The bypasses on record
 
