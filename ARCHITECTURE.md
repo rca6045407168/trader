@@ -4,7 +4,9 @@
 
 This document is the canonical reference for the trader project. It is comprehensive by design — written as a single source of truth so that the project can be understood without reading code, and so that future-me (or anyone reading after the disposition) finds the answer here instead of relitigating it.
 
-**This is the last document this repo will accept.** Per the v4.0.0 stop-rule, no new docs except this one. The README is three sentences and points here. Future commits are restricted to security patches on pinned dependencies, deletion of code, or bug fixes required to keep the journal/replication daemons honest.
+**This is the last document this repo will accept.** Per the v4.0.0 stop-rule, no new docs except this one. The README is two sentences and points here.
+
+**SUNSET (v4.1.0, 2026-05-08).** All 11 launchd daemons unloaded + plists removed from `~/Library/LaunchAgents/`. Dashboard Docker container stopped. Path C executed cleanly per the v4.0.0 disposition spec. The repo is no longer operational — it is a static reference. Existing paper positions on Alpaca remain where they are; nothing is liquidated. Future commits to this repo are restricted to security patches on pinned dependencies and deletions only. See §11.5.
 
 ---
 
@@ -19,8 +21,8 @@ This document is the canonical reference for the trader project. It is comprehen
 7. [Mechanism — how each layer works](#7-mechanism--how-each-layer-works)
 8. [Observability — journal schema & dashboard](#8-observability--journal-schema--dashboard)
 9. [Failure modes & how the system halts](#9-failure-modes--how-the-system-halts)
-10. [Day-to-day operation](#10-day-to-day-operation)
-11. [The disposition — what survives, what was deleted](#11-the-disposition--what-survives-what-was-deleted)
+10. [Day-to-day operation](#10-day-to-day-operation) — *historical; daemons are stopped*
+11. [The disposition — what survives, what was deleted, sunset record](#11-the-disposition--what-survives-what-was-deleted)
 12. [Glossary](#12-glossary)
 
 ---
@@ -629,6 +631,52 @@ From the v4.0.0 commit message, verbatim:
 
 The next non-deletion / non-daemon-bugfix commit means path C without negotiating.
 
+### 11.5 Path C executed (v4.1.0, 2026-05-08)
+
+Three bypasses in the post-v4.0.0 window triggered the path-C clause from the disposition spec:
+
+1. `f304eea` — Dockerfile docs/ removal. Defensible deletion. (No-op for path-C count.)
+2. `11f2480` (v4.0.1) — Dashboard freshness fix. Argued as viewer-honesty bugfix. (Borderline.)
+3. `0bc70ca` — View_chat token-cost caption. Honestly a new feature. (Logged as final bypass.)
+4. `<this commit>` — ARCHITECTURE.md. Honestly a new doc. (Tipping point.)
+
+Per the spec: "a v4.0.1 inside 90 days outside this list means A failed and you owe yourself C — and you do C without negotiating." Executed on the user's terse instruction ("do it").
+
+**What actually happened on 2026-05-08:**
+
+- 11 launchd plists unloaded via `launchctl unload` and removed from `~/Library/LaunchAgents/`:
+  - `com.trader.daily-run` — the orchestrator
+  - `com.trader.daily-heartbeat` — silent-cron-failure detector
+  - `com.trader.earnings-reactor` — SHADOW reactor signal poller
+  - `com.trader.journal-replicate` — nightly iCloud backup
+  - `com.trader.anomaly-scan` — research/apparatus
+  - `com.trader.daily-perf-digest` — research/apparatus
+  - `com.trader.monday-fill-check` — research/apparatus
+  - `com.trader.monthly-dsr-audit` — research/apparatus
+  - `com.trader.monthly-walkforward` — research/apparatus
+  - `com.trader.research-paper-scanner` — research/apparatus
+  - `com.trader.weekly-degradation-check` — research/apparatus
+  - (Note: 7 of these were apparatus that should have been removed at v4.0.0 but weren't.)
+- `trader-dashboard` Docker container stopped (`docker stop`, exit code 0).
+- README rewritten to a two-sentence sunset tombstone.
+- Repo tagged `v4.1.0` with the suffix `sunset`.
+
+**What didn't happen, and why:**
+
+- **Paper positions not liquidated.** The user has $108K equity in Alpaca paper across 15 positions. Path C is about stopping the *project*, not unwinding the *book*. Closing positions is a manual step the user can do in Alpaca's UI when they want; the trader codebase has no business doing it as part of a disposition.
+- **Repo not GitHub-archived.** That's a public-facing signal that requires explicit operator approval. The git tag + README rewrite carry the same disposition intent without making it a one-click public statement.
+- **Engineering not migrated.** The disposition spec was explicit: "the patterns are already in your head. The code isn't portable. Don't let 'migration' be the costume in which the project keeps living." The cross-validation harness, journal replication, source-spot-check, and launchd patterns survive in code form here as static reference; they don't need to be moved.
+
+**Reactivation path (for the record).** If you ever want to bring it back:
+
+1. Decide *why*. Read §2 first. Re-litigate the survivor-bias / complexity-tax / β issues honestly before relaunching daemons.
+2. Reinstall plists: `cp infra/launchd/com.trader.*.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.trader.*.plist`
+3. Rebuild dashboard: `bash scripts/build_dashboard.sh`
+4. Run a manual reconciliation first: `python scripts/run_reconcile.py` — the broker book has been drifting since 2026-05-08; the journal hasn't.
+5. Tag v5.0.0 and write a new disposition document that explains why this time is different.
+
+Do not do (5) lightly.
+
 ---
 
 ## 12. Glossary
@@ -658,4 +706,4 @@ The next non-deletion / non-daemon-bugfix commit means path C without negotiatin
 
 ---
 
-*This document is frozen alongside the project at v4.0.0. Last bypass to add: 0bc70ca (token counter). Next bypass = path C.*
+*This document is frozen alongside the project at v4.1.0. Path C executed 2026-05-08. The trader is no longer operational.*
