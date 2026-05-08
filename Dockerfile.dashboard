@@ -54,11 +54,9 @@ COPY --chown=trader:trader scripts/ ./scripts/
 COPY --chown=trader:trader pyproject.toml .
 # v3.55.1: bake the theme config into the image so dark-mode is default
 COPY --chown=trader:trader .streamlit/ ./.streamlit/
-# v3.73.3: bake the docs/ directory so the Risk roadmap view + the
-# glossary cross-references can render inline. Adds <500KB to the
-# image; trivial vs the 1.46GB total. Without this, every doc link
-# in the dashboard would 404.
-COPY --chown=trader:trader docs/ ./docs/
+# v4.0.0 freeze: docs/ directory deleted along with the Risk roadmap
+# view, world-class gaps, and the rest of the apparatus. Nothing in
+# the surviving viewer reads from docs/ anymore.
 
 # v3.73.1: bake build provenance into the image. The dashboard reads
 # /app/BUILD_INFO.txt at startup and renders the commit + timestamp
