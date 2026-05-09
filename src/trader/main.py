@@ -314,9 +314,25 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
                       f"Tier={tier.name}, action={tier.enforce_action}")
                 momentum_targets = adjusted
             elif tier.name != "GREEN":
-                print(f"  -> drawdown ADVISORY: tier {tier.name} fired "
-                      f"but targets unchanged (set DRAWDOWN_PROTOCOL_MODE="
-                      f"ENFORCING in .env to enable mutation)")
+                # v5.0.0: targets unchanged can mean two things —
+                # (a) ADVISORY mode (warns but doesn't mutate), or
+                # (b) ENFORCING but the tier's action doesn't mutate at
+                # this layer (RED's HALT_ALL is enforced upstream by
+                # check_account_risk's -8% kill; YELLOW's PAUSE_GROWTH
+                # is informational pending current_weights threading).
+                if mode == "ENFORCING":
+                    upstream_action = (
+                        " (HALT_ALL enforced upstream by check_account_risk)"
+                        if tier.enforce_action == "HALT_ALL"
+                        else " (action is informational at this layer)"
+                    )
+                    print(f"  -> drawdown ENFORCING: tier {tier.name} "
+                          f"action={tier.enforce_action} → targets unchanged"
+                          f"{upstream_action}")
+                else:
+                    print(f"  -> drawdown ADVISORY: tier {tier.name} fired "
+                          f"but targets unchanged (set DRAWDOWN_PROTOCOL_MODE="
+                          f"ENFORCING in .env to enable mutation)")
         except Exception as e:
             print(f"  drawdown protocol check failed (non-fatal): "
                   f"{type(e).__name__}: {e}")

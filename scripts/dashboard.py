@@ -2181,6 +2181,41 @@ def _render_portfolio_caps_panel() -> None:
 def view_overview():
     st.title("🏠 Overview")
     st.caption("Headline metrics + sector heatmap + last 5 runs.")
+    # v5.0.0 — auto-router LIVE pick widget at top of Overview.
+    # Surfaces what strategy the daily orchestrator will route to
+    # on the next rebalance. Reads from journal.runs.notes (set by
+    # main.py's auto-router persistence) + a fresh select_live() call
+    # to show what would be picked RIGHT NOW.
+    try:
+        from trader.auto_router import (
+            select_live,
+            MIN_EVIDENCE_MONTHS,
+            MAX_BETA,
+            HYSTERESIS_MARGIN,
+        )
+        decision = select_live()
+        cols = st.columns([2, 1, 1, 1])
+        if decision.selected:
+            cols[0].metric(
+                "🎯 LIVE auto-routed to",
+                decision.selected,
+                f"runner-up: {decision.runner_up}" if decision.runner_up else None,
+            )
+        else:
+            cols[0].metric("🎯 LIVE auto-routed to", "(no candidate eligible)")
+        cols[1].metric("Eligible candidates", decision.eligible_count)
+        cols[2].metric("Hysteresis", "applied" if decision.hysteresis_applied else "—")
+        cols[3].metric("Incumbent", decision.incumbent or "—")
+        st.caption(
+            f"_v5.0.0 auto-router · min_evidence={MIN_EVIDENCE_MONTHS}mo · "
+            f"max_β={MAX_BETA:.2f} · hysteresis={HYSTERESIS_MARGIN:.2f} IR points · "
+            f"{decision.reason}_"
+        )
+        st.divider()
+    except Exception as e:
+        st.caption(f"_auto-router widget unavailable: {e}_")
+        st.divider()
+
     # v3.65.0: big-block price headline (Nasdaq/CNBC pattern) above the
     # 6-up metric grid. The grid still ships the supporting numbers
     # (cash, vs anchor, regime, freeze) — but the dominant equity number
