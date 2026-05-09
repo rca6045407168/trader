@@ -18,10 +18,11 @@ os.environ.setdefault("ALPACA_API_KEY", "test")
 def test_freshness_returns_true_on_recent_data(monkeypatch):
     """A SPY series with the latest row dated today must be deemed fresh."""
     monkeypatch.setenv("SKIP_DATA_FRESHNESS_CHECK", "false")
-    fresh_df = pd.DataFrame(
-        {"SPY": [600.0, 601.0, 602.0]},
-        index=pd.bdate_range(end=pd.Timestamp.today(), periods=3),
-    )
+    # CI fix: use a single-row DataFrame to avoid pd.bdate_range flaking
+    # on weekend/business-day boundaries. The freshness check only inspects
+    # the last row's date.
+    today_bd = pd.bdate_range(end=pd.Timestamp.today(), periods=1)
+    fresh_df = pd.DataFrame({"SPY": [600.0]}, index=today_bd)
     monkeypatch.setattr(
         "trader.kill_switch.fetch_history",
         lambda *a, **k: fresh_df,
