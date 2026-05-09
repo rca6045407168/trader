@@ -32,6 +32,11 @@ from typing import Optional
 
 from .config import DB_PATH
 
+# Module-level import so tests can monkeypatch trader.auto_router.leaderboard.
+# In production this is a one-time import on the first select_live() call;
+# the import cost is negligible.
+from .eval_runner import leaderboard
+
 
 # v5.0.0 §1.2 — defended individually in V5_DISPOSITION.md
 MIN_EVIDENCE_MONTHS = int(os.getenv("AUTO_ROUTER_MIN_EVIDENCE_MONTHS", "6"))
@@ -107,8 +112,6 @@ def select_live(
     Returns a RouterDecision. The orchestrator must inspect .selected; if
     None, halt the rebalance.
     """
-    from .eval_runner import leaderboard
-
     if incumbent is None:
         incumbent = _load_incumbent()
 

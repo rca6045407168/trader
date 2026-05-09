@@ -178,6 +178,123 @@ heartbeat owns 5. The auto-router emits a special signal for 6.
 
 ---
 
+## §3a Operator runbook — what to do when an exit criterion fires
+
+Each of §3's six triggers is mechanical (the daemons halt automatically).
+This section names the operator response. None of the responses are
+"just restart the daemons" — every halt requires a written reason
+before re-arming.
+
+### When §3.1 fires (auto-router can't pick a LIVE candidate)
+
+**Symptom:** orchestrator log shows "auto_router: no candidate cleared
+the eligibility filter"; `runs.notes` records `LIVE_AUTO=NONE`; daily
+rebalance halts.
+
+**Investigation (≤ 15 min):**
+
+1. Run `python -c "from trader.auto_router import select_live; print(select_live())"`
+   to see the surveyed-vs-eligible counts.
+2. Check `strategy_eval` row count: `sqlite3 data/journal.db
+   "SELECT strategy, COUNT(*) FROM strategy_eval WHERE period_end IS NOT NULL
+   GROUP BY strategy ORDER BY 2 DESC"`. If most strategies have <
+   `MIN_EVIDENCE_MONTHS` settled rows, the system is in cold-start —
+   wait for evidence to accumulate, don't lower the threshold.
+3. If candidates have evidence but all fail β cap or DD bound — that's
+   a regime signal worth respecting. Don't loosen the bounds; the
+   bounds exist because last time we didn't have them, the live book
+   ran at β=1.7 unmonitored.
+
+**Re-arming:**
+
+- Wait for next rebalance. The auto-router re-runs daily; if anything
+  changes (new evidence settles, regime shifts), the next run picks up
+  automatically.
+- Three consecutive halts on this trigger = stop. Open
+  V5_DISPOSITION review session. Don't bypass.
+
+### When §3.2 fires (realized DD ≥ 15% from deploy-tier watermark)
+
+**Symptom:** Slack alert from `alert_halt`; live equity is meaningfully
+below the watermark for the current capital tier; daemons halt.
+
+**Investigation (immediate, before next market open):**
+
+1. Pull all positions to cash via `python scripts/halt.py arm "DD breach"`
+   then manually flat positions in Alpaca (or in Public.com if at Tier 1+).
+2. Read `daily_snapshot` and `decisions` for the last 30 days. Find the
+   trades that produced the DD.
+3. Identify whether the LIVE strategy at the time of the DD breach was
+   itself responsible OR whether broader-market β did it.
+
+**Re-arming:** drop one tier on the capital ladder. If at Tier 3,
+demote to Tier 2 (smaller account). Re-check at the lower tier for
+60 days minimum before considering re-promotion. Tier 0 demotion =
+review whether the project should sunset (path C) instead.
+
+### When §3.3 fires (realized live-book β > 1.5 over 30-day trailing)
+
+**Symptom:** β monitor (currently informational) reports trailing-30-day
+realized β above 1.5 for two consecutive measurements.
+
+**Investigation:**
+
+1. Check what the LIVE strategy has been picking. Tech-cycle regimes
+   produce high-β picks under 12-1 momentum.
+2. Check whether the auto-router has been routing to higher-β strategies
+   recently — `grep "LIVE_AUTO=" data/journal.db` (via sqlite3) to see
+   the recent rotation history.
+
+**Re-arming:** the β cap on the auto-router (`MAX_BETA = 1.20`) should
+have prevented routing to a sustained-high-β strategy. If realized β
+is exceeding the cap, either the cap math is wrong, or post-cap caps
+are being undone by name-cap redistribution. Audit before re-arming.
+Manual override: temporarily set `AUTO_ROUTER_MAX_BETA=1.10` in `.env`
+to force a more conservative pick.
+
+### When §3.4 fires (cross-validation harness flags a measurement bug)
+
+**Symptom:** `cross_validate_harness.py` exit code != 0; daemons halt
+on next run.
+
+**Investigation:** the harness output names the disagreement
+(production code path vs backtest code path on the same input). Most
+likely cause: someone edited a strategy function and accidentally
+changed its forward-return semantics. Reproduce locally, fix, re-run
+the harness, halt clears.
+
+**Re-arming:** only after the harness exits 0 on a fresh run.
+
+### When §3.5 fires (operator absence > 14 days)
+
+**Symptom:** `~/trader/.alive` marker file is stale. Daemons halt.
+
+**Re-arming:** `touch ~/trader/.alive` and review the journal for what
+happened during your absence. If anything halted during the 14-day
+window without your seeing it, treat that halt as if it just fired.
+
+### When §3.6 fires (naive variant beats every other LIVE candidate
+for 6 consecutive months)
+
+**Symptom:** auto-router picks `naive_top15_12mo_return` six rebalances
+in a row (with no other strategy clearing within `HYSTERESIS_MARGIN`).
+The auto-router emits a special signal recorded in `runs.notes`.
+
+**This is the v3.x complexity-tax finding playing out forward.**
+
+**Re-arming options:**
+
+1. Accept the finding. Drop the complexity stack. Either keep running
+   the auto-router with a single naive candidate, or just buy SPY
+   directly and stop the project.
+2. Re-litigate the §2 caveats with new data. If something has actually
+   changed (new universe data, new regime), spec a v6.0.0 disposition.
+
+**Do not** override the auto-router to keep picking the complex
+variant. The whole point of v5.0.0 is to let the data decide.
+
+---
+
 ## §4 What's preserved from v4.0.0
 
 The §2 honesty list in ARCHITECTURE.md is still right, and v5.0.0 does
