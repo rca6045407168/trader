@@ -14,7 +14,7 @@ All output is logged to SQLite. The post-mortem agent reads it the next night.
 import os
 from datetime import datetime
 
-from .config import TOP_N, USE_DEBATE, DRY_RUN
+from .config import TOP_N, USE_DEBATE, DRY_RUN, DB_PATH
 from .universe import DEFAULT_LIQUID_50
 from .strategy import rank_momentum, find_bottoms
 from .critic import debate
@@ -85,48 +85,84 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
 
     momentum_targets: dict[str, float] = {}
 
-    # v3.6: prefer the registered LIVE variant as source of truth.
+    # v5.0.0: multi-strategy auto-router replaces the hardcoded LIVE
+    # variant pick. (a) evaluate_at runs all 28 candidates and writes
+    # strategy_eval rows for today, (b) settle_returns settles past
+    # windows, (c) select_live() reads the rolling-IR leaderboard and
+    # picks the LIVE name, (d) we read picks_json from strategy_eval
+    # for the selected strategy and use those as momentum_targets.
+    auto_router_decision = None
     try:
-        from . import variants  # noqa: F401  (registers variants on import)
-        from .ab import get_live
-        live = get_live()
-    except Exception as e:
-        print(f"  variant registry unavailable ({e}); falling back to TOP_N config")
-        live = None
+        from .eval_runner import evaluate_at, settle_returns
+        from .auto_router import select_live, render_decision_for_journal
+        from .data import fetch_history
+        import pandas as pd
+        import sqlite3
+        import json
 
-    if live is not None:
-        try:
-            live_targets = live.fn(universe=universe, equity=0.0, account_state={})
-            if live_targets:
-                # Live variant produces (ticker → weight) directly. Use that as
-                # ground truth. Journal each pick with metadata from rank_momentum.
-                cand_by_ticker = {c.ticker: c for c in momentum_full}
-                momentum_targets = dict(live_targets)
-                # Override momentum_alloc to whatever the variant decided —
-                # it already encodes its allocation policy.
-                momentum_alloc = sum(live_targets.values())
-                # Renormalize bottom_alloc to remaining gross capacity
-                bottom_alloc = max(0.0, 0.95 - momentum_alloc)
-                for ticker, weight in live_targets.items():
-                    c = cand_by_ticker.get(ticker)
-                    if c is not None:
-                        log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None,
-                                     final=f"LIVE_VARIANT_BUY @ {weight*100:.1f}% (variant={live.variant_id})")
+        end = pd.Timestamp.today()
+        start = (end - pd.DateOffset(months=18)).strftime("%Y-%m-%d")
+        ETF_TICKERS = [
+            "SPY", "VTI", "VXUS", "BND", "AGG",
+            "QQQ", "MTUM", "SCHG", "VUG", "XLK", "RSP",
+        ]
+        prices = fetch_history(universe + ETF_TICKERS, start=start)
+        prices = prices.dropna(axis=1, how="any")
+        if not prices.empty:
+            asof = prices.index[-1]
+            n_eval = evaluate_at(asof, universe, prices=prices)
+            print(f"  -> strategy_eval: recorded {n_eval} new picks for {asof.date()}")
+            n_settle = settle_returns(asof, prices=prices)
+            if n_settle:
+                print(f"  -> strategy_eval: settled {n_settle} prior windows")
+
+            decision = select_live()
+            auto_router_decision = decision
+            print(f"  -> auto_router: {decision.reason}")
+            if decision.selected is not None:
+                # Read today's picks_json for the selected strategy.
+                con = sqlite3.connect(str(DB_PATH))
+                row = con.execute(
+                    "SELECT picks_json FROM strategy_eval "
+                    "WHERE asof = ? AND strategy = ?",
+                    (asof.strftime("%Y-%m-%d"), decision.selected),
+                ).fetchone()
+                con.close()
+                if row and row[0]:
+                    live_targets = json.loads(row[0])
+                    if live_targets:
+                        cand_by_ticker = {c.ticker: c for c in momentum_full}
+                        momentum_targets = dict(live_targets)
+                        momentum_alloc = sum(live_targets.values())
+                        bottom_alloc = max(0.0, 0.95 - momentum_alloc)
+                        for ticker, weight in live_targets.items():
+                            c = cand_by_ticker.get(ticker)
+                            if c is not None:
+                                log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None,
+                                             final=f"LIVE_AUTO_BUY @ {weight*100:.1f}% (selected={decision.selected})")
+                            else:
+                                log_decision(ticker, "BUY", "live_auto", 0.0,
+                                             f"selected by auto_router: {decision.selected}", None,
+                                             final=f"LIVE_AUTO_BUY @ {weight*100:.1f}% (selected={decision.selected})")
+                        print(f"  -> LIVE auto-routed to '{decision.selected}': {len(live_targets)} names: "
+                              f"{list(live_targets.keys())} totaling {momentum_alloc*100:.1f}%")
                     else:
-                        # Variant picked a name not in the top-20 — log without metadata
-                        log_decision(ticker, "BUY", "live_variant", 0.0,
-                                     f"selected by {live.variant_id}", None,
-                                     final=f"LIVE_VARIANT_BUY @ {weight*100:.1f}% (variant={live.variant_id})")
-                print(f"  -> LIVE variant '{live.variant_id}' chose {len(live_targets)} names: "
-                      f"{list(live_targets.keys())} totaling {momentum_alloc*100:.1f}%")
+                        print(f"  -> auto_router selected {decision.selected} but picks_json was empty")
+                else:
+                    print(f"  -> auto_router selected {decision.selected} but no strategy_eval row found for today")
             else:
-                print(f"  LIVE variant '{live.variant_id}' returned empty targets — using fallback")
-                live = None
-        except Exception as e:
-            print(f"  LIVE variant '{live.variant_id}' failed ({e}); falling back to TOP_N config")
-            live = None
+                # decision.selected is None — exit-criterion 3.1 territory.
+                # HALT this rebalance per V5_DISPOSITION §3.
+                print(f"  HALT: auto_router could not pick a LIVE candidate.")
+                if not DRY_RUN:
+                    finish_run(run_id, status="halted",
+                               notes=f"auto_router_no_eligible {render_decision_for_journal(decision)}")
+                return {"halted": True, "reason": "auto_router: no eligible candidate"}
+    except Exception as e:
+        print(f"  auto_router/evaluate hook failed ({e}); falling back to TOP_N config")
+        auto_router_decision = None
 
-    if live is None or not momentum_targets:
+    if not momentum_targets:
         # Fallback: legacy TOP_N path. v3.73.5 adds STRATEGY_MODE env
         # selection (XS = cross-sectional top-N, the default; or
         # VERTICAL_WINNER = top-1-per-sector with absolute-momentum
@@ -301,7 +337,11 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
             print(f"  debate error for {c.ticker}: {e}")
             log_decision(c.ticker, c.action, c.style, c.score, c.rationale, None, f"DEBATE_ERROR: {e}")
 
-    return momentum_targets, approved_bottoms, {"momentum": momentum_alloc, "bottom": bottom_alloc}
+    sleeve = {"momentum": momentum_alloc, "bottom": bottom_alloc}
+    if auto_router_decision is not None:
+        sleeve["_auto_router_live"] = auto_router_decision.selected
+        sleeve["_auto_router_reason"] = auto_router_decision.reason
+    return momentum_targets, approved_bottoms, sleeve
 
 
 def get_vix() -> float | None:
@@ -741,8 +781,9 @@ def main(force: bool = False) -> dict:
     # made between them; no decision is being made.
 
     if not DRY_RUN:
+        live_name = sleeve_alloc.get("_auto_router_live", "none")
         finish_run(run_id, status="completed",
-                   notes=f"{len(final_targets)} targets, {len(rebalance_results)} mom, {len(bracket_results)} bot")
+                   notes=f"{len(final_targets)} targets, {len(rebalance_results)} mom, {len(bracket_results)} bot LIVE_AUTO={live_name}")
     return {
         "targets": final_targets,
         "momentum_orders": rebalance_results,

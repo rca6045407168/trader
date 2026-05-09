@@ -6,7 +6,7 @@ This document is the canonical reference for the trader project. It is comprehen
 
 **This is the last document this repo will accept.** Per the v4.0.0 stop-rule, no new docs except this one. The README is two sentences and points here.
 
-**SUNSET (v4.1.0, 2026-05-08).** All 11 launchd daemons unloaded + plists removed from `~/Library/LaunchAgents/`. Dashboard remains running as the viewer-only window into the paper book (per the v4.0.0 disposition's explicit "survives" list). Path C executed per the disposition spec. The repo is no longer trading — it is observable but inert. Existing paper positions on Alpaca remain where they are; nothing is liquidated. Future commits to this repo are restricted to security patches on pinned dependencies and deletions only. See §11.5.
+**REACTIVATED (v5.0.0, 2026-05-08).** The sunset was the kill-and-think exercise; v5.0.0 is the destination it produced. Multi-strategy auto-router replaces the hardcoded LIVE slot. Capital ladder (Tier 0 paper → Tier 4 material) replaces the freeze. Hard exit criteria + ENFORCING drawdown protocol replace the stop-rule. See **`V5_DISPOSITION.md`** for the full disposition; this section retains the historical record of v4.0.0/v4.1.0 because it captures what was learned by walking through the kill cycle. The 4 production daemons are reloaded; the 7 apparatus daemons stay deleted.
 
 ---
 
@@ -715,4 +715,28 @@ Do not do (5) lightly.
 
 ---
 
-*This document is frozen alongside the project at v4.1.0. Path C executed 2026-05-08. The trader is no longer operational.*
+### 11.6 v5.0.0 reactivation (2026-05-08)
+
+The v4.1.0 sunset lasted ~3 hours. The reversal is intentional and recorded.
+What changed in those 3 hours was the framing, not the data:
+
+- **Sunset's binary frame was wrong.** "Is this strategy worth running?" presumes the LIVE slot must hold one strategy. The apparatus is multi-tenant by design — variant registry, eval harness, β-adjusted leaderboard, SHADOW→LIVE promotion path. The disposition's failure was that the operator never executed the swap the data justified, not that the apparatus was useless.
+- **The §2 caveats survive into v5.0.0.** Survivor bias, complexity tax, β=1.7-vs-0.90, GFC/COVID losses — all still real. v5.0.0 doesn't pretend any of them are solved. It addresses each via specific mechanisms (auto-router lets forward returns arbitrate; β-budget cap; minimum-evidence threshold; ENFORCING drawdown protocol).
+- **Capital deployment becomes real.** Public.com plumbing test ($1-2k) is the Tier 1 entry point, gated on Tier 0 (paper) clean for 30 days under the auto-router.
+- **The doc-as-monument tendency stops.** V5_DISPOSITION.md is ~250 lines, single page. ARCHITECTURE.md retains the §1-§11 reference. Future state changes get terse decision logs in `git log`, not new prose architecture documents.
+
+What's preserved from v4.0.0/v4.1.0:
+- Cross-validation harness, journal replication, source-spot-check, stale-data halt, reconciliation drift detection.
+- The §2 honesty list (the IR finding, β/regime tension, GFC/COVID losses, reactor n=1).
+- ARCHITECTURE.md as the canonical reference doc.
+
+What's killed:
+- Hardcoded LIVE variant in `variants.py` — replaced by `auto_router.select_live()` per V5_DISPOSITION.md §1.
+- ADVISORY drawdown protocol — flipped to ENFORCING in `.env`.
+- v4.0.0 stop-rule (replaced by v5.0.0 hard exit criteria).
+
+The four production daemons (daily-run, daily-heartbeat, earnings-reactor, journal-replicate) are reloaded. The seven apparatus daemons that were unloaded at v4.1.0 stay deleted.
+
+---
+
+*This document was written under v4.0.0/v4.1.0 framing and updated for v5.0.0 reactivation. Most of §1-§11 still applies; §11.5 records the sunset; §11.6 records the reactivation. V5_DISPOSITION.md is the operating spec going forward.*
