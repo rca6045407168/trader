@@ -2381,27 +2381,35 @@ def view_decisions():
     if decisions.empty:
         st.caption("_no decisions in journal_")
         return
-    def fmt_why(raw):
-        if not raw:
-            return ""
-        try:
-            d = json.loads(raw) if isinstance(raw, str) else raw
-        except Exception:
-            return str(raw)[:120]
-        if not isinstance(d, dict):
-            return str(d)[:120]
-        bits = []
-        tr = d.get("trailing_return", d.get("momentum"))
-        if tr is not None:
-            bits.append(f"12-1 mom {tr*100:+.1f}%")
-        if d.get("rsi") is not None:
-            bits.append(f"RSI {d['rsi']:.0f}")
-        if d.get("z_score") is not None:
-            bits.append(f"z {d['z_score']:+.2f}")
-        return " · ".join(bits) if bits else (str(d)[:120] if d else "")
+    # v6.0.x: module-level helpers (testable, no Streamlit dep)
+    from trader.decisions_renderer import (
+        fmt_why, fmt_reasoning,
+    )
     decisions["why"] = decisions["rationale_json"].apply(fmt_why)
     view = decisions[["ts", "ticker", "action", "style", "score", "why", "final"]]
     st.dataframe(view, use_container_width=True, hide_index=True)
+
+    # v6.0.x: per-decision paragraph reasoning. Each row becomes an
+    # expander so the user can scan the compact table above for grep,
+    # then drill into any row for the full explanation. Limited to the
+    # 20 most recent to keep the page snappy.
+    st.divider()
+    st.subheader("📝 Detailed reasoning")
+    st.caption("Click any row to expand the full explanation — what signal "
+                "fired, why the strategy picked this name, and how the auto-router "
+                "decided the sizing.")
+    for _, row in decisions.head(20).iterrows():
+        ticker = row.get("ticker", "?")
+        action = row.get("action") or ""
+        ts = row.get("ts", "")
+        final = row.get("final") or ""
+        # Compact header: timestamp · ticker · action · sizing
+        score_disp = f" (score {row.get('score'):.3f})" if row.get("score") not in (None, 0) else ""
+        header = f"**{ts[:19]}** · {ticker} · {action}{score_disp}"
+        with st.expander(header, expanded=False):
+            st.markdown(fmt_reasoning(row.to_dict()))
+            if final:
+                st.caption(f"Final: `{final}`")
 
     st.divider()
     st.subheader("Recent orders (last 50)")
