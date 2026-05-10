@@ -45,6 +45,8 @@ def test_vol_scale_none():
 def test_position_cap_applied(monkeypatch):
     """v3.46: cap is now 16%. Targets of 0.18 exceed; 0.10 don't."""
     monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: [])
+    monkeypatch.setattr("trader.journal.recent_snapshots", lambda days=10_000: [])
+    monkeypatch.setenv("DRAWDOWN_BREAKER_STATUS", "SHADOW")
     # 0.18 > 0.16 → would REFUSE per safety margin check
     # Use 0.10 + 0.05 (safe) to test that clipping doesn't fire when nothing exceeds
     targets = {"AAPL": 0.10, "MSFT": 0.05}
@@ -56,6 +58,8 @@ def test_position_cap_applied(monkeypatch):
 
 def test_gross_exposure_cap(monkeypatch):
     monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: [])
+    monkeypatch.setattr("trader.journal.recent_snapshots", lambda days=10_000: [])
+    monkeypatch.setenv("DRAWDOWN_BREAKER_STATUS", "SHADOW")
     # 20 names at the position cap = 320% gross, must scale down to 95%
     targets = {f"T{i}": MAX_POSITION_PCT for i in range(20)}
     decision = check_account_risk(equity=100_000, targets=targets, vix=10)
@@ -131,6 +135,8 @@ def test_slow_drawdown_caught_by_180d_window(monkeypatch):
 def test_position_safety_margin_rejects_excessive_target(monkeypatch):
     """v3.46: tightened cap is 16%. Target of 18% must REFUSE."""
     monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: [])
+    monkeypatch.setattr("trader.journal.recent_snapshots", lambda days=10_000: [])
+    monkeypatch.setenv("DRAWDOWN_BREAKER_STATUS", "SHADOW")
     targets = {"AAPL": 0.18, "MSFT": 0.05}
     decision = check_account_risk(equity=100_000, targets=targets, vix=10)
     assert not decision.proceed
@@ -140,6 +146,8 @@ def test_position_safety_margin_rejects_excessive_target(monkeypatch):
 def test_position_near_cap_warns(monkeypatch):
     """v3.46: warns within 2% of cap. 0.15 is within margin of 0.16."""
     monkeypatch.setattr("trader.risk_manager.recent_snapshots", lambda days=180: [])
+    monkeypatch.setattr("trader.journal.recent_snapshots", lambda days=10_000: [])
+    monkeypatch.setenv("DRAWDOWN_BREAKER_STATUS", "SHADOW")
     targets = {"AAPL": 0.15, "MSFT": 0.05}
     decision = check_account_risk(equity=100_000, targets=targets, vix=10)
     assert decision.proceed
