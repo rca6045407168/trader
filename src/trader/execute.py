@@ -58,7 +58,10 @@ def close_aged_bottom_catches(max_age_days: int = 20, dry_run: bool = False) -> 
     bottom-catch), this only closes the qty corresponding to bottom-catch lots
     by submitting a SELL of that exact qty rather than close_position().
     """
-    from .journal import open_lots_for_sleeve, close_lots_fifo
+    # v6.0.x: close_lots_auto reads TLH_LOT_SELECTION env (FIFO or
+    # HIFO). Default FIFO preserves prior behaviour; setting HIFO
+    # multiplies harvested loss by ~20-40% in the steady state.
+    from .journal import open_lots_for_sleeve, close_lots_auto as close_lots_fifo
 
     if dry_run:
         return []

@@ -203,11 +203,13 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
             print(f"  -> portfolio caps: {cap_result.summary()}")
             momentum_targets = cap_result.targets
 
-    # v3.73.17: optional vol-target overlay. Disabled by default
-    # (VOL_TARGET_ENABLED unset or "0"). When enabled, computes
-    # trailing 60-day portfolio vol from current weights and scales
-    # gross down if realized vol > 18%. Never scales up.
-    if momentum_targets and os.environ.get("VOL_TARGET_ENABLED", "0") == "1":
+    # v3.73.17 / v6.0.x: vol-target overlay. ENABLED by default in
+    # v6 (was opt-in in v3.73.17). The overlay only ever scales
+    # gross DOWN when realized vol exceeds the 18% target — never
+    # levers up. This is pure safety; the only cost is missing a
+    # small slice of upside in calm-vol regimes. Set
+    # VOL_TARGET_ENABLED=0 to revert to the v5 unscaled behavior.
+    if momentum_targets and os.environ.get("VOL_TARGET_ENABLED", "1") == "1":
         try:
             from .sizing import (
                 realized_portfolio_vol_daily, vol_target_scalar, apply_vol_target,
@@ -243,6 +245,40 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
                           f"{realized*100:.1f}% ≤ 18% target → no scale")
         except Exception as e:
             print(f"  vol-target overlay failed (non-fatal): "
+                  f"{type(e).__name__}: {e}")
+
+    # v6.0.x: drawdown-aware overlay. ENABLED by default but
+    # one-sided — only DE-RISKS during drawdowns, never levers up.
+    # Conservative version of Asness 2014; we ship the safe
+    # direction. Disable via DRAWDOWN_AWARE_ENABLED=0.
+    if momentum_targets and os.environ.get(
+        "DRAWDOWN_AWARE_ENABLED", "1"
+    ) == "1":
+        try:
+            from .direct_index_tlh import drawdown_gross_scalar
+            from .journal import recent_snapshots
+            snaps = recent_snapshots(days=90)
+            if snaps and len(snaps) >= 5:
+                equities = [s["equity"] for s in snaps]
+                hwm = max(equities)
+                latest = equities[0]
+                if hwm > 0:
+                    current_dd = (latest - hwm) / hwm
+                    dd_scalar = drawdown_gross_scalar(current_dd)
+                    if dd_scalar < 0.999:
+                        print(f"  -> drawdown overlay: current DD "
+                              f"{current_dd*100:+.2f}% → "
+                              f"scaling gross by {dd_scalar:.3f}")
+                        momentum_targets = {
+                            t: w * dd_scalar
+                            for t, w in momentum_targets.items()
+                        }
+                    else:
+                        print(f"  -> drawdown overlay: current DD "
+                              f"{current_dd*100:+.2f}% → no scale "
+                              f"(within tolerance band)")
+        except Exception as e:
+            print(f"  drawdown overlay failed (non-fatal): "
                   f"{type(e).__name__}: {e}")
 
     # v3.73.17: per-trade max-loss pre-check (warn-only). Refuses to
@@ -516,10 +552,20 @@ def main(force: bool = False) -> dict:
                         current_prices[sym] = float(last[sym])
 
             core_pct = DEFAULT_CORE_PCT
+            # v6.0.x: optional Novy-Marx quality tilt on the basket
+            # composition. DIRECT_INDEX_QUALITY_TILT is a float 0..1;
+            # 0 = pure cap-weight (no tilt), 0.5 = moderate quality
+            # skew (recommended default for the operator), 1.0 = full
+            # tilt. Stacks with TLH because it touches BASKET weights,
+            # not the harvest mechanic.
+            quality_tilt = float(os.environ.get(
+                "DIRECT_INDEX_QUALITY_TILT", "0.0",
+            ))
             plan = plan_tlh(
                 universe=universe,
                 current_prices=current_prices,
                 core_pct=core_pct,
+                quality_tilt=quality_tilt,
             )
             print(f"\n[{datetime.now():%H:%M:%S}] TLH direct-index core "
                   f"({core_pct*100:.0f}% of capital):")

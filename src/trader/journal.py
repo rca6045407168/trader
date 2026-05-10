@@ -229,17 +229,36 @@ def open_lot(symbol: str, sleeve: str, qty: float, open_price: float | None,
         return cur.lastrowid
 
 
-def close_lots_fifo(symbol: str, sleeve: str, qty: float, close_price: float,
-                    close_order_id: str | None = None) -> list[dict]:
-    """v1.3: FIFO close of open lots for (symbol, sleeve). Returns list of lots closed."""
+def close_lots(symbol: str, sleeve: str, qty: float, close_price: float,
+                close_order_id: str | None = None,
+                selection: str = "FIFO") -> list[dict]:
+    """v6.0.x: generalised lot-close with selection-method support.
+
+    selection: "FIFO" (first-in-first-out — IRS default) or
+               "HIFO" (highest-cost-first — maximises realized loss
+                       on a close at any given price, the standard
+                       TLH-optimised lot-selection method).
+
+    HIFO is allowed by the IRS via Form 8949 "specific identification"
+    as long as the broker confirms the chosen lots BEFORE settlement.
+    Alpaca supports specific-ID closes via the API. Our journal mirrors
+    that selection so the post-trade record matches what the broker
+    reports on the 1099-B.
+
+    Returns the list of closed-lot dicts ordered as consumed."""
     init_db()
     closed = []
     remaining = qty
+    sel = selection.upper()
+    if sel == "HIFO":
+        order_sql = "open_price DESC, opened_at ASC"
+    else:
+        order_sql = "opened_at ASC"  # FIFO (legacy default)
     with _conn() as c:
         open_lots = c.execute(
-            """SELECT id, qty, open_price FROM position_lots
+            f"""SELECT id, qty, open_price FROM position_lots
                WHERE symbol = ? AND sleeve = ? AND closed_at IS NULL
-               ORDER BY opened_at ASC""",
+               ORDER BY {order_sql}""",
             (symbol, sleeve),
         ).fetchall()
         for lot in open_lots:
@@ -258,8 +277,6 @@ def close_lots_fifo(symbol: str, sleeve: str, qty: float, close_price: float,
             else:
                 # partial close: reduce qty on existing, insert closed sub-lot
                 c.execute("UPDATE position_lots SET qty = qty - ? WHERE id = ?", (close_qty, lot["id"]))
-                # sqlite3.Row uses [] indexing only; no .get(). Pull opened_at
-                # explicitly with a fallback.
                 lot_opened_at = c.execute(
                     "SELECT opened_at FROM position_lots WHERE id = ?", (lot["id"],)
                 ).fetchone()
@@ -276,6 +293,31 @@ def close_lots_fifo(symbol: str, sleeve: str, qty: float, close_price: float,
             closed.append({"lot_id": lot["id"], "qty": close_qty, "realized_pnl": realized})
             remaining -= close_qty
     return closed
+
+
+def close_lots_fifo(symbol: str, sleeve: str, qty: float, close_price: float,
+                    close_order_id: str | None = None) -> list[dict]:
+    """v1.3: FIFO close. v6.0.x preserves this entry point for callers
+    that explicitly want FIFO; for env-driven selection, callers should
+    use close_lots() directly. Behaviour unchanged."""
+    return close_lots(symbol, sleeve, qty, close_price, close_order_id,
+                       selection="FIFO")
+
+
+def close_lots_auto(symbol: str, sleeve: str, qty: float, close_price: float,
+                     close_order_id: str | None = None) -> list[dict]:
+    """v6.0.x: env-driven selection wrapper.
+
+    Reads TLH_LOT_SELECTION from environment. Defaults to HIFO in
+    v6 (was FIFO in v5). HIFO is the standard TLH-optimised choice
+    and the multiplier on harvested loss when paired with
+    TLH_ENABLED=true. The change is a no-op for single-lot tickers
+    (HIFO ≡ FIFO when there's only one lot) and strictly better when
+    multiple lots exist. Set TLH_LOT_SELECTION=FIFO to revert."""
+    import os as _os
+    sel = _os.environ.get("TLH_LOT_SELECTION", "HIFO")
+    return close_lots(symbol, sleeve, qty, close_price, close_order_id,
+                       selection=sel)
 
 
 def open_lots_for_sleeve(sleeve: str, max_age_days: int | None = None) -> list[dict]:

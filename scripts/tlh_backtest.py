@@ -49,7 +49,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from trader.direct_index_tlh import (  # noqa: E402
-    REPLACEMENT_MAP, APPROX_CAP_B, cap_weighted_targets, WASH_SALE_DAYS
+    REPLACEMENT_MAP, APPROX_CAP_B, cap_weighted_targets,
+    quality_tilted_targets, WASH_SALE_DAYS,
 )
 
 
@@ -78,7 +79,8 @@ def simulate(prices: pd.DataFrame,
               starting_capital: float = 100_000.0,
               monthly_contribution: float = 0.0,
               min_loss_pct: float = 0.05,
-              wash_sale_days: int = WASH_SALE_DAYS) -> dict:
+              wash_sale_days: int = WASH_SALE_DAYS,
+              quality_tilt: float = 0.0) -> dict:
     """Multi-lot HIFO simulator. Matches production planner mechanics.
 
     Per-name positions are tracked as a *list of lots* (qty, cost_basis,
@@ -103,7 +105,11 @@ def simulate(prices: pd.DataFrame,
     if px.empty:
         return {"error": "no price rows in window"}
 
-    weights = cap_weighted_targets(universe, gross=1.0)
+    if quality_tilt > 0:
+        weights = quality_tilted_targets(universe, gross=1.0,
+                                           tilt_strength=quality_tilt)
+    else:
+        weights = cap_weighted_targets(universe, gross=1.0)
     # positions[sym] = list of {qty, cost_basis, opened_at}
     positions: dict[str, list[dict]] = {sym: [] for sym in universe}
     skipped_init = []
@@ -310,6 +316,9 @@ def main(argv=None) -> int:
     ap.add_argument("--tax-rate", type=float, default=0.37,
                      help="Combined federal+state marginal (default 0.37 = 32+5)")
     ap.add_argument("--min-loss-pct", type=float, default=0.05)
+    ap.add_argument("--quality-tilt", type=float, default=0.0,
+                     help="Novy-Marx quality tilt 0..1 (default 0). "
+                          "0.5 = moderate tilt toward high-quality.")
     ap.add_argument("--label", default="TLH backtest")
     ap.add_argument("--show-swaps", type=int, default=0,
                      help="Show top N swaps by loss size")
@@ -329,6 +338,7 @@ def main(argv=None) -> int:
         starting_capital=args.capital,
         monthly_contribution=args.monthly,
         min_loss_pct=args.min_loss_pct,
+        quality_tilt=args.quality_tilt,
     )
 
     print(render_summary(result, args.label, args.tax_rate))
