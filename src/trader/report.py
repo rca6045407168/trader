@@ -126,6 +126,8 @@ def build_daily_report(
     sleeve_pnl: dict[str, dict] | None = None,
     recent_snapshots: list[dict] | None = None,
     is_first_trading_day: bool = False,
+    market_open_today: bool = True,
+    last_trading_day: date | None = None,
 ) -> tuple[str, str]:
     """Returns (subject, body)."""
     sections = []
@@ -145,6 +147,17 @@ def build_daily_report(
         day_pnl = equity_after - STARTING_CAPITAL
         day_pct = day_pnl / STARTING_CAPITAL
         day_basis_note = " (vs $100k start; no prior snapshot yet)"
+
+    # v6.0.x: on a non-trading day (weekend / holiday), the broker's
+    # "day P&L" is stale (it's the LAST trading day's P&L). The report
+    # used to label it as today's intraday performance, which was
+    # misleading. Now we relabel + caveat.
+    if not market_open_today:
+        last_str = last_trading_day.isoformat() if last_trading_day else "last close"
+        day_pnl_label = f"Last-close P&L ({last_str}):"
+        day_basis_note = (day_basis_note or "") + " — market closed today; figures are from the last trading session"
+    else:
+        day_pnl_label = "Day P&L:  "
 
     cum_pnl = equity_after - STARTING_CAPITAL
     cum_pct = cum_pnl / STARTING_CAPITAL
@@ -255,7 +268,7 @@ def build_daily_report(
         f"Equity:    {_fmt_money(equity_after)}\n"
         f"Cash:      {_fmt_money(cash_after)}  ({cash_pct*100:.0f}%)\n"
         f"Deployed:  {_fmt_money(deployed)}  ({deployed_pct*100:.0f}%)\n"
-        f"Day P&L:   {_fmt_money(day_pnl, sign=True)}  ({_fmt_pct(day_pct)}){day_basis_note}{sigma_str}\n"
+        f"{day_pnl_label} {_fmt_money(day_pnl, sign=True)}  ({_fmt_pct(day_pct)}){day_basis_note}{sigma_str}\n"
         f"           vs {spy_str}{excess_str}\n"
         f"Total:     {_fmt_money(cum_pnl, sign=True)}  ({_fmt_pct(cum_pct)}) since $100k start\n"
         f"Drawdown:  {_fmt_pct(dd_from_peak)} from rolling peak ({_fmt_money(max_eq)})"
@@ -334,26 +347,41 @@ def build_daily_report(
         order_lines = ["No orders this run (no changes from current allocation)."]
     sections.append(_section("ORDERS", "\n".join(order_lines)))
 
-    # ---- (6.5) ANOMALOUS MOVES — positions diverging materially from SPY today ----
+    # ---- (6.5) POSITION RETURN SINCE ENTRY — names diverging materially from SPY ----
+    # v6.0.x rename: previously titled "ANOMALOUS MOVES (>2% vs SPY)" which
+    # implied INTRADAY divergence. The underlying metric (unrealized_plpc)
+    # is CUMULATIVE return since position entry — the previous label was
+    # confusing on multi-day-old positions, and outright misleading after a
+    # broker-resync (which resets entry → entry-to-now widens immediately).
     if positions_now and spy_today_return is not None:
         anomalous_lines = []
         spy_pct = spy_today_return
         for sym, p in positions_now.items():
-            # Use unrealized_plpc as a proxy for today's move (entry-to-now). It's not
-            # exactly today's move (could be cumulative) but a reasonable signal for
-            # divergence from market. For day-1 paper trading this approximates 'today'.
             pos_pct = p.get("unrealized_plpc", 0)
             divergence = pos_pct - spy_pct
-            if abs(divergence) > 0.02:  # >2% divergence from SPY
+            if abs(divergence) > 0.02:  # >2% divergence from SPY's last-session move
                 direction = "DOWN" if pos_pct < 0 else "UP"
                 anomalous_lines.append(
-                    f"  {sym}: {pos_pct*100:+.2f}%  ({direction} {abs(divergence)*100:.2f}% vs SPY)"
+                    f"  {sym}: {pos_pct*100:+.2f}% since entry  "
+                    f"({direction} {abs(divergence)*100:.2f}% vs SPY's last session)"
                 )
         if anomalous_lines:
+            # Label varies based on whether today is a trading day —
+            # on weekends the comparison is between cumulative position
+            # return and Friday's SPY move, so even the "vs SPY" framing
+            # needs care.
+            section_title = (
+                "POSITION RETURN SINCE ENTRY (>2% vs SPY last session)"
+                if market_open_today else
+                "POSITION RETURN SINCE ENTRY (>2% vs last-session SPY) — "
+                "market closed today, figures are NOT intraday"
+            )
             sections.append(_section(
-                "ANOMALOUS MOVES (>2% vs SPY)",
+                section_title,
                 "\n".join(anomalous_lines) +
-                "\n\nThe LLM analysis below should explain these via web search."
+                "\n\nThese are CUMULATIVE returns since each lot was opened "
+                "(not single-day moves). The LLM analysis below should "
+                "explain the larger divergences via web search."
             ))
 
     # ---- (7) POSITIONS — with age + next decision date ----

@@ -499,6 +499,54 @@ def main(force: bool = False) -> dict:
         return {"halted": True, "kill_switch_reasons": reasons}
     print("  kill switch clear.")
 
+    # v6.0.x: market-open gate. The orchestrator previously had no
+    # check against weekends/holidays — `--force` runs and scheduled
+    # cron alike would submit orders that queued for the next session,
+    # picking up whatever the weekend-news gap brought at Monday open.
+    # Now we refuse to submit when Alpaca's clock reports the market
+    # closed, unless the operator explicitly opts in via
+    # ALLOW_WEEKEND_ORDERS=1. DRY_RUN still proceeds (decisions are
+    # informational; no orders submitted regardless).
+    market_open_flag = True  # default-true so DRY_RUN and unit tests are unaffected
+    last_trading_day = None
+    if not DRY_RUN:
+        try:
+            clock = get_client().get_clock()
+            market_open_flag = bool(getattr(clock, "is_open", True))
+            if not market_open_flag:
+                # Compute the previous trading day for the report's
+                # "last-close" label. Walk back from today skipping
+                # weekends. (Holidays aren't worth modelling here —
+                # the operator can read the date and decide.)
+                from datetime import date as _date, timedelta as _td
+                d = _date.today() - _td(days=1)
+                while d.weekday() >= 5:  # Sat=5, Sun=6
+                    d -= _td(days=1)
+                last_trading_day = d
+                override = os.environ.get("ALLOW_WEEKEND_ORDERS", "0") == "1"
+                next_open = getattr(clock, "next_open", "unknown")
+                if override:
+                    print(f"  WARN: market closed (next open {next_open}); "
+                          f"ALLOW_WEEKEND_ORDERS=1 overrides. Orders will "
+                          f"queue at Alpaca for the next session.")
+                else:
+                    print(f"  HALT: market closed (next open {next_open}). "
+                          f"Set ALLOW_WEEKEND_ORDERS=1 to override.")
+                    return {
+                        "halted": True,
+                        "kill_switch_reasons": [
+                            f"market closed (next open {next_open})",
+                        ],
+                        "halt_type": "market_closed",
+                        "market_closed": True,
+                    }
+        except Exception as e:
+            # Clock fetch failure shouldn't block the run — proceed
+            # conservatively (system stays usable when Alpaca's status
+            # endpoint is flaky)
+            print(f"  market-clock check failed (proceeding): "
+                  f"{type(e).__name__}: {e}")
+
     # v1.9 (B9 partial fix wired in): reconciliation pre-flight
     if not DRY_RUN:
         try:
@@ -846,6 +894,8 @@ def main(force: bool = False) -> dict:
             sleeve_pnl=sleeve_pnl,
             recent_snapshots=recent_snaps,
             is_first_trading_day=(yest_eq is None),
+            market_open_today=market_open_flag,
+            last_trading_day=last_trading_day,
         )
         notify(body, subject=subject)
     except Exception as e:
