@@ -23,12 +23,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # ============================================================
 # Registry
 # ============================================================
-def test_twentyeight_strategies_registered():
-    """v3.73.28: 27 prior + 1 dd-recovery-reduced-gross = 28."""
+def test_twentynine_strategies_registered():
+    """v5.0.x: 28 prior + xs_top10_relstrength_8mo (S2) = 29."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 28, \
-        f"expected 28 strategies, got {len(specs)}: {[s.name for s in specs]}"
+    assert len(specs) == 29, \
+        f"expected 29 strategies, got {len(specs)}: {[s.name for s in specs]}"
 
 
 def test_canonical_strategy_names_present():
@@ -64,6 +64,8 @@ def test_canonical_strategy_names_present():
         "xs_top15_dd_recovery_aware",
         # Drawdown-recovery + reduced-gross response (1) — v3.73.28
         "xs_top15_dd_recovery_reduced_gross",
+        # Relative-strength (1) — v5.0.x (factor-research survivor)
+        "xs_top10_relstrength_8mo",
     }
     assert names == expected, f"missing: {expected - names}, extra: {names - expected}"
 
@@ -210,6 +212,8 @@ def test_evaluate_at_inserts_rows_and_is_idempotent(tmp_path, monkeypatch):
     # v3.73.22: 24 prior + recovery_aware (1 more producing picks) = 25
     # v3.73.24: 25 prior + dd_recovery_aware (1 more producing picks) = 26
     # v3.73.28: 26 prior + dd_recovery_reduced_gross (1 more) = 27
+    # v5.0.x: 28 strategies registered, xs_top10_relstrength_8mo joins
+    # long_short_momentum as skipped on the 5-name synthetic panel (needs SPY + ≥10 names) — 27 inserts
     n1 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)
     assert n1 == 27, f"first call should insert 27 rows; got {n1}"
     n2 = eval_runner.evaluate_at(asof, cols, prices=prices, db_path=db)

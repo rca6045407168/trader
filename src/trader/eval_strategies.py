@@ -834,3 +834,67 @@ def xs_top15_dd_recovery_reduced_gross(asof, prices):
     if total <= 0:
         return {t: target_gross / len(top15) for t, _ in top15}
     return {t: target_gross * (s / total) for t, s in shifted}
+
+
+# ============================================================
+# 21. v5.0.x — RELATIVE STRENGTH vs SPY (S2)
+#
+# Sourced from a separate factor-research project (see
+# ~/code/factor-research). Rigor record:
+#   - 6 strategy SHAPES tested, locked a priori before data
+#   - S2 (relative strength) survived the rigorous bar where the
+#     other 5 shapes (mom×lowvol, sector-top1, regime-cash,
+#     multi-factor ensemble, drawdown contrarian) all failed
+#   - Full grid: 36 cells (lookback × top-N) at 0/5/10 bps cost
+#   - 27 of 36 cells pass at 5 bps/side (realistic Alpaca/Public)
+#   - Strongest cell by OOS bootstrap CI: lookback=8 months,
+#     top-N=10, equal-weight, 80% gross. CI = [+1.55, +4.63] at
+#     90% confidence on the 2016-onwards held-out OOS window.
+#   - Regime profile: positive in 5 of 6 historical windows
+#     (DOT_COM_BUST is the only loss; consistent with all
+#     long-momentum-shaped strategies failing the tech-bust)
+#
+# Mechanic differs from the other 17 candidates: instead of
+# ranking by absolute return (JT-1993 momentum), ranks by
+# (own_return - SPY_return) over the lookback window. This
+# de-means by SPY → captures cross-sectional outperformance
+# rather than absolute momentum.
+#
+# Status: SHADOW. The v5.0.0 auto-router's eligibility filter
+# (MIN_EVIDENCE_MONTHS=6, MAX_BETA=1.20, MIN_DD=-25%) requires
+# 6 months of forward returns before it can become LIVE. If the
+# forward evidence confirms the historical robustness, the
+# auto-router will route to it; if not, it stays SHADOW.
+# ============================================================
+@register("xs_top10_relstrength_8mo",
+          "v5.0.x: top-10 by 8-month relative-strength vs SPY, "
+          "equal-weight, 80% gross. SHAPE survived 27/36 grid cells "
+          "in regime+bootstrap+cost rigor (factor-research repo). "
+          "First non-JT-momentum candidate in the eval harness.")
+def xs_top10_relstrength_8mo(asof, prices):
+    """Score = (own 8-month return) - (SPY 8-month return). Top-10 by score."""
+    p = _stock_panel(prices)
+    p = p[p.index <= asof]
+    if len(p) < 252 or "SPY" not in prices.columns:
+        return {}
+    spy = prices["SPY"].dropna()
+    spy = spy[spy.index <= asof]
+    if len(spy) < 168:  # ~8 months of trading days
+        return {}
+    # 8-month return ~ 168 trading days
+    spy_ret = float(spy.iloc[-1] / spy.iloc[-168] - 1) if spy.iloc[-168] > 0 else 0.0
+    scored = []
+    for sym in p.columns:
+        s = p[sym].dropna()
+        if len(s) < 168:
+            continue
+        if s.iloc[-168] <= 0:
+            continue
+        own_ret = float(s.iloc[-1] / s.iloc[-168] - 1)
+        rs = own_ret - spy_ret
+        scored.append((sym, rs))
+    if len(scored) < 10:
+        return {}
+    scored.sort(key=lambda x: -x[1])
+    top10 = scored[:10]
+    return {t: 0.80 / 10 for t, _ in top10}

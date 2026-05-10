@@ -179,12 +179,12 @@ def test_max_loss_implied_max_weight_at_default_params():
 # ============================================================
 # Integration: 2 new eval-harness strategies
 # ============================================================
-def test_total_strategies_now_twentyeight():
-    """v3.73.28: 27 prior + 1 dd-recovery-reduced-gross = 28 total."""
+def test_total_strategies_now_twentynine():
+    """v5.0.x: 28 prior + xs_top10_relstrength_8mo (S2) = 29 total."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 28, \
-        f"expected 28 strategies, got {len(specs)}"
+    assert len(specs) == 29, \
+        f"expected 29 strategies, got {len(specs)}"
 
 
 def test_new_sizing_strategies_registered():
