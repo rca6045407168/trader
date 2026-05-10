@@ -998,6 +998,7 @@ with st.sidebar:
             ("💼 Live positions", "live_positions"),
             ("🎯 Decisions", "decisions"),
             ("📦 Position lots", "lots"),
+            ("🌳 TLH", "tlh"),
             ("📊 Attribution", "attribution"),
         ]),
         ("📰 Discovery", None, [
@@ -2458,6 +2459,252 @@ def view_lots():
         st.dataframe(closed, use_container_width=True, hide_index=True)
     else:
         st.caption("_no closed lots yet_")
+
+
+# ============================================================
+# View: TLH (tax-loss harvesting)
+# v6.0.x: surfaces the YTD realized loss + projected tax savings
+# from the direct-index core sleeve. Pulls from position_lots.
+# ============================================================
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_tlh_year(db_path_str: str, year: int):
+    """Cached fetch of loss-close events for a tax year."""
+    from scripts.tlh_year_end import (
+        fetch_loss_closes, find_wash_sale_flags
+    )
+    closes = fetch_loss_closes(db_path_str, year)
+    flags = find_wash_sale_flags(db_path_str, closes)
+    return closes, flags
+
+
+def view_tlh():
+    st.title("🌳 Tax-loss harvesting")
+    st.caption("v6.0.x — direct-index core sleeve. Realized losses from "
+                "harvest swaps, available to offset capital gains + ordinary "
+                "income at tax time.")
+
+    # --- Master gate notice ---
+    tlh_on = os.environ.get("TLH_ENABLED", "false").lower() == "true"
+    core_pct = float(os.environ.get("DIRECT_INDEX_CORE_PCT", "0.70"))
+    if not tlh_on:
+        st.warning(
+            "**TLH is OFF.** Set `TLH_ENABLED=true` in the daemon env "
+            "and restart `com.trader.daily-run` to start harvesting. "
+            "Until then, only the auto-router alpha sleeve runs."
+        )
+    else:
+        st.success(
+            f"**TLH is ON.** Direct-index core: {core_pct*100:.0f}% of capital. "
+            f"Alpha sleeve: {(1-core_pct)*100:.0f}%."
+        )
+
+    # --- Tax rate inputs ---
+    with st.expander("⚙️ Marginal tax rates (drives savings estimate)",
+                      expanded=False):
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            fed_rate = st.slider("Federal marginal", 0.10, 0.37, 0.32, 0.01,
+                                   help="Default 32% is the bracket for "
+                                        "$200-500k MFJ in 2025-26.")
+        with col_b:
+            state_rate = st.slider("State marginal", 0.00, 0.133, 0.05, 0.005,
+                                     help="Default 5%. CA top is 13.3%; NY "
+                                          "top is 10.9%; TX/FL/WA are 0%.")
+        with col_c:
+            cg_assumed = st.number_input(
+                "Realized capital gains this yr ($)",
+                value=0.0, step=1000.0,
+                help="Losses offset these FIRST (unlimited). After that, "
+                     "$3k/yr offsets ordinary income, rest carries forward."
+            )
+
+    # --- Year selector ---
+    cur_year = datetime.utcnow().year
+    year = st.selectbox("Tax year",
+                         options=list(range(cur_year, cur_year - 4, -1)),
+                         index=0)
+
+    closes, flags = _cached_tlh_year(str(DB_PATH), year)
+
+    if not closes:
+        st.info(
+            f"No loss-realizing closes recorded for {year} yet.\n\n"
+            "If you just turned TLH on, positions need to accumulate "
+            "5%+ losses (the harvest threshold) before swaps fire. "
+            "Typical first-year ramp: 6–12 months to full throughput."
+        )
+        return
+
+    # --- Headline metrics ---
+    total_loss = sum(ev.realized_pnl for ev in closes)
+    lt_loss = sum(ev.realized_pnl for ev in closes if ev.is_long_term)
+    st_loss = total_loss - lt_loss
+
+    from scripts.tlh_year_end import estimate_tax_savings, aggregate_by_symbol
+    est = estimate_tax_savings(
+        total_loss=total_loss,
+        federal_rate=fed_rate,
+        state_rate=state_rate,
+        capital_gains_offset=cg_assumed,
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Loss-closes", f"{len(closes)}")
+    col2.metric("Realized loss YTD", f"${total_loss:,.0f}",
+                 help="Negative number — this is what offsets gains.")
+    col3.metric("★ Tax saved (est)", f"${est['total_savings']:,.0f}",
+                 help=f"At {est['combined_rate']:.0%} combined rate. "
+                      f"Includes both cap-gain and ordinary offsets.")
+    col4.metric("Carry-forward", f"${est['carry_forward']:,.0f}",
+                 help="Offsets future years' gains, no expiry.")
+
+    # --- Breakdown ---
+    st.divider()
+    st.subheader("Where the savings come from")
+    st.markdown(
+        f"- Capital-gains offset: **${est['cg_offset']:,.0f}** "
+        f"(of ${cg_assumed:,.0f} assumed gains) "
+        f"→ saves **${est['cg_savings']:,.0f}**\n"
+        f"- Ordinary-income offset: **${est['ordinary_offset']:,.0f}** "
+        f"(IRS cap $3,000/yr) "
+        f"→ saves **${est['ordinary_savings']:,.0f}**\n"
+        f"- Carry-forward to future years: **${est['carry_forward']:,.0f}**"
+    )
+    if st_loss < 0 or lt_loss < 0:
+        st.caption(f"Term breakdown: ST ${st_loss:,.0f}  ·  LT ${lt_loss:,.0f}  "
+                    f"(ST losses offset ST gains 1:1; LT-then-ST netting per Form 8949)")
+
+    # --- Per-ticker table ---
+    st.divider()
+    st.subheader("Per-ticker rollup")
+    rows = aggregate_by_symbol(closes)
+    if rows:
+        df_rows = pd.DataFrame([
+            {
+                "Symbol": r["symbol"],
+                "Closes": r["count"],
+                "Realized loss": round(r["total_loss"], 2),
+                "ST closes": r["st_count"],
+                "LT closes": r["lt_count"],
+                "Sleeves": r["sleeves"],
+            }
+            for r in rows
+        ])
+        st.dataframe(df_rows, use_container_width=True, hide_index=True)
+
+    # --- Wash-sale flags ---
+    st.divider()
+    st.subheader("Wash-sale flags")
+    if not flags:
+        st.success("✅ None detected within the 31-day window. "
+                    "The planner avoids them by design (sector-matched, "
+                    "not substantially-identical replacements).")
+    else:
+        st.warning(
+            f"⚠️ {len(flags)} potential wash-sale event(s) detected — "
+            "the broker 1099-B is authoritative; hand this list to your "
+            "accountant for review."
+        )
+        flag_rows = pd.DataFrame([
+            {
+                "Symbol": f.symbol,
+                "Loss closed": f.loss_closed_at[:19],
+                "Re-bought": f.repurchase_at[:19],
+                "Days between": f.days_between,
+                "$ at risk": round(f.loss_amount, 2),
+            }
+            for f in flags
+        ])
+        st.dataframe(flag_rows, use_container_width=True, hide_index=True)
+
+    # --- Recent harvest events ---
+    st.divider()
+    st.subheader("Most recent loss-closes (last 20)")
+    recent_rows = sorted(closes, key=lambda e: e.closed_at, reverse=True)[:20]
+    df_recent = pd.DataFrame([
+        {
+            "Symbol": ev.symbol,
+            "Sleeve": ev.sleeve,
+            "Opened": ev.opened_at[:10],
+            "Closed": ev.closed_at[:10],
+            "Held (days)": ev.holding_period_days,
+            "Term": "LT" if ev.is_long_term else "ST",
+            "Qty": ev.qty,
+            "Loss $": round(ev.realized_pnl, 2),
+        }
+        for ev in recent_rows
+    ])
+    st.dataframe(df_recent, use_container_width=True, hide_index=True)
+
+    # --- CSV download ---
+    st.divider()
+    st.subheader("Year-end export")
+    st.caption("Same CSV that `python scripts/tlh_year_end.py --csv-out` produces. "
+                "Columns mirror 1099-B / Form 8949. Hand to your accountant.")
+    import io
+    buf = io.StringIO()
+    import csv as _csv
+    w = _csv.writer(buf)
+    w.writerow(["symbol", "sleeve", "date_acquired", "date_sold", "qty",
+                 "proceeds", "cost_basis", "realized_loss",
+                 "holding_period_days", "term"])
+    for ev in closes:
+        w.writerow([
+            ev.symbol, ev.sleeve, ev.opened_at[:10], ev.closed_at[:10],
+            f"{ev.qty:.6f}",
+            f"{ev.qty * ev.close_price:.2f}",
+            f"{ev.qty * ev.open_price:.2f}",
+            f"{ev.realized_pnl:.2f}",
+            ev.holding_period_days,
+            "LT" if ev.is_long_term else "ST",
+        ])
+    st.download_button(
+        label=f"⬇️ Download tlh_{year}.csv",
+        data=buf.getvalue(),
+        file_name=f"tlh_{year}.csv",
+        mime="text/csv",
+    )
+
+    # --- How to read this ---
+    with st.expander("📚 How to read this — what these numbers mean",
+                       expanded=False):
+        st.markdown("""
+**What the system does.** Each daily run, the TLH planner scans every
+position in the direct-index core (Book A) and checks: is this name
+down ≥ 5% from cost basis? If yes, AND a sector-matched replacement
+is available outside the 31-day wash-sale window, the system sells
+the loser and buys the replacement. The realized loss is journaled.
+Market exposure stays the same — only the tax lot changes.
+
+**What "tax saved" means.** The estimated $ saved is your realized
+loss × your combined marginal rate. The IRS lets losses offset:
+1. **Realized capital gains** (any amount, no limit)
+2. **Ordinary income** (up to $3,000/year)
+3. **Future years** (carry-forward, indefinite)
+
+Losses are applied in that order — gains first, then ordinary, then
+carry forward. The "Where the savings come from" section above
+breaks out which bucket is doing the work.
+
+**Why the estimate may differ from your accountant.**
+- We use combined federal + state rates as-entered above. Your
+  actual rate depends on AGI, deductions, AMT, NIIT, and state-
+  specific quirks.
+- LT capital gains use a lower rate (15-20% + state, vs 32%+ here).
+  If most of your offsetting gains are LT, the savings are smaller.
+  Override `Realized capital gains this yr` to 0 and add LT-only
+  manually if you want term-aware math.
+- Wash-sale recapture: if the broker 1099-B reports a disallowed
+  loss (which the system tries to avoid), the actual tax savings
+  drops by that amount. Check the wash-sale flags table above.
+
+**When you should DO something.**
+- Anytime the "⚠️ Wash-sale flags" panel lights up: surface to
+  accountant; don't ignore.
+- Year-end (December): run `python scripts/tlh_year_end.py` for
+  the printable accountant-handoff version. Or use the CSV
+  download above.
+        """)
 
 
 # ============================================================
@@ -4780,6 +5027,7 @@ VIEW_DISPATCH = {
     "live_positions": view_live_positions,
     "decisions": view_decisions,
     "lots": view_lots,
+    "tlh": view_tlh,
     "performance": view_performance,
     "attribution": view_attribution,
     "events": view_events,
