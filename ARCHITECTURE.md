@@ -697,32 +697,44 @@ Verbatim from the disposition spec:
 - **All four production daemons** — daily-run, daily-heartbeat, earnings-reactor, journal-replicate.
 - **810 tests** — verify code does what code claims.
 
-### 11.3 Exit criterion (replaces the v4.0.0 stop-rule)
+### 11.3 Exit criterion — historical record (RETIRED at v5.0.0)
+
+> **⚠️ Retired.** This section described the v4.0.0 exit criterion ("no further commits beyond security patches / deletion / daemon-bugfixes"). That criterion was explicitly **superseded by V5_DISPOSITION.md on 2026-05-08** when the operator reversed the sunset and asked to "put money against the strategy and keep developing." See §11.6 for the reactivation record and the rationale for the supersedure.
+>
+> Preserving the original §11.3 text below as historical record. It is not a binding constraint as of v5.0.0.
+
+---
+
+> *Original v4.0.0 stop-rule text:*
 
 The v4.0.0 stop-rule was: "any commit beyond security patches / deletion / daemon-bugfixes inside 90 days means A failed and you owe yourself C — and you do C without negotiating."
 
-The stop-rule didn't hold. Three bypasses landed inside four weeks (`11f2480` freshness fix, `0bc70ca` token counter, `62d6f39` this document). Each was rationalized as a defensible one-off. That is the same pattern v3.x's 28 versioned point-releases were. A freeze that gets renegotiated three times in four weeks is not a freeze.
+The stop-rule didn't hold. Three bypasses landed inside four weeks (`11f2480` freshness fix, `0bc70ca` token counter, `62d6f39` ARCHITECTURE.md initial draft). Each was rationalized as a defensible one-off. That is the same pattern v3.x's 28 versioned point-releases were. A freeze that gets renegotiated three times in four weeks is not a freeze.
 
-**The replacement is an exit criterion, not another stop-rule:**
+**The replacement was an exit criterion, not another stop-rule:**
 
 - **Exit fired on 2026-05-08.** All daemons unloaded, dashboard stopped, repo no longer operational. See §11.5.
 - **Reactivation requires v5.0.0** — explicit new disposition document, not a stop-rule bypass.
-- **The IR finding stands as the falsification.** `naive_top15_12mo_return` outperformed the LIVE variant on annualized monthly IR (0.60 vs 0.46) over the recorded eval-harness window. The disposition's job was to act on that. The valid responses were: flip LIVE to naive, ablate the complexity component-by-component, or shut down. The disposition picked the third — belatedly, on 2026-05-08, when the daemons stopped. (Caveat: the IR comparison runs on the same survivor-biased panel that killed the long-window CI test in §11.1. The complexity-tax finding is *directional* — the simpler variant beats the complex one — but the *magnitude* lives on the same contaminated data and should not be quoted as a precise number.)
-- **No further commits to this repo unless they are: security patches on pinned deps, or deletions.** Documentation additions count as bypasses by the same logic that made `0bc70ca` and `62d6f39` bypasses. The next addition triggers nothing automatic, because there is nothing left running to trigger — but it would be the third costume the project's accumulated to avoid the underlying decision, after "strategy iteration" (v3.x) and "viewer-honesty" (v4.0.x).
+- **The IR finding stood as the falsification.** `naive_top15_12mo_return` outperformed the LIVE variant on annualized monthly IR (0.60 vs 0.46) over the recorded eval-harness window. (Caveat: the IR comparison runs on the same survivor-biased panel that killed the long-window CI test in §11.1. The complexity-tax finding is *directional* — the simpler variant beats the complex one — but the *magnitude* lives on the same contaminated data and should not be quoted as a precise number.)
+- **No further commits to this repo unless they are: security patches on pinned deps, or deletions.**
 
-The document does not warrant a future v6 freeze framing. The exit happened.
+**The v5.0.0 response to this stop-rule (2026-05-08, same day as the exit):** the operator decided the falsification was real but the response was wrong. The IR finding said "single-strategy momentum has no edge"; the right response was not to shut down the project but to **change the strategy frame from single-LIVE to multi-strategy auto-router**, where the system selects the highest-IR variant on a rolling basis under an eligibility filter. The auto-router can include `naive_top15_12mo_return` itself; if it actually wins on rolling IR, it wins. This makes the falsification *information* rather than a verdict.
 
-### 11.4 The bypasses on record
+V5_DISPOSITION.md formalizes that response and explicitly retires this stop-rule. The v6.0.x additions (TLH two-book, overlays, new alpha sources) build on top of that frame.
 
-| Commit | Tag | What it shipped | Defense |
+### 11.4 The bypasses on record — historical (RETIRED at v5.0.0)
+
+> **⚠️ Retired.** Like §11.3, this section's enforcement clause was superseded by V5_DISPOSITION.md. Preserved verbatim as historical record of the v4.0.0 frame.
+
+| Commit | Tag | What it shipped | Defense (under v4.0.0 frame) |
 |---|---|---|---|
 | `c0a8100` | `v4.0.0` | The disposition itself | n/a — this is the freeze |
 | `f304eea` | (untagged) | Drop `COPY docs/` from `Dockerfile.dashboard` | deletion of code; required to actually rebuild after the docs/ delete |
 | `11f2480` | `v4.0.1` | Dashboard freshness fix | viewer-honesty bugfix; the headline was lying mid-session |
 | `0bc70ca` | (untagged) | View_chat token-cost caption | **Honestly a new feature.** Shipped under explicit user override. Logged as the *last* bypass without explicit sunset acknowledgment. |
-| (this commit) | (untagged) | This document | The single allowed doc. Replaces what would otherwise be many docs. |
+| `62d6f39` | (untagged) | Initial ARCHITECTURE.md draft | The single allowed doc. Tipping point that triggered the §11.5 sunset. |
 
-The next non-deletion / non-daemon-bugfix commit means path C without negotiating.
+The "next non-deletion commit means path C" clause did its job — it triggered the 2026-05-08 sunset (§11.5). That sunset was reversed by the operator within hours, which produced V5_DISPOSITION.md and the multi-strategy frame. **Subsequent commits (v5/v6) are not bypasses under the v4.0.0 frame** because v5.0.0 explicitly superseded that frame. They're development under the new disposition.
 
 ### 11.5 Path C executed (v4.1.0, 2026-05-08)
 

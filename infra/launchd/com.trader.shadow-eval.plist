@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trader.shadow-eval</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/richardchen/trader/.venv/bin/python</string>
+    <string>/Users/richardchen/trader/scripts/run_shadow_eval.py</string>
+  </array>
+  <!-- 4:30 PM ET on weekdays, just after market close and just after
+       the daily orchestrator (which runs at 1:10 PM PT = 4:10 PM ET).
+       Time given as Pacific (the host's local time): 1:30 PM PT. -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <!-- Sleep resilience: pair CalendarInterval with StartInterval. The
+       eval is idempotent (UNIQUE constraint on strategy_eval) so
+       over-firing is harmless. 7200s = 2hr gives plenty of catch-up
+       window for laptop wake. -->
+  <key>StartInterval</key>
+  <integer>7200</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/richardchen/Library/Logs/trader-shadow-eval.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/richardchen/Library/Logs/trader-shadow-eval.err.log</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/richardchen/trader</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/richardchen</string>
+    <key>PATH</key><string>/Users/richardchen/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PYTHONPATH</key><string>/Users/richardchen/trader/src</string>
+    <!-- v6 env knobs force-enabled in-process by the script too, but
+         set here for redundancy + visibility to operators reading
+         the plist. -->
+    <key>INSIDER_SIGNAL_ENABLED</key><string>1</string>
+    <key>INSIDER_EDGAR_ENABLED</key><string>1</string>
+    <key>PEAD_ENABLED</key><string>1</string>
+    <key>SEC_USER_AGENT</key><string>trader-shadow-eval richard.chen@flexhaul.ai</string>
+  </dict>
+</dict>
+</plist>
