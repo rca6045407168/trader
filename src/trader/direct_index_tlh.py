@@ -147,6 +147,52 @@ REPLACEMENT_MAP: dict[str, list[str]] = {
 }
 
 
+def _autocomplete_replacement_map() -> None:
+    """v6.0.x: auto-fill REPLACEMENT_MAP for the expanded 138-name
+    universe. For any ticker in SECTORS that's missing from the
+    hand-curated map, pick 3 same-sector siblings as replacements.
+    Selection is deterministic (sorted by ticker) so the same
+    replacements are chosen on every load — important for
+    wash-sale logic to be stable across daily runs.
+
+    Hand-curated entries are NEVER overwritten; this only fills gaps.
+    """
+    from .sectors import SECTORS
+    # Build sector → tickers map
+    by_sector: dict[str, list[str]] = {}
+    for t, s in SECTORS.items():
+        by_sector.setdefault(s, []).append(t)
+    for s in by_sector:
+        by_sector[s].sort()
+    # Fill gaps
+    for ticker, sector in SECTORS.items():
+        if ticker in REPLACEMENT_MAP:
+            continue
+        siblings = [t for t in by_sector[sector] if t != ticker]
+        if not siblings:
+            # Singleton sector — cross to nearest cousin
+            siblings = [t for t in REPLACEMENT_MAP.keys() if t != ticker][:3]
+        REPLACEMENT_MAP[ticker] = siblings[:3]
+
+
+# Run autocomplete at import time so the expanded universe has full
+# REPLACEMENT_MAP coverage from the first orchestrator tick.
+_autocomplete_replacement_map()
+
+
+def _autocomplete_quality_and_caps() -> None:
+    """v6.0.x: same idea for QUALITY_SCORES + APPROX_CAP_B. Default
+    quality 1.0 (neutral) and cap 50B (small) for any ticker not
+    hand-curated. The strategy operator can hand-tune later if a
+    specific name deserves better."""
+    from .sectors import SECTORS
+    for ticker in SECTORS:
+        if ticker not in QUALITY_SCORES:
+            QUALITY_SCORES[ticker] = 1.0
+        if ticker not in APPROX_CAP_B:
+            APPROX_CAP_B[ticker] = 50.0
+
+
 @dataclass
 class HarvestSwap:
     sell_ticker: str
@@ -529,3 +575,8 @@ def format_plan_summary(plan: TLHPlan) -> str:
     for sym, reason in plan.skipped:
         lines.append(f"  SKIPPED: {sym} — {reason}")
     return "\n".join(lines)
+
+
+# Run autocomplete at import time — must be at the bottom so
+# QUALITY_SCORES and APPROX_CAP_B are already defined.
+_autocomplete_quality_and_caps()

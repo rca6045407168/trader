@@ -20,6 +20,10 @@ the "off" column.
 | **Drawdown-aware sizing** | Tapers gross to 0.70× between -5 % and -10 % drawdown. Safe direction only (no levering on recovery). | `DRAWDOWN_AWARE_ENABLED=1` | `=0` | Tail-loss reduction ~0.2–0.5 %/yr |
 | **Quality tilt on TLH basket** | Novy-Marx ROE/ROIC overlay on cap-weighted basket. Optional. | `DIRECT_INDEX_QUALITY_TILT=0.0` | (unset) | +0.3–0.7 %/yr long-run |
 | **Insider cluster-buying strategy** (Cohen-Malloy-Pomorski 2012) | Pulls yfinance's 6-mo insider net-buying aggregate, ranks the universe, top-10 equal-weighted becomes an eligible auto-router strategy. Long-only, orthogonal to momentum. | `INSIDER_SIGNAL_ENABLED=0` | `=1` | +1–2 %/yr (degraded from CMP-2012's 3 %/yr by data coarseness + post-publication decay) |
+| **SEC EDGAR direct Form-4 30d** | Upgrade of yfinance aggregate: pulls Form 4 XML directly from SEC EDGAR, transaction-level filtering on officer/director purchases, 30-day window. Polite rate-limited (8 qps). | `INSIDER_EDGAR_ENABLED=0` | `=1` | +2–3 %/yr (fresher signal vs 6-mo aggregate) |
+| **PEAD (post-earnings drift)** | Reads earnings-reactor signals from journal, scores by direction × materiality, top-10 long-only. Wires the existing earnings-reactor daemon into the auto-router pool. | `PEAD_ENABLED=0` | `=1` | +1–2 %/yr (Bernard-Thomas 1989, decayed 30 % post-2010) |
+| **Calendar-effect overlay** | Multiplicative gross scalar from anomalies.py (turn-of-month, OPEX, pre-FOMC, year-end reversal, pre-holiday). Capped at +10 % / floor at -5 %. Preserves cross-sectional weights. | `CALENDAR_OVERLAY_ENABLED=1` | `=0` | +30–50 bps/yr stacked |
+| **Universe expansion 50 → 138** | Triples the cross-section. More TLH harvest opportunities, more momentum candidates, adds Utilities + Real Estate sectors. REPLACEMENT_MAP auto-generated for new names via sector lookup. | `UNIVERSE_SIZE=` (50) | `=expanded` | +0.3–0.6 %/yr (more TLH harvest scope) |
 
 To enable TLH (the 70 % core sleeve overlay), still requires an
 explicit opt-in:
@@ -192,9 +196,13 @@ flat-market year, vs SPY ETF:
 | Stock lending | +0.05–0.5 %/yr |
 | Cash interest (vs idle) | +0.1–0.3 %/yr |
 | Quality factor (long-run) | +0.3–0.7 %/yr |
-| Insider cluster-buying (v6.0.x add) | +1.0–2.0 %/yr |
+| Insider cluster-buying (yfinance 6-mo) | +1.0–2.0 %/yr |
+| Insider cluster-buying (EDGAR 30d, supersedes yfinance) | +2.0–3.0 %/yr |
+| PEAD (post-earnings drift) | +1.0–2.0 %/yr |
+| Calendar-effect overlay (stacked anomalies) | +0.3–0.5 %/yr |
+| Universe expansion (more TLH harvest scope) | +0.3–0.6 %/yr |
 | Vol-targeted alpha sleeve | Sharpe-only (path) |
-| **TOTAL OVER SPY (after-tax)** | **+3.0–5.5 %/yr** |
+| **TOTAL OVER SPY (after-tax)** | **+5.0–9.0 %/yr** |
 
 The trader account becomes a deliberate, transparent SPY+α machine
 where every basis point of edge has an audited source and a

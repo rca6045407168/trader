@@ -967,3 +967,113 @@ def xs_top10_insider_buy(asof, prices):
         return {}
     w = 0.80 / len(picks)
     return {t: w for t, _ in picks}
+
+
+# ============================================================
+# 23. v6.0.x — SEC EDGAR Form-4 30-day insider window
+#
+# Upgrade of #22 (yfinance 6-month aggregate) to authoritative SEC
+# filings with transaction-level granularity. Pulls Form 4s for
+# every universe ticker over the last 30 days, filters to officer/
+# director P (purchase) and S (sale) transactions, computes net-
+# buy USD per name, ranks descending.
+# ============================================================
+@register("xs_top10_insider_edgar_30d",
+           "Top-10 by 30-day SEC Form-4 net-buy value, officer/"
+           "director filter (CMP-2012 fresher spec, ~2-3%/yr alpha)")
+def xs_top10_insider_edgar_30d(asof, prices):
+    import os
+    if os.environ.get("INSIDER_EDGAR_ENABLED", "0") != "1":
+        return {}
+    from datetime import datetime, timedelta
+    try:
+        asof_dt = pd.Timestamp(asof).to_pydatetime()
+    except Exception:
+        return {}
+    now = datetime.utcnow()
+    if not (now - timedelta(days=14) <= asof_dt <= now + timedelta(days=1)):
+        return {}
+    if prices is None or prices.empty:
+        return {}
+    p = _stock_panel(prices)
+    if p.empty:
+        return {}
+    try:
+        p = p[p.index <= asof]
+    except Exception:
+        return {}
+    if p.empty:
+        return {}
+    universe = [c for c in p.columns if c != "SPY"]
+    try:
+        from .sec_edgar_form4 import top_n_by_30d_insider_buy
+        picks = top_n_by_30d_insider_buy(universe, n=10)
+    except Exception:
+        return {}
+    if not picks:
+        return {}
+    w = 0.80 / len(picks)
+    return {t: w for t, _ in picks}
+
+
+# ============================================================
+# 24. v6.0.x — POST-EARNINGS-ANNOUNCEMENT DRIFT (PEAD)
+#
+# Reads recently-flagged earnings signals from journal.earnings_signals
+# (populated by the earnings_reactor daemon), scores them by
+# (direction × materiality), takes the top-10 positive-drift names.
+# ============================================================
+@register("xs_top10_pead_5d",
+           "Top-10 by recent positive-direction earnings signals "
+           "(PEAD, materiality-weighted, 5-day decay window, "
+           "~1-2 %/yr alpha post-decay)")
+def xs_top10_pead_5d(asof, prices):
+    import os
+    if os.environ.get("PEAD_ENABLED", "0") != "1":
+        return {}
+    from datetime import datetime, timedelta
+    try:
+        asof_dt = pd.Timestamp(asof).to_pydatetime()
+    except Exception:
+        return {}
+    now = datetime.utcnow()
+    if not (now - timedelta(days=14) <= asof_dt <= now + timedelta(days=1)):
+        return {}
+    if prices is None or prices.empty:
+        return {}
+    try:
+        from .earnings_reactor import recent_signals
+        signals = recent_signals(since_days=10)
+    except Exception:
+        return {}
+    if not signals:
+        return {}
+    direction_weight = {
+        "BULLISH": 1.0,
+        "SURPRISE": 1.2,
+        "NEUTRAL": 0.0,
+        "BEARISH": -1.0,
+    }
+    scored: dict[str, float] = {}
+    for sig in signals:
+        sym = sig.get("symbol") or sig.get("ticker")
+        if not sym:
+            continue
+        direction = (sig.get("direction") or "").upper()
+        materiality = float(sig.get("materiality") or 0)
+        if direction not in direction_weight:
+            continue
+        s = direction_weight[direction] * max(materiality, 1.0)
+        if sym not in scored or s > scored[sym]:
+            scored[sym] = s
+    longs = [(t, s) for t, s in scored.items() if s > 0]
+    if not longs:
+        return {}
+    if not prices.empty:
+        longs = [(t, s) for t, s in longs if t in prices.columns]
+    if not longs:
+        return {}
+    longs.sort(key=lambda x: -x[1])
+    picks = longs[:10]
+    w = 0.80 / len(picks)
+    return {t: w for t, _ in picks}

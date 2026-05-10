@@ -23,12 +23,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # ============================================================
 # Registry
 # ============================================================
-def test_thirty_strategies_registered():
-    """v6.0.x: 29 prior + xs_top10_insider_buy (Cohen-Malloy-Pomorski) = 30."""
+def test_thirtytwo_strategies_registered():
+    """v6.0.x: 30 prior + EDGAR Form-4 30d + PEAD 5d = 32."""
     from trader import eval_strategies
     specs = eval_strategies.all_strategies()
-    assert len(specs) == 30, \
-        f"expected 30 strategies, got {len(specs)}: {[s.name for s in specs]}"
+    assert len(specs) == 32, \
+        f"expected 32 strategies, got {len(specs)}: {[s.name for s in specs]}"
 
 
 def test_canonical_strategy_names_present():
@@ -68,6 +68,10 @@ def test_canonical_strategy_names_present():
         "xs_top10_relstrength_8mo",
         # Insider cluster-buying (1) — v6.0.x (Cohen-Malloy-Pomorski 2012)
         "xs_top10_insider_buy",
+        # SEC EDGAR direct Form-4 30-day window (1) — v6.0.x
+        "xs_top10_insider_edgar_30d",
+        # PEAD post-earnings drift (1) — v6.0.x
+        "xs_top10_pead_5d",
     }
     assert names == expected, f"missing: {expected - names}, extra: {names - expected}"
 

@@ -247,6 +247,23 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
             print(f"  vol-target overlay failed (non-fatal): "
                   f"{type(e).__name__}: {e}")
 
+    # v6.0.x: calendar-effect overlay. ENABLED by default. Stacks
+    # the small empirical edges from turn-of-month, OPEX, pre-FOMC,
+    # year-end reversal, pre-holiday into a single multiplicative
+    # scalar on gross. Disable via CALENDAR_OVERLAY_ENABLED=0.
+    if momentum_targets:
+        try:
+            from .calendar_overlay import apply_calendar_overlay
+            momentum_targets, cal_info = apply_calendar_overlay(
+                momentum_targets,
+            )
+            if cal_info.get("enabled") and cal_info.get("actives"):
+                print(f"  -> calendar overlay: scalar={cal_info['scalar']:.4f} "
+                      f"({', '.join(cal_info['actives'])})")
+        except Exception as e:
+            print(f"  calendar overlay failed (non-fatal): "
+                  f"{type(e).__name__}: {e}")
+
     # v6.0.x: drawdown-aware overlay. ENABLED by default but
     # one-sided — only DE-RISKS during drawdowns, never levers up.
     # Conservative version of Asness 2014; we ship the safe
@@ -521,7 +538,15 @@ def main(force: bool = False) -> dict:
         except Exception as e:
             print(f"  aged-close failed: {e}")
 
-    universe = DEFAULT_LIQUID_50
+    # v6.0.x: optional universe expansion. UNIVERSE_SIZE=expanded
+    # switches from the 50-name liquid set to the 138-name expanded
+    # set (3x cross-section, more sectors). Default unchanged.
+    if os.environ.get("UNIVERSE_SIZE", "").lower() == "expanded":
+        from .universe import DEFAULT_LIQUID_EXPANDED
+        universe = DEFAULT_LIQUID_EXPANDED
+        print(f"  -> universe expanded: {len(universe)} names")
+    else:
+        universe = DEFAULT_LIQUID_50
     momentum_targets, approved_bottoms, sleeve_alloc = build_targets(universe)
 
     # v6: TWO-BOOK architecture. When TLH_ENABLED=true, a fraction

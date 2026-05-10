@@ -13,6 +13,19 @@ DEFAULT_LIQUID_50 = [
 ]
 
 
+# v6.0.x: expanded universe (~138 names across 11 sectors). Triples
+# the cross-section vs DEFAULT_LIQUID_50 → more TLH harvest
+# opportunities, more momentum/insider/PEAD candidates, better
+# sector coverage (adds Utilities + Real Estate). Opt-in via
+# `UNIVERSE_SIZE=expanded` env var.
+def _expanded_universe() -> list[str]:
+    from .sectors import SECTORS
+    return sorted(SECTORS.keys())
+
+
+DEFAULT_LIQUID_EXPANDED = _expanded_universe()
+
+
 @lru_cache(maxsize=1)
 def sp500_tickers() -> list[str]:
     """Current S&P 500 from Wikipedia. Falls back to DEFAULT_LIQUID_50."""

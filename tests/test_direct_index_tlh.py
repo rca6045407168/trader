@@ -30,11 +30,12 @@ def test_replacement_map_covers_universe():
 
 
 def test_replacement_subs_are_known_tickers():
-    """Substitutes must themselves be in the universe (otherwise we'd
-    swap to a ticker we can't trade in the trader's universe)."""
+    """Substitutes must themselves be in *some* universe — either the
+    50-name liquid set or the v6 expanded 138-name set. Auto-completed
+    entries may pull from the wider expanded set."""
     from trader.direct_index_tlh import REPLACEMENT_MAP
-    from trader.universe import DEFAULT_LIQUID_50
-    uni = set(DEFAULT_LIQUID_50)
+    from trader.universe import DEFAULT_LIQUID_50, DEFAULT_LIQUID_EXPANDED
+    uni = set(DEFAULT_LIQUID_50) | set(DEFAULT_LIQUID_EXPANDED)
     for sym, subs in REPLACEMENT_MAP.items():
         unknown = [s for s in subs if s not in uni]
         assert not unknown, f"{sym}'s subs {unknown} not in universe"
