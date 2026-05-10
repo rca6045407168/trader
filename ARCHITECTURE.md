@@ -112,6 +112,46 @@ A conversation token-cost caption was added to `view_chat`. ~28 lines. Zero new 
 
 ## 4. System architecture
 
+### 4.0 v6 two-book overlay (2026-05-10)
+
+Direct-index tax-loss-harvesting added as a parallel sleeve to the
+auto-router. The trader becomes a two-book system:
+
+- **Book A — Direct-index core (TLH).** ~70% of capital. Cap-weighted
+  ~50-name basket approximating SPY. On every daily run, scans for
+  positions in unrealized loss; mechanically sells losers and rotates
+  to sector-matched non-wash-sale replacements. Edge source: tax
+  arbitrage on cross-sectional volatility. Expected after-tax
+  outperformance vs SPY-the-ETF in a taxable account: ~0.5-2% per
+  year, structural (does not decay).
+
+- **Book B — Auto-router alpha sleeve.** ~30% of capital. Runs the
+  v5.0.0 auto-router with 18 SHADOW-eligible candidates. Routes
+  capital to whichever candidate's rolling-IR currently wins the
+  eligibility filter. Edge source: cross-sectional momentum alpha
+  (borderline OOS per ARCHITECTURE.md §2 — kept as the satellite,
+  not the core).
+
+Allocation split is env-configurable via `DIRECT_INDEX_CORE_PCT`
+(default 0.70). Master gate: `TLH_ENABLED=true|false` (default false
+for backward-compatibility — when off, the trader runs as v5.0.0 with
+the alpha sleeve at 80% gross). When `TLH_ENABLED=true`, the alpha
+sleeve scales to (1 - core_pct) × 0.95.
+
+The TLH edge is zero on paper accounts and in 401k/IRA. It's only
+realizable in a taxable account at Tier 1+ on Public.com (or similar).
+The module runs (and journals harvest events) regardless of account
+type so the logic can be verified before real money is at stake.
+
+Why two books and not one: the auto-router's monthly rotation breaks
+TLH (positions don't sit long enough to accumulate harvestable
+losses). The core must hold positions long-term to let losses
+accumulate; the alpha sleeve does its rotation independently. The
+two books are walls between the two edge types.
+
+See `src/trader/direct_index_tlh.py` for implementation. See
+`V5_DISPOSITION.md` §1.3 for the disposition record of this addition.
+
 ### 4.1 Data flow
 
 ```

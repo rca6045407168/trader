@@ -120,6 +120,40 @@ re-derive them under pressure.
 
 ---
 
+## §1.3 v6 direct-index TLH addition (2026-05-10)
+
+Architectural addition, not a strategy variant. The auto-router (§1)
+routes among momentum-shaped candidates; the highest-confidence
+edge in a taxable account is tax-loss harvesting, which is
+structural rather than alpha-based and doesn't compete with the
+auto-router. It coexists as a second sleeve.
+
+- **Two-book split:** Book A (TLH core, 70% default) + Book B
+  (auto-router alpha sleeve, 30% default). Env: `DIRECT_INDEX_CORE_PCT`.
+- **Master gate:** `TLH_ENABLED=true|false` (default `false`).
+  When `false`, the trader runs v5.0.0 behavior unchanged. When
+  `true`, the two-book mode engages.
+- **Confidence framing:** with TLH on in a taxable account, the
+  highest-confidence beat-SPY claim is ~90-97% over 5-20 year
+  horizons in after-tax terms. NOT 99% — no honest strategy delivers
+  that — but the structural edge takes the trader from "borderline
+  alpha" to "near-certain after-tax outperformance vs SPY-the-ETF
+  in a taxable account."
+- **Constraint honest:** zero edge on paper accounts and in 401k/IRA.
+  The user must be at Tier 1+ on Public.com (real taxable) to
+  realize the edge. The TLH module runs and journals harvest events
+  regardless of account type so the logic can be verified before
+  real money is at stake.
+
+The auto-router's eligibility filter (§3 exit criteria) governs
+Book B only. Book A doesn't go through the auto-router — it's a
+buy-and-hold cap-weighted basket with TLH overlay. Its exit
+criterion is simpler: if cumulative realized losses stay zero for
+6+ months (i.e., the universe never gives us a harvest opportunity),
+that signals either a regime where TLH has no value (which is rare)
+or a bug in the harvest detection logic (which the operator should
+investigate).
+
 ## §2 Capital ladder
 
 | Tier | Capital | Trigger to advance |

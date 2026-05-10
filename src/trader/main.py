@@ -488,6 +488,70 @@ def main(force: bool = False) -> dict:
     universe = DEFAULT_LIQUID_50
     momentum_targets, approved_bottoms, sleeve_alloc = build_targets(universe)
 
+    # v6: TWO-BOOK architecture. When TLH_ENABLED=true, a fraction
+    # (DIRECT_INDEX_CORE_PCT, default 0.70) of the book goes to a
+    # tax-loss-harvested direct-index core; the rest stays in the
+    # auto-router's alpha sleeve. When TLH_ENABLED=false (default,
+    # backward-compatible), the entire book is alpha-sleeve (v5
+    # behavior unchanged).
+    tlh_enabled = os.environ.get("TLH_ENABLED", "false").lower() == "true"
+    tlh_swaps_log: list = []
+    if tlh_enabled:
+        try:
+            from .direct_index_tlh import (
+                plan_tlh, format_plan_summary, DEFAULT_CORE_PCT,
+            )
+            from .data import fetch_history
+            import pandas as _pd_for_tlh
+
+            # Fetch latest prices for unrealized-PnL calculation
+            end = _pd_for_tlh.Timestamp.today()
+            start = (end - _pd_for_tlh.DateOffset(months=1)).strftime("%Y-%m-%d")
+            recent = fetch_history(universe, start=start)
+            current_prices = {}
+            if not recent.empty:
+                last = recent.iloc[-1]
+                for sym in universe:
+                    if sym in recent.columns and not _pd_for_tlh.isna(last[sym]):
+                        current_prices[sym] = float(last[sym])
+
+            core_pct = DEFAULT_CORE_PCT
+            plan = plan_tlh(
+                universe=universe,
+                current_prices=current_prices,
+                core_pct=core_pct,
+            )
+            print(f"\n[{datetime.now():%H:%M:%S}] TLH direct-index core "
+                  f"({core_pct*100:.0f}% of capital):")
+            for ln in format_plan_summary(plan).split("\n"):
+                print(f"  {ln}")
+            tlh_swaps_log = [
+                {"sell": s.sell_ticker, "buy": s.buy_ticker,
+                 "weight": s.weight, "loss_pct": s.unrealized_loss_pct,
+                 "reason": s.reason}
+                for s in plan.swaps
+            ]
+            # Scale the alpha sleeve to (1 - core_pct) of total gross.
+            # momentum_targets currently sums to ~0.80 (the alpha gross
+            # before any overlays). Final total gross target ≈ 0.95.
+            # alpha_gross_target = (1 - core_pct) × 0.95
+            # core_gross_target  = core_pct × 0.95 (already baked into
+            #   plan.target_weights via cap_weighted_targets(gross=core_pct))
+            alpha_current = sum(momentum_targets.values())
+            alpha_target_gross = (1 - core_pct) * 0.95
+            if alpha_current > 0:
+                scale = alpha_target_gross / alpha_current
+                momentum_targets = {t: w * scale for t, w in momentum_targets.items()}
+                print(f"  -> alpha sleeve scaled to {alpha_target_gross*100:.1f}% gross "
+                      f"({(1-core_pct)*100:.0f}% of total)")
+            # Add the TLH core targets
+            for t, w in plan.target_weights.items():
+                momentum_targets[t] = momentum_targets.get(t, 0) + w
+            print(f"  -> TLH core: {len(plan.target_weights)} names at "
+                  f"{sum(plan.target_weights.values())*100:.1f}% gross")
+        except Exception as e:
+            print(f"  TLH planner failed (non-fatal): {type(e).__name__}: {e}")
+
     # Combine all targets for portfolio-level risk check
     combined_targets = dict(momentum_targets)
     if approved_bottoms:
