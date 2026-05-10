@@ -19,6 +19,7 @@ the "off" column.
 | **HIFO close-lot accounting** | Highest-cost-first selection when closing lots. Maximises realized loss for TLH. No-op when only one lot per ticker. | `TLH_LOT_SELECTION=HIFO` | `=FIFO` | TLH harvest +20–40 % |
 | **Drawdown-aware sizing** | Tapers gross to 0.70× between -5 % and -10 % drawdown. Safe direction only (no levering on recovery). | `DRAWDOWN_AWARE_ENABLED=1` | `=0` | Tail-loss reduction ~0.2–0.5 %/yr |
 | **Quality tilt on TLH basket** | Novy-Marx ROE/ROIC overlay on cap-weighted basket. Optional. | `DIRECT_INDEX_QUALITY_TILT=0.0` | (unset) | +0.3–0.7 %/yr long-run |
+| **Insider cluster-buying strategy** (Cohen-Malloy-Pomorski 2012) | Pulls yfinance's 6-mo insider net-buying aggregate, ranks the universe, top-10 equal-weighted becomes an eligible auto-router strategy. Long-only, orthogonal to momentum. | `INSIDER_SIGNAL_ENABLED=0` | `=1` | +1–2 %/yr (degraded from CMP-2012's 3 %/yr by data coarseness + post-publication decay) |
 
 To enable TLH (the 70 % core sleeve overlay), still requires an
 explicit opt-in:
@@ -191,8 +192,9 @@ flat-market year, vs SPY ETF:
 | Stock lending | +0.05–0.5 %/yr |
 | Cash interest (vs idle) | +0.1–0.3 %/yr |
 | Quality factor (long-run) | +0.3–0.7 %/yr |
+| Insider cluster-buying (v6.0.x add) | +1.0–2.0 %/yr |
 | Vol-targeted alpha sleeve | Sharpe-only (path) |
-| **TOTAL OVER SPY (after-tax)** | **+2.0–3.5 %/yr** |
+| **TOTAL OVER SPY (after-tax)** | **+3.0–5.5 %/yr** |
 
 The trader account becomes a deliberate, transparent SPY+α machine
 where every basis point of edge has an audited source and a

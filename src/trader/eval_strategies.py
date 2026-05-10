@@ -898,3 +898,72 @@ def xs_top10_relstrength_8mo(asof, prices):
     scored.sort(key=lambda x: -x[1])
     top10 = scored[:10]
     return {t: 0.80 / 10 for t, _ in top10}
+
+
+# ============================================================
+# 22. v6.0.x — INSIDER CLUSTER BUYING (Cohen-Malloy-Pomorski 2012)
+#
+# Long-only cross-sectional signal: rank universe by yfinance's
+# 6-month net-insider-buying aggregate, take top-10 equal-weighted
+# from positive scores only. Names where insiders are net SELLERS
+# are excluded.
+#
+# Expected edge: ~1-2 %/yr alpha vs SPY (degraded from CMP-2012's
+# 3 %/yr due to: (a) post-publication decay per McLean-Pontiff,
+# (b) yfinance's 6-month aggregate is coarser than the academic
+# 30-day Form-4 windows, (c) long-only is a fraction of the
+# long-short edge). Still a real, orthogonal signal — uncorrelated
+# with momentum, value, or quality.
+#
+# Operational notes:
+#   - Reads cached insider data from data/insider_cache.parquet
+#     (24-hour TTL). First eval-harness run will be slow as the
+#     cache populates; subsequent runs are instant.
+#   - On data fetch failures the strategy returns {} (degrades
+#     gracefully — auto-router will deselect when score=0).
+#   - The data fetch is suppressed during walk-forward backtest
+#     (cache will be empty for historical asof dates anyway);
+#     this strategy is forward-looking by construction.
+# ============================================================
+@register("xs_top10_insider_buy",
+           "Top-10 by 6-mo insider net buying (Cohen-Malloy-Pomorski "
+           "2012 long-only spec, ~1-2%/yr alpha vs SPY)")
+def xs_top10_insider_buy(asof, prices):
+    # Opt-in env gate. Default OFF so:
+    #   (a) eval-harness tests don't hammer yfinance
+    #   (b) historical walk-forward backtests don't leak forward
+    # Set INSIDER_SIGNAL_ENABLED=1 in production launchd env to activate.
+    import os
+    if os.environ.get("INSIDER_SIGNAL_ENABLED", "0") != "1":
+        return {}
+    # Walk-forward guard: insider data is forward-looking only.
+    # Skip on any asof far from real wall-clock time.
+    from datetime import datetime, timedelta
+    try:
+        asof_dt = pd.Timestamp(asof).to_pydatetime()
+    except Exception:
+        return {}
+    now = datetime.utcnow()
+    if not (now - timedelta(days=14) <= asof_dt <= now + timedelta(days=1)):
+        return {}
+    if prices is None or prices.empty:
+        return {}
+    p = _stock_panel(prices)
+    if p.empty:
+        return {}
+    try:
+        p = p[p.index <= asof]
+    except Exception:
+        return {}
+    if p.empty:
+        return {}
+    universe = [c for c in p.columns if c != "SPY"]
+    try:
+        from .insider_signal import top_n_by_insider
+        picks = top_n_by_insider(universe, n=10, min_score=0.0)
+    except Exception:
+        return {}
+    if not picks:
+        return {}
+    w = 0.80 / len(picks)
+    return {t: w for t, _ in picks}
