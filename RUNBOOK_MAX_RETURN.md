@@ -202,7 +202,35 @@ flat-market year, vs SPY ETF:
 | Calendar-effect overlay (stacked anomalies) | +0.3–0.5 %/yr |
 | Universe expansion (more TLH harvest scope) | +0.3–0.6 %/yr |
 | Vol-targeted alpha sleeve | Sharpe-only (path) |
-| **TOTAL OVER SPY (after-tax)** | **+5.0–9.0 %/yr** |
+| **POINT-ESTIMATE SUM (naïve)** | **+5.0–9.0 %/yr** |
+
+⚠️ **The point-estimate sum above assumes independent edges.** They aren't —
+in a 2008-style equity stress event, multiple edges collapse together
+(insider buying gets noisy, PEAD drift dies, quality re-rates) while
+TLH harvest INCREASES (more positions in loss). A more honest answer
+comes from running the Monte Carlo:
+
+```bash
+python -m trader.uplift_monte_carlo
+```
+
+Current calibration (with the equity-stress correlation matrix in
+`src/trader/uplift_monte_carlo.py`):
+
+| Percentile | Annual uplift over SPY |
+|---|---|
+| 5 % (bad year) | **+4.4 %/yr** |
+| 10 % | +5.1 %/yr |
+| 50 % (median) | **+7.6 %/yr** |
+| 90 % | +10.1 %/yr |
+| 95 % (best year) | +10.8 %/yr |
+
+**Headline honest number: +7.6 %/yr median, +5.1 % to +10.1 % at the 80 % CI.**
+Pr(negative uplift) is < 0.1 % under these assumptions — but if you don't
+trust the correlation estimates, run `uplift_monte_carlo.py --help` and
+tune the parameters yourself. Pessimistic regimes (factor decay
+accelerating, model assumptions wrong by 50 %) would shift the band
+materially.
 
 The trader account becomes a deliberate, transparent SPY+α machine
 where every basis point of edge has an audited source and a

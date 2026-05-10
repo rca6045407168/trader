@@ -595,6 +595,40 @@ def main(force: bool = False) -> dict:
         print(f"  -> universe expanded: {len(universe)} names")
     else:
         universe = DEFAULT_LIQUID_50
+
+    # v6.0.x: data-quality pre-flight. Fetch the universe panel once
+    # and run sanity checks before any strategy sees the data.
+    # Halt-severity issues abort the run (env DATA_QUALITY_HALT_ENABLED
+    # can override). Warn-severity issues log + proceed.
+    try:
+        from .data import fetch_history as _fh_for_dq
+        from .data_quality import (
+            run_all_checks, should_halt, format_issues,
+        )
+        import pandas as _pd_for_dq
+        end_dq = _pd_for_dq.Timestamp.today()
+        start_dq = (end_dq - _pd_for_dq.DateOffset(months=2)).strftime("%Y-%m-%d")
+        _dq_panel = _fh_for_dq(universe + ["SPY"], start=start_dq)
+        dq_issues = run_all_checks(_dq_panel, asof=end_dq.date())
+        if dq_issues:
+            print(f"\n[{datetime.now():%H:%M:%S}] data-quality check:")
+            print(format_issues(dq_issues))
+            if should_halt(dq_issues):
+                print("  HALT: data-quality halt-severity issues detected.")
+                return {
+                    "halted": True,
+                    "kill_switch_reasons": [
+                        f"data-quality halt: {i.message}"
+                        for i in dq_issues if i.severity == "HALT"
+                    ],
+                    "halt_type": "data_quality",
+                }
+    except Exception as e:
+        # Don't block on the pre-flight check itself failing — that
+        # would be a self-DDoS. Log and proceed.
+        print(f"  data-quality pre-flight failed (non-fatal): "
+              f"{type(e).__name__}: {e}")
+
     momentum_targets, approved_bottoms, sleeve_alloc = build_targets(universe)
 
     # v6: TWO-BOOK architecture. When TLH_ENABLED=true, a fraction
