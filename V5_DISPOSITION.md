@@ -282,13 +282,19 @@ The auto-router emits a special signal recorded in `runs.notes`.
 
 **This is the v3.x complexity-tax finding playing out forward.**
 
-**Re-arming options:**
+**Pre-committed response (no re-litigation):**
 
-1. Accept the finding. Drop the complexity stack. Either keep running
-   the auto-router with a single naive candidate, or just buy SPY
-   directly and stop the project.
-2. Re-litigate the §2 caveats with new data. If something has actually
-   changed (new universe data, new regime), spec a v6.0.0 disposition.
+If the auto-router picks `naive_top15_12mo_return` for 6 consecutive
+months and no other candidate clears within `HYSTERESIS_MARGIN`, **stop
+running active strategies**. Either keep the auto-router with naive
+as the only candidate, or just buy SPY directly and end the project.
+
+The "re-litigate the §2 caveats" escape hatch is removed deliberately:
+that's the costume the future-me-under-pressure would wear to keep
+the complexity stack alive against its own forward evidence.
+Pre-commitment is the point. If you find yourself wanting to override
+this when it fires, the urge itself is the v3.x failure mode reasserting,
+and the right response is to follow the rule, not the urge.
 
 **Do not** override the auto-router to keep picking the complex
 variant. The whole point of v5.0.0 is to let the data decide.
