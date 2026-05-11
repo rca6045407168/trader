@@ -551,10 +551,13 @@ def main(force: bool = False) -> dict:
                   f"{type(e).__name__}: {e}")
 
     # v1.9 (B9 partial fix wired in): reconciliation pre-flight
+    # v6.0.x: reconcile() now accepts either a raw Alpaca client or a
+    # BrokerAdapter — both expose get_all_positions() and (via the
+    # v6 protocol extension) get_open_orders(). Pass get_broker() so
+    # the path works under BROKER=public_live.
     if not DRY_RUN:
         try:
-            client = get_client()
-            rep = reconcile(client)
+            rep = reconcile(get_broker())
             if rep["halt_recommended"]:
                 print(f"  Reconciliation HALT: {rep['summary']}")
                 for x in rep["unexpected"][:3]:

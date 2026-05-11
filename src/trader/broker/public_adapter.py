@@ -32,7 +32,7 @@ from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 
-from .base import Account, BrokerAdapter, Clock, OrderRecord, Position
+from .base import Account, BrokerAdapter, Clock, OpenOrder, OrderRecord, Position
 
 
 # Default account number lookup — picks up the env var that
@@ -206,9 +206,17 @@ class PublicAdapter(BrokerAdapter):
     def submit_market_order(
         self, symbol: str, qty: Optional[float] = None,
         notional: Optional[float] = None, side: str = "buy",
+        market_session: str = "day",
     ) -> OrderRecord:
         if qty is None and notional is None:
             raise ValueError("must specify either qty or notional")
+        # NOTE: Public.com supports EquityMarketSession for closing
+        # auctions, but the mapping requires more design work
+        # (closing-print specific time-in-force semantics). For now,
+        # silently fall back to DAY when "closing" is requested. The
+        # next port pass adds explicit MOC routing.
+        if market_session.lower() == "closing":
+            pass  # fall through to DAY (intentional, documented)
         from public_api_sdk import (
             OrderRequest, OrderInstrument, OrderSide, OrderType,
             InstrumentType,
@@ -241,6 +249,47 @@ class PublicAdapter(BrokerAdapter):
             status=str(getattr(ack, "status", "submitted")),
             submitted_at=datetime.utcnow(),
         )
+
+    def get_open_orders(self) -> list[OpenOrder]:
+        """Public.com's Portfolio object includes the orders list.
+        Filter to unfilled statuses (OPEN, PENDING, PARTIALLY_FILLED)."""
+        try:
+            p = self._portfolio()
+            orders = getattr(p, "orders", None) or []
+        except Exception:
+            return []
+        # Statuses that count as "still in the queue, not yet filled"
+        OPEN_STATUSES = {
+            "OPEN", "PENDING", "PARTIALLY_FILLED",
+            "PENDING_NEW", "PENDING_SUBMIT", "ACCEPTED",
+        }
+        out = []
+        for o in orders:
+            status = str(getattr(o, "status", "") or "").upper()
+            if status not in OPEN_STATUSES:
+                continue
+            instr = getattr(o, "instrument", None)
+            symbol = getattr(instr, "symbol", "") if instr else ""
+            side_raw = getattr(o, "order_side", None) or getattr(o, "side", "")
+            side_str = str(
+                getattr(side_raw, "value", side_raw) or ""
+            ).lower()
+            qty_raw = (
+                getattr(o, "quantity", None) or
+                getattr(o, "remaining_quantity", None) or 0
+            )
+            try:
+                qty_f = float(qty_raw)
+            except (TypeError, ValueError):
+                qty_f = 0.0
+            out.append(OpenOrder(
+                order_id=str(getattr(o, "order_id", "") or getattr(o, "id", "")),
+                symbol=symbol,
+                side=side_str,
+                qty=abs(qty_f),
+                submitted_at=getattr(o, "submitted_at", None),
+            ))
+        return out
 
     def close_position(self, symbol: str) -> OrderRecord:
         # Find current position qty, submit SELL for full amount

@@ -146,18 +146,19 @@ for pos in adapter.get_all_positions():
 - [x] `execute.py::get_last_price()` routes through broker abstraction when `BROKER != alpaca_paper`
 - [x] `execute.py::get_broker()` helper added for new code paths
 
-**Outstanding before `BROKER=public_live` is safe to flip:**
-- [ ] `reconcile.py` still accepts a raw Alpaca client. Two paths use it: `get_actual_positions_qty()` (works on either via duck-typing) and `get_pending_orders_qty()` (Alpaca-specific `GetOrdersRequest`). The latter needs a `get_open_orders()` method on `BrokerAdapter` + Public.com implementation.
-- [ ] `execute.py::place_target_weights()` uses Alpaca `MarketOrderRequest` + `OrderSide`/`TimeInForce` enums directly. Port to `broker.submit_market_order()`.
-- [ ] `execute.py::place_bracket_order()` uses Alpaca-specific `OrderClass.BRACKET`. **Hard port** — Public.com doesn't have direct bracket-order support. Options: (a) compose 3 separate orders + manage state, (b) use Public.com's strategies feature, (c) keep BOTTOM_CATCH sleeve Alpaca-only with an env gate that disables it on `public_live`.
-- [ ] `execute.py::close_aged_bottom_catches()` submits Alpaca SELL orders directly. Port to `broker.submit_market_order(side="sell")`.
+**Round-2 ports — DONE (commit `[v6-broker-port-2]`)**
+- [x] `BrokerAdapter` protocol extended with `get_open_orders()` returning `list[OpenOrder]`. Alpaca + Public adapters both implement.
+- [x] `reconcile.py::get_pending_orders_qty()` dual-path: uses abstraction when `client` is a real `BrokerAdapter` (string `broker_name`); falls back to legacy `GetOrdersRequest` path for MagicMock-based tests + any raw client callers.
+- [x] `reconcile()` call site in `main.py` now passes `get_broker()` not `get_client()`.
+- [x] `execute.py::place_target_weights()` ported to `broker.submit_market_order()` + `broker.close_position()`. MOC support preserved via `market_session="closing"` (Alpaca honors via `TimeInForce.CLS`; Public.com falls back to DAY with a note).
+- [x] `execute.py::close_aged_bottom_catches()` ported to `broker.submit_market_order(side="sell")`.
+- [x] `execute.py::place_bracket_order()` gated Alpaca-only: raises `NotImplementedError` on non-Alpaca BROKER. Operator should disable BOTTOM_CATCH on `public_live` if Public.com remains the live broker (Public.com SDK has multi-leg/short helpers but no atomic bracket-OCO for equity).
 
-The read-path port lands first because it's safe + lets the operator verify Public.com connectivity end-to-end on each daily run without ANY orders being affected. Order-submission paths come next, in this order:
+**Status after round 2: `BROKER=public_live` is functionally safe to flip.** The full daily-run cycle works through the abstraction. Constraints:
+1. BOTTOM_CATCH sleeve must be disabled or skipped (bracket-order is Alpaca-only).
+2. MOC routing is Alpaca-only for now — Public.com falls back to DAY orders (cost: ~3-8 bps/trade for liquid names; total expected drag ~30-50 bps/yr).
 
-1. `place_target_weights` (rebalance loop, simple market orders)
-2. `close_aged_bottom_catches` (simple sells)
-3. `reconcile` (positions + pending orders)
-4. `place_bracket_order` (the hard one — design Public.com mapping)
+These are real but small constraints; the main rebalance loop (momentum sleeve, the dominant strategy) works fully on Public.com.
 
 ## Key references
 

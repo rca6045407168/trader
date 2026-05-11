@@ -97,11 +97,11 @@ def close_aged_bottom_catches(max_age_days: int = 20, dry_run: bool = False) -> 
     if not aged_lots:
         return []
 
-    from alpaca.trading.requests import MarketOrderRequest
-    from alpaca.trading.enums import OrderSide, TimeInForce
-
-    client = get_client()
-    open_positions = {p.symbol: float(p.qty) for p in client.get_all_positions()}
+    # v6.0.x: route through broker abstraction so this works on
+    # BROKER=public_live too. Simple market SELL orders only — no
+    # Alpaca-specific types needed.
+    broker = get_broker()
+    open_positions = {p.symbol: float(p.qty) for p in broker.get_all_positions()}
     out = []
 
     # Group aged lots by symbol
@@ -126,19 +126,18 @@ def close_aged_bottom_catches(max_age_days: int = 20, dry_run: bool = False) -> 
 
         sell_qty = min(qty_to_close, held)
         try:
-            order = client.submit_order(MarketOrderRequest(
-                symbol=sym, qty=sell_qty, side=OrderSide.SELL,
-                time_in_force=TimeInForce.DAY,
-            ))
+            ack = broker.submit_market_order(
+                symbol=sym, qty=sell_qty, side="sell",
+            )
             # Close lots in journal at the (estimated) fill price
             try:
                 last = get_last_price(sym)
             except Exception:
                 last = 0.0
-            close_lots_fifo(sym, "BOTTOM_CATCH", sell_qty, last, str(order.id))
+            close_lots_fifo(sym, "BOTTOM_CATCH", sell_qty, last, str(ack.order_id))
             out.append({
                 "symbol": sym, "action": "time_exit_20d",
-                "qty": sell_qty, "order_id": str(order.id), "status": "submitted",
+                "qty": sell_qty, "order_id": str(ack.order_id), "status": "submitted",
             })
         except Exception as e:
             out.append({"symbol": sym, "action": "time_exit_20d", "status": "error", "error": str(e)})
@@ -169,20 +168,22 @@ def place_target_weights(
     if dry_run:
         return [{"symbol": s, "target_pct": w, "status": "dry_run"} for s, w in targets.items()]
 
-    from alpaca.trading.requests import MarketOrderRequest
-    from alpaca.trading.enums import OrderSide, TimeInForce
-
-    client = get_client()
-    account = client.get_account()
+    # v6.0.x: route through the broker abstraction so this works on
+    # both Alpaca and Public.com. MOC support varies by broker — the
+    # abstraction's market_session="closing" is honored by Alpaca and
+    # falls back to DAY on Public.com (documented in
+    # broker/public_adapter.py).
+    broker = get_broker()
+    account = broker.get_account()
     equity = float(account.equity)
-    positions = {p.symbol: float(p.market_value) for p in client.get_all_positions()}
+    positions = {p.symbol: float(p.market_value) for p in broker.get_all_positions()}
 
     out: list[dict] = []
 
     for symbol in list(positions.keys()):
         if symbol not in targets:
             try:
-                client.close_position(symbol)
+                broker.close_position(symbol)
                 out.append({"symbol": symbol, "side": "close", "status": "closed"})
             except Exception as e:
                 out.append({"symbol": symbol, "side": "close", "status": "error", "error": str(e)})
@@ -216,6 +217,7 @@ def place_target_weights(
             pass
 
     from .journal import open_lot
+    market_session = "closing" if use_moc else "day"
     for symbol, target_pct in targets.items():
         target_value = equity * target_pct
         current_value = positions.get(symbol, 0.0)
@@ -223,31 +225,29 @@ def place_target_weights(
         if abs(delta) < min_order_usd:
             out.append({"symbol": symbol, "side": "skip", "status": "below_min"})
             continue
-        side = OrderSide.BUY if delta > 0 else OrderSide.SELL
-        # v3.59.0: route as MOC if requested. CLS time-in-force = closing
-        # auction print, lower expected slippage on liquid names.
-        tif = TimeInForce.CLS if use_moc else TimeInForce.DAY
-        req = MarketOrderRequest(
-            symbol=symbol, notional=round(abs(delta), 2),
-            side=side, time_in_force=tif,
-        )
+        side_str = "buy" if delta > 0 else "sell"
         # v3.58.1 SlippageTracker — capture decision-mid pre-submit
         try:
             decision_mid = get_last_price(symbol)
         except Exception:
             decision_mid = 0.0
-        _log_slip(symbol, side.value, decision_mid, abs(delta))
+        _log_slip(symbol, side_str, decision_mid, abs(delta))
         try:
-            order = client.submit_order(req)
-            order_id = str(order.id)
+            ack = broker.submit_market_order(
+                symbol=symbol,
+                notional=round(abs(delta), 2),
+                side=side_str,
+                market_session=market_session,
+            )
+            order_id = str(ack.order_id)
             out.append({
-                "symbol": symbol, "side": side.value,
+                "symbol": symbol, "side": side_str,
                 "notional": round(abs(delta), 2),
                 "order_id": order_id, "status": "submitted",
             })
             # v1.9 (B7 fix): track momentum positions in lots so reconcile works.
             # We don't know the fill price yet at submit time — use last_price as estimate.
-            if side == OrderSide.BUY:
+            if side_str == "buy":
                 try:
                     qty_est = round(abs(delta) / decision_mid, 4) if decision_mid > 0 else 0
                     if qty_est > 0:
@@ -256,7 +256,7 @@ def place_target_weights(
                     pass  # journal write is best-effort
         except Exception as e:
             out.append({
-                "symbol": symbol, "side": side.value,
+                "symbol": symbol, "side": side_str,
                 "notional": round(abs(delta), 2),
                 "status": "error", "error": str(e),
             })
@@ -297,7 +297,23 @@ def place_bracket_order(plan: OrderPlan, dry_run: bool = False) -> dict:
     """Single bracketed limit order with stop-loss + take-profit + trail.
 
     Alpaca's bracket-order class atomically attaches OCO exits to the parent.
+
+    v6.0.x: Alpaca-only. Public.com's SDK has multi-leg and short order
+    helpers but no direct bracket-OCO equivalent on equity orders.
+    When BROKER=public_live, this function raises so the BOTTOM_CATCH
+    sleeve fails fast rather than mis-routing. Operator should set
+    BOTTOM_CATCH_ENABLED=0 (or equivalent in build_targets) to fully
+    disable the sleeve when running on Public.com — there's no value
+    in attempting a bracket order that can't execute atomically.
     """
+    import os
+    if os.environ.get("BROKER", "alpaca_paper") not in ("alpaca_paper", "alpaca_live"):
+        raise NotImplementedError(
+            f"place_bracket_order requires Alpaca's BRACKET order class. "
+            f"BROKER={os.environ.get('BROKER')} doesn't support bracket "
+            "orders via the abstraction yet. Disable the BOTTOM_CATCH "
+            "sleeve on non-Alpaca brokers."
+        )
     if dry_run:
         return {
             "symbol": plan.symbol, "status": "dry_run",

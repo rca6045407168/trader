@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from .base import BrokerAdapter, Account, Clock, Position, OrderRecord
+from .base import BrokerAdapter, Account, Clock, Position, OrderRecord, OpenOrder
 
 
 _BROKER_CLIENT: Optional[BrokerAdapter] = None
@@ -70,6 +70,6 @@ def reset_broker_client_for_testing() -> None:
 
 
 __all__ = [
-    "BrokerAdapter", "Account", "Clock", "Position", "OrderRecord",
+    "BrokerAdapter", "Account", "Clock", "Position", "OrderRecord", "OpenOrder",
     "get_broker_client", "reset_broker_client_for_testing",
 ]

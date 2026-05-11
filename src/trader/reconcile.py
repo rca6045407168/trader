@@ -61,35 +61,50 @@ def get_actual_positions(client) -> dict[str, float]:
 
 
 def get_pending_orders_qty(client) -> dict[str, float]:
-    """v3.52.2 FIX: open Alpaca orders that haven't filled yet.
+    """Open orders that haven't filled yet, keyed by symbol.
 
-    Returns {symbol: qty_pending}. Reconcile uses this to distinguish
-    'orphan lots' (real bug) from 'awaiting fill' (orders queued for
-    next session — happens every Friday after-hours when the cron runs
-    and orders sit until Monday open).
+    v3.52.2 introduced this to distinguish orphan-lot bugs from
+    awaiting-fill orders queued for the next session.
 
-    Without this, the May 3 cron HALTed with matched=5 missing=10 because
-    Friday's after-hours orders were still pending in Alpaca's queue.
+    v6.0.x: dual-path. If `client` is a BrokerAdapter (has
+    `get_open_orders()`), use that — works for both Alpaca and
+    Public.com. If `client` is the raw Alpaca TradingClient (legacy
+    caller), fall back to the Alpaca-specific GetOrdersRequest path.
+
+    Returns {symbol: qty_pending}, signed (BUY +, SELL −).
     """
-    pending = {}
+    pending: dict[str, float] = {}
+    # v6.0.x: detect a BrokerAdapter by reading broker_name as a real
+    # string (MagicMock-based tests auto-generate attributes that
+    # aren't strings, so the legacy Alpaca branch fires correctly for
+    # mocked clients).
+    broker_name = getattr(client, "broker_name", None)
+    if (isinstance(broker_name, str)
+            and hasattr(client, "get_open_orders")):
+        try:
+            for o in client.get_open_orders():
+                qty = float(o.qty or 0)
+                if o.side == "buy":
+                    pending[o.symbol] = pending.get(o.symbol, 0) + qty
+                else:
+                    pending[o.symbol] = pending.get(o.symbol, 0) - qty
+            return pending
+        except Exception:
+            return pending  # conservative: no pending
+    # Legacy fallback: raw Alpaca client
     try:
         from alpaca.trading.requests import GetOrdersRequest
         from alpaca.trading.enums import QueryOrderStatus
-        # Get all 'open' orders (not filled, not cancelled, not rejected)
         req = GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=500)
         for o in client.get_orders(filter=req):
             sym = o.symbol
             qty = float(o.qty) if o.qty else 0
-            # For BUY orders, this contributes positive qty toward expected
-            # holdings (a position pending a fill). For SELL, negative.
             side_str = (o.side.value if hasattr(o.side, "value") else str(o.side)).lower()
             if side_str == "buy":
                 pending[sym] = pending.get(sym, 0) + qty
             else:
                 pending[sym] = pending.get(sym, 0) - qty
     except Exception:
-        # If we can't query orders, fall back to no-pending (conservative —
-        # may HALT spuriously but won't silently swallow real drift).
         pass
     return pending
 

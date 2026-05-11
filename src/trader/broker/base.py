@@ -62,6 +62,18 @@ class OrderRecord:
     submitted_at: datetime
 
 
+@dataclass
+class OpenOrder:
+    """Normalized representation of an unfilled (open / pending) order
+    in the broker's queue. Used by reconcile.py to distinguish
+    awaiting-fill positions from genuinely missing ones."""
+    order_id: str
+    symbol: str
+    side: str       # 'buy' | 'sell'
+    qty: float      # absolute quantity (not signed)
+    submitted_at: datetime | None = None
+
+
 class BrokerAdapter(Protocol):
     """Minimal interface the trader needs from a broker."""
 
@@ -72,15 +84,28 @@ class BrokerAdapter(Protocol):
     def get_clock(self) -> Clock: ...
     def get_all_positions(self) -> list[Position]: ...
     def get_last_price(self, symbol: str) -> float: ...
+    def get_open_orders(self) -> list[OpenOrder]:
+        """Unfilled orders in the broker's queue. Used by reconcile.py
+        to detect awaiting-fill positions vs missing positions."""
+        ...
 
     # --- write (orders) ---
     def submit_market_order(
         self, symbol: str, qty: float | None = None,
         notional: float | None = None, side: str = "buy",
+        market_session: str = "day",
     ) -> OrderRecord:
         """Submit a market order. EITHER qty OR notional must be set.
 
         `side`: "buy" or "sell" (lowercase, matches Alpaca convention).
+        `market_session`: "day" (regular session) or "closing"
+          (MarketOnClose / TimeInForce.CLS). MOC saves ~3-8 bps per
+          trade on liquid names by participating in the closing
+          auction print. Brokers that don't support MOC fall back to
+          "day" silently. AlpacaAdapter supports both; PublicAdapter
+          falls back to "day" for now (closing auction routing on
+          public_api_sdk uses EquityMarketSession which is a separate
+          port).
 
         Returns OrderRecord with broker-assigned order_id.
         """

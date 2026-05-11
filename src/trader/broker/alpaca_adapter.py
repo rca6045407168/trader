@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Optional
 
 from ..config import ALPACA_KEY, ALPACA_SECRET
-from .base import Account, BrokerAdapter, Clock, OrderRecord, Position
+from .base import Account, BrokerAdapter, Clock, OpenOrder, OrderRecord, Position
 
 
 class AlpacaAdapter(BrokerAdapter):
@@ -77,15 +77,18 @@ class AlpacaAdapter(BrokerAdapter):
     def submit_market_order(
         self, symbol: str, qty: Optional[float] = None,
         notional: Optional[float] = None, side: str = "buy",
+        market_session: str = "day",
     ) -> OrderRecord:
         if qty is None and notional is None:
             raise ValueError("must specify either qty or notional")
         from alpaca.trading.requests import MarketOrderRequest
         from alpaca.trading.enums import OrderSide, TimeInForce
+        tif = (TimeInForce.CLS if market_session.lower() == "closing"
+                else TimeInForce.DAY)
         req_kwargs = dict(
             symbol=symbol,
             side=OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL,
-            time_in_force=TimeInForce.DAY,
+            time_in_force=tif,
         )
         if qty is not None:
             req_kwargs["qty"] = qty
@@ -102,6 +105,33 @@ class AlpacaAdapter(BrokerAdapter):
             status=str(getattr(order, "status", "submitted")),
             submitted_at=datetime.utcnow(),
         )
+
+    def get_open_orders(self) -> list[OpenOrder]:
+        try:
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+            req = GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=500)
+            orders = self._trading.get_orders(filter=req)
+        except Exception:
+            # Defensive: if the query fails (rare API hiccup), return
+            # empty so reconcile's no-pending fallback fires
+            return []
+        out = []
+        for o in orders:
+            side_str = (
+                o.side.value if hasattr(o.side, "value") else str(o.side)
+            ).lower()
+            out.append(OpenOrder(
+                order_id=str(o.id),
+                symbol=o.symbol,
+                side=side_str,
+                qty=float(o.qty) if o.qty else 0.0,
+                submitted_at=(
+                    getattr(o, "submitted_at", None) or
+                    getattr(o, "created_at", None)
+                ),
+            ))
+        return out
 
     def close_position(self, symbol: str) -> OrderRecord:
         order = self._trading.close_position(symbol)
