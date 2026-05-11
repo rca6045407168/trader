@@ -4,10 +4,19 @@ Personal multi-strategy quant platform on Alpaca paper, **active under v6.0.x** 
 
 ## Operating mode (today)
 
+**Two execution venues, intentionally separated:**
+
+- **Alpaca paper** (automated): the validation substrate. Auto-router runs daily, submits orders to Alpaca paper, journal reconciles to broker. Proves the logic.
+- **Public.com** (manual, real money): no public API — operator manually executes signals from the weekly digest. The trader is a **signal generator** here, not an order submitter.
+
+Workflow: Friday `weekly_digest.py` → Monday morning execute on Public.com → Monday evening `import_public_positions.py` reconciles → repeat.
+
+**Edge stack (v6.0.x):**
 - **Two-book architecture**: Book A (TLH direct-index core, 70% by default, env-gated) + Book B (auto-router alpha sleeve, 30%).
 - **32 strategies in the eval pool**; auto-router picks the rolling-IR winner under an eligibility filter (≥6 months evidence, β ≤ 1.20, DD ≥ −25%, hysteresis to prevent churn).
-- **4 always-on overlays** (vol-target, HIFO close-lot, drawdown-aware, calendar-effect) plus **4 opt-in alpha sources** (insider buying via yfinance, insider buying via SEC EDGAR Form-4, PEAD, quality tilt).
-- **138-name expanded universe** (11 sectors including Utilities + Real Estate) opt-in via `UNIVERSE_SIZE=expanded`.
+- **4 always-on overlays** (vol-target, HIFO close-lot, drawdown-aware, calendar-effect).
+- **3 opt-in alpha sources** (insider EDGAR Form-4, PEAD, quality tilt) — shadow-tracked by default; promote when 6 months of evidence accrues.
+- **138-name expanded universe** (11 sectors including Utilities + Real Estate) opt-in via `UNIVERSE_SIZE=expanded`. Recommended for Public.com workflow: stick with 50 names to reduce manual-reconciliation friction.
 - Market-open gate enforced — no weekend/holiday order submissions unless `ALLOW_WEEKEND_ORDERS=1`.
 
 ## Expected after-tax uplift over SPY

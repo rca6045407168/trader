@@ -2,7 +2,20 @@
 
 Everything the trader can do for you is now in code. This runbook is
 the *complementary* set of actions you have to do yourself, either
-inside the Alpaca app or via the launchd env. Ordered by ROI.
+inside the broker (Public.com or Alpaca) or via the launchd env.
+Ordered by ROI.
+
+> **Real money is on Public.com (decided 2026-05-10).** Public.com
+> doesn't expose a programmatic REST API, so the trader becomes a
+> **signal generator** there, not an order submitter. Workflow:
+> Friday afternoon → `weekly_digest.py` produces a target book →
+> Monday morning → you manually execute on Public.com → Monday
+> evening → you export Holdings.csv from Public.com →
+> `import_public_positions.py` reconciles to the journal.
+>
+> Alpaca paper stays the validation substrate. Compositionally:
+> Alpaca = "does the system pick sensibly?" (automated),
+> Public.com = "is the real money allocated correctly?" (manual).
 
 ---
 
@@ -41,16 +54,58 @@ launchctl setenv TLH_ENABLED false
 
 ---
 
-## 2. Alpaca app actions — free $ I can't toggle for you
+## 2. Public.com weekly workflow (manual execution)
+
+### Friday evening
+```bash
+python scripts/weekly_digest.py
+# or with CSV export for spreadsheet review
+python scripts/weekly_digest.py --csv-out ~/Desktop/weekly_$(date +%F).csv
+```
+Read the target book. Compare to your current Public.com holdings.
+
+### Monday morning (or any market-open day after the Friday digest)
+1. Open Public.com → Account → Holdings.
+2. For each name OVER target weight: SELL the difference.
+3. For each name UNDER target weight: BUY the difference.
+4. Skip differences < 0.5 % of book — friction not worth it.
+5. **TLH harvest swaps**: execute the SELL and BUY within 5 min of
+   each other to keep market exposure intact.
+
+### Monday evening (after fills clear)
+```bash
+# Export Holdings CSV from Public.com (Account → Statements → Holdings)
+python scripts/import_public_positions.py ~/Downloads/Holdings_*.csv
+# Review the drift. If it matches expectations:
+python scripts/import_public_positions.py ~/Downloads/Holdings_*.csv --apply
+```
+
+### Year-end (Dec 31 or first week of January)
+```bash
+python scripts/tlh_year_end.py --year $(date +%Y) \
+    --tax-rate 0.32 --state-rate 0.05 \
+    --csv-out ~/Desktop/tlh_$(date +%Y).csv
+```
+Hand `tlh_<year>.csv` + Public.com's 1099-B + the printed report to
+your accountant. They file Schedule D + Form 8949.
+
+---
+
+## 3. Public.com / Alpaca app actions — free $ I can't toggle for you
 
 ### A. Enable Stock Loan / Fully-Paid Lending Program
 
+**On Public.com** (where real money lives):
+1. Open Public.com → **Settings** → **Stock Lending Program**.
+2. Read the disclosure. Toggle **Enable**.
+3. Lending rebate shows up monthly in your activity statement.
+
+**On Alpaca** (still relevant if you keep the paper system running):
 1. Open the Alpaca app → **Account** → **Stock Loan Program**.
 2. Read the disclosure (it's short — covers the SIPC asterisk on
    lent shares).
 3. Toggle **Enable**. Alpaca lends out your shares to short-sellers
    and pays you ~50 % of the borrow fee.
-4. Income shows up monthly in the activity log as "Stock Loan Rebate".
 
 **Expected**: 5–50 bps/year on a large-cap basket; 50–200 bps/year if
 the portfolio has small-cap / meme exposure. Pure cash. Note the
@@ -66,17 +121,24 @@ TLH's tax-shelter benefit — but on net still positive.
 
 ### C. Enable Specific-Lot ID closing
 
-If you go to a real taxable account, before HIFO can actually save
-you tax dollars, Alpaca needs to file specific-ID lot identifications
-on your 1099-B.
+Before HIFO can actually save you tax dollars, the broker needs to
+file specific-ID lot identifications on your 1099-B.
 
+**On Public.com** (mandatory for the real-money TLH workflow):
+1. Public.com → **Account** → **Tax Settings** → **Cost Basis Method**.
+2. Change default from FIFO to **"Specific Lot Identification"**.
+3. When selling, Public.com's UI lets you pick which specific lots
+   to close. For TLH harvest swaps, **pick the highest-cost-basis
+   lot** (HIFO) to maximize the realized loss.
+
+**On Alpaca** (validation substrate):
 1. **Account** → **Tax Documents** → **Cost Basis Method**.
 2. Change from "First In First Out (FIFO)" (default) to **"Specific
    Lot Identification"**.
-3. Alpaca will accept the lot IDs the trader specifies on each close.
 
-Without this step, HIFO in our journal would be **decorative** —
-the IRS still receives FIFO via the 1099-B.
+Without this step on EITHER platform, HIFO in our journal is
+**decorative** — the IRS receives FIFO via the 1099-B and the tax
+savings calc in `tlh_year_end.py` becomes optimistic.
 
 ---
 
