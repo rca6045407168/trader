@@ -155,8 +155,9 @@ for pos in adapter.get_all_positions():
 - [x] `execute.py::place_bracket_order()` gated Alpaca-only: raises `NotImplementedError` on non-Alpaca BROKER. Operator should disable BOTTOM_CATCH on `public_live` if Public.com remains the live broker (Public.com SDK has multi-leg/short helpers but no atomic bracket-OCO for equity).
 
 **Status after round 2: `BROKER=public_live` is functionally safe to flip.** The full daily-run cycle works through the abstraction. Constraints:
-1. BOTTOM_CATCH sleeve must be disabled or skipped (bracket-order is Alpaca-only).
-2. MOC routing is Alpaca-only for now — Public.com falls back to DAY orders (cost: ~3-8 bps/trade for liquid names; total expected drag ~30-50 bps/yr).
+1. BOTTOM_CATCH sleeve must be disabled or skipped (bracket-order is Alpaca-only). Composing 3 separate orders + cancel-on-fill state machine is the future port; BOTTOM_CATCH's expected value is ~10-20 bps/yr so this is low-priority.
+2. **MOC routing investigation (2026-05-10): not currently shippable.** Public.com's SDK exposes `EquityMarketSession` with values `CORE` and `EXTENDED` only — no closing-auction equivalent. The Alpaca `TimeInForce.CLS` route saves ~3-8 bps per trade on liquid names; total expected drag on `public_live` vs Alpaca: ~30-50 bps/yr at our turnover. Worth re-checking if Public.com adds closing-auction routing.
+3. Slippage tracking is Alpaca-only currently (`src/trader/slippage_stats.py`). Public.com history-based slippage would require porting through `client.get_history()` or filtered-orders endpoint — future port. Weekly digest reports "unavailable" with a clear note when on `public_live`.
 
 These are real but small constraints; the main rebalance loop (momentum sleeve, the dominant strategy) works fully on Public.com.
 

@@ -214,6 +214,22 @@ def build_digest(db_path: Path, days: int = 7) -> str:
         format_tlh_swaps(tlh_swaps),
     ))
 
+    # v6.0.x: realized slippage tracking (Alpaca-only currently)
+    try:
+        from trader.slippage_stats import (
+            compute_recent_slippage_stats, format_slippage_section,
+        )
+        slip_stats = compute_recent_slippage_stats(days=days)
+        parts.append(section(
+            f"REALIZED SLIPPAGE (last {days} days)",
+            format_slippage_section(slip_stats, days=days),
+        ))
+    except Exception as e:
+        parts.append(section(
+            "REALIZED SLIPPAGE",
+            f"  (slippage section failed: {type(e).__name__}: {e})",
+        ))
+
     # Public.com execution checklist
     parts.append(section(
         "PUBLIC.COM EXECUTION CHECKLIST",

@@ -592,10 +592,22 @@ def main(force: bool = False) -> dict:
         except Exception as e:
             print(f"  aged-close failed: {e}")
 
-    # v6.0.x: optional universe expansion. UNIVERSE_SIZE=expanded
-    # switches from the 50-name liquid set to the 138-name expanded
-    # set (3x cross-section, more sectors). Default unchanged.
-    if os.environ.get("UNIVERSE_SIZE", "").lower() == "expanded":
+    # v6.0.x: optional universe expansion. UNIVERSE_SIZE values:
+    #   (unset)   → DEFAULT_LIQUID_50 (50 names)
+    #   expanded  → DEFAULT_LIQUID_EXPANDED (138 names, 11 sectors)
+    #   sp500_500 → full S&P 500 from Wikipedia (~500 names; auto-
+    #               populated REPLACEMENT_MAP via same-sector siblings)
+    #
+    # Diminishing returns past ~138 — the marginal TLH-harvest-scope
+    # benefit shrinks because liquid-large-cap drawdown opportunities
+    # are bounded. sp500_500 helps in choppy multi-sector years; in
+    # bull markets it's a wash. Opt-in for that reason.
+    univ_size = os.environ.get("UNIVERSE_SIZE", "").lower()
+    if univ_size == "sp500_500":
+        from .universe import sp500_tickers
+        universe = sp500_tickers()
+        print(f"  -> universe sp500: {len(universe)} names from Wikipedia")
+    elif univ_size == "expanded":
         from .universe import DEFAULT_LIQUID_EXPANDED
         universe = DEFAULT_LIQUID_EXPANDED
         print(f"  -> universe expanded: {len(universe)} names")
