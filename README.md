@@ -50,6 +50,7 @@ Personal multi-strategy quant platform. Stacks tax-loss harvesting, factor overl
 - **`ARCHITECTURE.md`** — system design, every layer's mechanism, version history (v3 → v6), the disposition record
 - **`RUNBOOK_MAX_RETURN.md`** — operator playbook: env knobs, weekly workflow, tax-time checklist
 - **`docs/MIGRATION_ALPACA_TO_PUBLIC.md`** — broker-migration plan and 9-gate go-live process
+- **`docs/OPS_RUNBOOK.md`** — incident response: what to do when reconcile halts, the heartbeat alerts, a strategy returns weird picks, etc.
 - **`V5_DISPOSITION.md`** — multi-strategy frame + capital ladder (still the operating spec)
 
 ## Operator workflow
