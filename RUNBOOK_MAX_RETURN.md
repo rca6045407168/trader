@@ -268,9 +268,9 @@ flat-market year, vs SPY ETF:
 
 ⚠️ **The point-estimate sum above assumes independent edges.** They aren't —
 in a 2008-style equity stress event, multiple edges collapse together
-(insider buying gets noisy, PEAD drift dies, quality re-rates) while
-TLH harvest INCREASES (more positions in loss). A more honest answer
-comes from running the Monte Carlo:
+(insider buying gets noisy, PEAD drift dies) while TLH harvest
+INCREASES (more positions in loss) and quality outperforms (defensive).
+A more honest answer comes from running the Monte Carlo:
 
 ```bash
 python -m trader.uplift_monte_carlo
@@ -288,11 +288,21 @@ Current calibration (with the equity-stress correlation matrix in
 | 95 % (best year) | +10.8 %/yr |
 
 **Headline honest number: +7.6 %/yr median, +5.1 % to +10.1 % at the 80 % CI.**
-Pr(negative uplift) is < 0.1 % under these assumptions — but if you don't
-trust the correlation estimates, run `uplift_monte_carlo.py --help` and
-tune the parameters yourself. Pessimistic regimes (factor decay
-accelerating, model assumptions wrong by 50 %) would shift the band
-materially.
+Pr(negative uplift) is < 0.1 % under these assumptions.
+
+**Calibration provenance** (commit `[v6-mc-calibration]`):
+- **TLH correlation** (-0.51): FITTED on 5 years of simulated harvest
+  activity (64 monthly observations) vs SPY drawdown-from-12-mo-peak.
+- **Quality correlation** (-0.15): FITTED. **Sign-flip** from earlier
+  hand-set +0.10 — quality is defensive (outperforms in drawdowns)
+  per Asness-Frazzini-Pedersen 2019. My prior intuition was wrong.
+- **Universe expansion** (-0.36): derived from TLH × 0.7 dampening.
+- **Insider / PEAD / calendar / sec-lending**: literature-based; no
+  fit data available in our journal. Documented with paper citations
+  in `src/trader/uplift_monte_carlo.py`.
+
+To re-fit (e.g. when the universe expands or new TLH proof
+accumulates): `python scripts/fit_uplift_correlations.py`.
 
 The trader account becomes a deliberate, transparent SPY+α machine
 where every basis point of edge has an audited source and a
