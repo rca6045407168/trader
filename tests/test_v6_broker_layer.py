@@ -25,6 +25,19 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+# public_api_sdk isn't a public pip package — it's installed via the
+# institutional access path. CI doesn't have it. Skip those tests
+# there.
+public_sdk_available = True
+try:
+    import public_api_sdk  # noqa: F401
+except ImportError:
+    public_sdk_available = False
+requires_public_sdk = pytest.mark.skipif(
+    not public_sdk_available,
+    reason="public_api_sdk not installed (institutional access only)",
+)
+
 
 # ============================================================
 # Module structure
@@ -77,7 +90,9 @@ def test_factory_singleton_caches(monkeypatch):
 # ============================================================
 # AlpacaAdapter
 # ============================================================
-def test_alpaca_adapter_get_account():
+def test_alpaca_adapter_get_account(monkeypatch):
+    monkeypatch.setattr("trader.broker.alpaca_adapter.ALPACA_KEY", "test-key")
+    monkeypatch.setattr("trader.broker.alpaca_adapter.ALPACA_SECRET", "test-sec")
     from trader.broker.alpaca_adapter import AlpacaAdapter
     with patch("alpaca.trading.client.TradingClient") as mtrading, \
          patch("alpaca.data.historical.StockHistoricalDataClient"):
@@ -95,7 +110,9 @@ def test_alpaca_adapter_get_account():
         assert a.account_id == "ABC123"
 
 
-def test_alpaca_adapter_get_clock():
+def test_alpaca_adapter_get_clock(monkeypatch):
+    monkeypatch.setattr("trader.broker.alpaca_adapter.ALPACA_KEY", "test-key")
+    monkeypatch.setattr("trader.broker.alpaca_adapter.ALPACA_SECRET", "test-sec")
     from trader.broker.alpaca_adapter import AlpacaAdapter
     with patch("alpaca.trading.client.TradingClient") as mtrading, \
          patch("alpaca.data.historical.StockHistoricalDataClient"):
@@ -145,6 +162,7 @@ def test_public_nyse_closed_before_930():
 # ============================================================
 # PublicAdapter — mocked SDK
 # ============================================================
+@requires_public_sdk
 def test_public_adapter_get_account(monkeypatch):
     monkeypatch.setenv("PUBLIC_API_SECRET", "test-key")
     monkeypatch.setenv("PUBLIC_ACCOUNT_NUMBER", "TEST_ACCT")
@@ -170,6 +188,7 @@ def test_public_adapter_get_account(monkeypatch):
         assert a.buying_power == 20000
 
 
+@requires_public_sdk
 def test_public_adapter_missing_creds_raises(monkeypatch):
     monkeypatch.delenv("PUBLIC_API_SECRET", raising=False)
     monkeypatch.delenv("PUBLIC_ACCOUNT_NUMBER", raising=False)
@@ -179,6 +198,7 @@ def test_public_adapter_missing_creds_raises(monkeypatch):
             PublicAdapter()
 
 
+@requires_public_sdk
 def test_public_adapter_get_all_positions(monkeypatch):
     monkeypatch.setenv("PUBLIC_API_SECRET", "test-key")
     monkeypatch.setenv("PUBLIC_ACCOUNT_NUMBER", "TEST_ACCT")
