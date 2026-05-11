@@ -139,12 +139,25 @@ for pos in adapter.get_all_positions():
 
 ## What's NOT yet wired (to-do list when ready to flip)
 
-- [ ] `execute.py` still imports Alpaca-specific types (`MarketOrderRequest`, `OrderSide`). Refactor to use `broker.get_broker_client()` interface. Currently the adapter exists but `execute.py` hasn't been ported. Do this BEFORE flipping the env.
-- [ ] `reconcile.py` reads Alpaca positions directly. Port to `BrokerAdapter.get_all_positions()`.
-- [ ] `main.py` calls `get_client()` from `execute.py`. Same — port to `broker.get_broker_client()`.
-- [ ] `main.py`'s market-open gate uses `get_client().get_clock()` which is already neutral. Verify the `Clock` model returned by both adapters has the same shape.
+**Read paths — DONE (commit `[v6-broker-port-1]`)**
+- [x] `main.py` kill-switch equity read uses `get_broker().get_account()`
+- [x] `main.py` market-open gate uses `get_broker().get_clock()` (works on both Alpaca and Public.com via the NYSE-clock helper)
+- [x] `main.py` snapshot uses `get_broker().get_all_positions()`
+- [x] `execute.py::get_last_price()` routes through broker abstraction when `BROKER != alpaca_paper`
+- [x] `execute.py::get_broker()` helper added for new code paths
 
-These ports are NOT done in the current commit. The adapter layer is in place; the call-site refactors come in a follow-up once Richard has decided to flip the switch.
+**Outstanding before `BROKER=public_live` is safe to flip:**
+- [ ] `reconcile.py` still accepts a raw Alpaca client. Two paths use it: `get_actual_positions_qty()` (works on either via duck-typing) and `get_pending_orders_qty()` (Alpaca-specific `GetOrdersRequest`). The latter needs a `get_open_orders()` method on `BrokerAdapter` + Public.com implementation.
+- [ ] `execute.py::place_target_weights()` uses Alpaca `MarketOrderRequest` + `OrderSide`/`TimeInForce` enums directly. Port to `broker.submit_market_order()`.
+- [ ] `execute.py::place_bracket_order()` uses Alpaca-specific `OrderClass.BRACKET`. **Hard port** — Public.com doesn't have direct bracket-order support. Options: (a) compose 3 separate orders + manage state, (b) use Public.com's strategies feature, (c) keep BOTTOM_CATCH sleeve Alpaca-only with an env gate that disables it on `public_live`.
+- [ ] `execute.py::close_aged_bottom_catches()` submits Alpaca SELL orders directly. Port to `broker.submit_market_order(side="sell")`.
+
+The read-path port lands first because it's safe + lets the operator verify Public.com connectivity end-to-end on each daily run without ANY orders being affected. Order-submission paths come next, in this order:
+
+1. `place_target_weights` (rebalance loop, simple market orders)
+2. `close_aged_bottom_catches` (simple sells)
+3. `reconcile` (positions + pending orders)
+4. `place_bracket_order` (the hard one — design Public.com mapping)
 
 ## Key references
 

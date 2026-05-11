@@ -18,7 +18,10 @@ from .config import TOP_N, USE_DEBATE, DRY_RUN, DB_PATH
 from .universe import DEFAULT_LIQUID_50
 from .strategy import rank_momentum, find_bottoms
 from .critic import debate
-from .execute import place_target_weights, place_bracket_order, get_client, get_last_price, close_aged_bottom_catches
+from .execute import (
+    place_target_weights, place_bracket_order, get_client, get_broker,
+    get_last_price, close_aged_bottom_catches,
+)
 from .order_planner import plan_momentum_entry, plan_bottom_entry
 from .risk_manager import check_account_risk
 from .journal import init_db, log_decision, log_order, log_daily_snapshot, start_run, finish_run, open_lot
@@ -346,7 +349,7 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
                 {"date": r[0], "equity": float(r[1])} for r in snap_rows
             ]
             current_equity = (
-                float(get_client().get_account().equity)
+                float(get_broker().get_account().equity)
                 if not DRY_RUN else 100_000.0
             )
             momentum_ranks = sorted(
@@ -472,7 +475,7 @@ def main(force: bool = False) -> dict:
     # v0.9: kill-switch pre-flight (manual halt, missing keys, equity drawdown triggers)
     print(f"\n[{datetime.now():%H:%M:%S}] kill-switch pre-flight...")
     try:
-        live_equity = float(get_client().get_account().equity) if not DRY_RUN else 100_000.0
+        live_equity = float(get_broker().get_account().equity) if not DRY_RUN else 100_000.0
     except Exception:
         live_equity = None
 
@@ -511,7 +514,7 @@ def main(force: bool = False) -> dict:
     last_trading_day = None
     if not DRY_RUN:
         try:
-            clock = get_client().get_clock()
+            clock = get_broker().get_clock()
             market_open_flag = bool(getattr(clock, "is_open", True))
             if not market_open_flag:
                 # Compute the previous trading day for the report's
@@ -724,8 +727,7 @@ def main(force: bool = False) -> dict:
         equity = 100_000.0
     else:
         try:
-            client = get_client()
-            equity = float(client.get_account().equity)
+            equity = float(get_broker().get_account().equity)
         except Exception as e:
             print(f"  account fetch failed ({e}); using 100k for risk check")
             equity = 100_000.0
@@ -868,24 +870,33 @@ def main(force: bool = False) -> dict:
             bracket_results.append({"symbol": c.ticker, "status": "error", "error": str(e)})
             log_order(c.ticker, "BUY", 0, None, "error", str(e))
 
-    # Snapshot account
+    # Snapshot account — v6.0.x: via broker abstraction so this works
+    # under BROKER=public_live too
     if not DRY_RUN:
         try:
-            client = get_client()
-            acct = client.get_account()
-            positions = {p.symbol: float(p.market_value) for p in client.get_all_positions()}
+            broker = get_broker()
+            acct = broker.get_account()
+            positions = {p.symbol: float(p.market_value)
+                          for p in broker.get_all_positions()}
             log_daily_snapshot(float(acct.equity), float(acct.cash), positions)
-            print(f"\nSnapshot: equity=${float(acct.equity):.2f}  cash=${float(acct.cash):.2f}")
+            print(f"\nSnapshot: equity=${float(acct.equity):.2f}  "
+                  f"cash=${float(acct.cash):.2f}")
         except Exception as e:
             print(f"  snapshot failed: {e}")
 
     # v2.3: build the rich email instead of one-liner
     try:
         if not DRY_RUN:
-            client = get_client()
-            acct = client.get_account()
+            broker = get_broker()
+            acct = broker.get_account()
             equity_after = float(acct.equity)
             cash_after = float(acct.cash)
+            # fetch_alpaca_position_dicts still requires the raw Alpaca
+            # client because the dashboard expects Alpaca-shaped dicts.
+            # Switch to broker.get_all_positions() in the next port
+            # pass once the dashboard consumes the normalized Position
+            # dataclass instead.
+            client = get_client()
             positions_now = fetch_alpaca_position_dicts(client)
         else:
             equity_after = equity

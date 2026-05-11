@@ -18,6 +18,15 @@ _data_client = None
 
 
 def get_client():
+    """LEGACY: returns the raw Alpaca TradingClient.
+
+    v6.0.x note: prefer get_broker() (broker-abstraction layer) for
+    new code. This function stays for backward-compat with paths that
+    use Alpaca-specific types directly (bracket orders, GetOrdersRequest
+    for pending-order reconciliation). Order-submission paths haven't
+    been ported to the abstraction yet — see
+    docs/MIGRATION_ALPACA_TO_PUBLIC.md for the outstanding-ports list.
+    """
     global _client
     if _client is None:
         if not ALPACA_KEY or not ALPACA_SECRET:
@@ -30,6 +39,16 @@ def get_client():
     return _client
 
 
+def get_broker():
+    """v6.0.x: returns the broker-abstraction adapter for the env-
+    configured broker. Use this for ALL new code paths. Reads are
+    fully portable; order submission still routes through get_client()
+    for now (the rebalance + bracket paths are Alpaca-specific until
+    the next port pass)."""
+    from .broker import get_broker_client
+    return get_broker_client()
+
+
 def _get_data_client():
     global _data_client
     if _data_client is None:
@@ -39,11 +58,19 @@ def _get_data_client():
 
 
 def get_last_price(symbol: str) -> float:
-    """Latest trade price from Alpaca."""
-    from alpaca.data.requests import StockLatestTradeRequest
-    client = _get_data_client()
-    resp = client.get_stock_latest_trade(StockLatestTradeRequest(symbol_or_symbols=symbol))
-    return float(resp[symbol].price)
+    """Latest trade price. v6.0.x: routes through the broker
+    abstraction so BROKER=public_live uses Public.com quotes."""
+    import os
+    if os.environ.get("BROKER", "alpaca_paper") == "alpaca_paper":
+        # Fast path — use Alpaca data API directly (existing behavior)
+        from alpaca.data.requests import StockLatestTradeRequest
+        client = _get_data_client()
+        resp = client.get_stock_latest_trade(
+            StockLatestTradeRequest(symbol_or_symbols=symbol),
+        )
+        return float(resp[symbol].price)
+    # Non-Alpaca brokers: use the abstraction's get_last_price
+    return get_broker().get_last_price(symbol)
 
 
 def close_aged_bottom_catches(max_age_days: int = 20, dry_run: bool = False) -> list[dict]:
