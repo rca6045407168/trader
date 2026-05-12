@@ -221,6 +221,44 @@ for pos in adapter.get_all_positions():
 
 ---
 
+### Before the flip — pre-flight rehearsal
+
+Run this BEFORE flipping `BROKER=public_live` for the first time:
+
+```bash
+python scripts/first_live_dry_run.py
+```
+
+It does an in-process BROKER=public_live override (your launchctl env stays unchanged), reads your real Public.com account state, computes what the next daily-run would do, and prints the order plan WITHOUT submitting anything.
+
+**What to verify in the output:**
+- ✅ Public.com connectivity (adapter authenticates)
+- ✅ Account equity matches what you expect
+- ✅ Market clock reads correctly
+- ✅ Strategy targets are non-zero (if all targets are zero, see "All targets zero" below)
+- ✅ Order plan looks sane (notional sizes match equity × target weights)
+
+### All targets zero / CATASTROPHIC tier (cross-broker drawdown false positive)
+
+If `first_live_dry_run.py` reports "ALL TARGETS ZERO" with a CATASTROPHIC drawdown message:
+
+**The bug**: when you flip `BROKER=public_live`, the drawdown protocol still reads the same journal as before. The journal's all-time peak ($111k from Alpaca paper) gets compared to Public.com's much smaller live equity, producing a false -99% drawdown → CATASTROPHIC tier → all targets zeroed → daily-run liquidates everything.
+
+**Fix options** (pick one before flipping):
+1. **Reset the deployment anchor** for the Public.com account:
+   ```python
+   from trader.deployment_anchor import get_or_set_anchor
+   get_or_set_anchor(YOUR_PUBLIC_EQUITY, reset=True)
+   ```
+2. **Scope journal snapshots by broker** (the durable fix — a future port). Currently the journal mixes Alpaca + Public.com snapshots; the drawdown protocol can't tell them apart.
+3. **Temporarily disable the protocol** in CATASTROPHIC tier:
+   ```bash
+   launchctl setenv DRAWDOWN_PROTOCOL_MODE ADVISORY
+   ```
+   Re-enable after the journal stabilizes on the new broker.
+
+Until one of these is applied, **do not flip BROKER=public_live**.
+
 ### First week post-flip checklist
 
 After flipping `BROKER=public_live`, watch these for 7 days:
