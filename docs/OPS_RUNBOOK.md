@@ -240,24 +240,20 @@ It does an in-process BROKER=public_live override (your launchctl env stays unch
 
 ### All targets zero / CATASTROPHIC tier (cross-broker drawdown false positive)
 
-If `first_live_dry_run.py` reports "ALL TARGETS ZERO" with a CATASTROPHIC drawdown message:
+**Current state (2026-05-12): mitigated via Option 3.** `.env` has `DRAWDOWN_PROTOCOL_MODE=ADVISORY` with an explanatory comment. The protocol still scores the tier (visible in logs + dashboard) but does not mutate targets. Other safety gates (kill-switch, deployment-anchor DD, v3.58 circuit breaker) still bind. Re-enable ENFORCING after the durable fix lands OR after Public.com is fully funded and a fresh deployment_anchor is set.
 
 **The bug**: when you flip `BROKER=public_live`, the drawdown protocol still reads the same journal as before. The journal's all-time peak ($111k from Alpaca paper) gets compared to Public.com's much smaller live equity, producing a false -99% drawdown → CATASTROPHIC tier → all targets zeroed → daily-run liquidates everything.
 
-**Fix options** (pick one before flipping):
-1. **Reset the deployment anchor** for the Public.com account:
+**Fix options** (in increasing order of durability):
+1. **Temporarily disable the protocol's enforcement** (CURRENT — applied 2026-05-12):
+   Edit `.env` line: `DRAWDOWN_PROTOCOL_MODE=ADVISORY`. Note: `launchctl setenv` alone won't work — dotenv `override=True` in `src/trader/config.py` trumps shell env. The `.env` file is the binding source.
+2. **Reset the deployment anchor** for the Public.com account once it's funded to a stable level:
    ```python
    from trader.deployment_anchor import get_or_set_anchor
    get_or_set_anchor(YOUR_PUBLIC_EQUITY, reset=True)
    ```
-2. **Scope journal snapshots by broker** (the durable fix — a future port). Currently the journal mixes Alpaca + Public.com snapshots; the drawdown protocol can't tell them apart.
-3. **Temporarily disable the protocol** in CATASTROPHIC tier:
-   ```bash
-   launchctl setenv DRAWDOWN_PROTOCOL_MODE ADVISORY
-   ```
-   Re-enable after the journal stabilizes on the new broker.
-
-Until one of these is applied, **do not flip BROKER=public_live**.
+   Then revert `.env` to `DRAWDOWN_PROTOCOL_MODE=ENFORCING`. Note this still leaves the v3.58 circuit breaker (separate, also reads snapshots) potentially false-positive — that needs the durable fix below.
+3. **Scope journal snapshots by broker** (the durable fix). Add a `broker` column to `daily_snapshot`, backfill existing rows as `alpaca_paper`, filter in `risk_manager.py` and `v358_world_class.py` by the current `BROKER` env. ~half-day port. After this lands, ENFORCING is safe regardless of Public.com equity vs Alpaca journal history.
 
 ### First week post-flip checklist
 
