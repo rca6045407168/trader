@@ -210,6 +210,43 @@ def test_main_wires_regime_overlay_opt_in():
     assert "regime overlay" in txt.lower()
 
 
+def test_main_supports_shadow_mode():
+    """REGIME_OVERLAY_ENABLED=SHADOW classifies + logs but doesn't scale."""
+    src = Path(__file__).resolve().parent.parent / "src" / "trader" / "main.py"
+    txt = src.read_text()
+    # Tri-state check
+    assert '_regime_mode in ("1", "SHADOW")' in txt
+    # SHADOW branch doesn't mutate momentum_targets
+    shadow_idx = txt.find("SHADOW: targets unchanged")
+    assert shadow_idx > 0
+    # LIVE branch is distinct from SHADOW
+    assert "LIVE" in txt
+    # The label appears in both branches' print statements
+    assert "mode_label" in txt
+
+
+def test_main_shadow_does_not_modify_targets_simulation():
+    """Simulate the main.py branching: in SHADOW, momentum_targets
+    is NOT reassigned to shadow_targets. Verify by source-text the
+    control flow: SHADOW branch should NOT contain
+    'momentum_targets = shadow_targets'."""
+    src = Path(__file__).resolve().parent.parent / "src" / "trader" / "main.py"
+    txt = src.read_text()
+    # The reassignment must be INSIDE the LIVE branch only
+    # Find the regime block
+    start = txt.find("HMM-based regime overlay")
+    end = txt.find("calendar-effect overlay")
+    block = txt[start:end]
+    # Count assignments
+    n_apply = block.count("momentum_targets = shadow_targets")
+    # Should be exactly 1 (inside the LIVE branch)
+    assert n_apply == 1, f"expected 1 apply, found {n_apply}"
+    # The assignment should come AFTER an "if _regime_mode == \"1\":" guard
+    apply_idx = block.find("momentum_targets = shadow_targets")
+    live_idx = block.rfind('_regime_mode == "1"', 0, apply_idx)
+    assert live_idx > 0, "apply must follow a LIVE-mode check"
+
+
 def test_overlay_acts_before_calendar_overlay():
     """Order matters: regime overlay should fire BEFORE the calendar
     overlay so calendar's small adjustments compound on top of the

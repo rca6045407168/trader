@@ -251,16 +251,21 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
                   f"{type(e).__name__}: {e}")
 
     # v6.0.x (research-driven addition): HMM-based regime overlay.
-    # OPT-IN via REGIME_OVERLAY_ENABLED=1. Fits a 3-state Gaussian
-    # HMM on trailing 3 years of SPY daily returns, classifies the
-    # current state as BULL/NEUTRAL/BEAR, scales gross accordingly
-    # (1.00 / 0.85 / 0.65 by default). Only acts when posterior
-    # confidence > 55% — ambiguous regimes leave gross unchanged.
-    # Inspired by Hamilton 1989 + MDPI 2020 regime-switching factor
-    # paper. Off by default because the classifier is unsupervised
-    # and false-positive bears can compound losses; flip on after
-    # validating in shadow.
-    if momentum_targets and os.environ.get("REGIME_OVERLAY_ENABLED", "0") == "1":
+    # Tri-state via REGIME_OVERLAY_ENABLED:
+    #   "0" / unset → overlay completely off (default)
+    #   "SHADOW"    → classify + log, but DON'T modify targets.
+    #                 Used for in-production validation: read the log
+    #                 weekly, manually check whether the regime calls
+    #                 match your read of market state. Flip to "1" once
+    #                 you trust the classifier.
+    #   "1"         → classify AND apply gross-scaling. LIVE.
+    #
+    # Fits a 3-state Gaussian HMM on trailing 3 years of SPY daily
+    # returns, scales gross by regime (1.00 / 0.85 / 0.65) when
+    # posterior confidence > 55%. Inspired by Hamilton 1989 + MDPI 2020
+    # regime-switching factor paper.
+    _regime_mode = os.environ.get("REGIME_OVERLAY_ENABLED", "0").upper()
+    if momentum_targets and _regime_mode in ("1", "SHADOW"):
         try:
             from .regime_classifier import classify_regime, apply_regime_overlay
             from .data import fetch_history
@@ -270,15 +275,27 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
             spy_panel = fetch_history(["SPY"], start=start_d)
             if "SPY" in spy_panel.columns:
                 reading = classify_regime(spy_panel["SPY"].dropna())
-                momentum_targets, regime_info = apply_regime_overlay(
+                # Always compute the would-be-applied result for logging
+                shadow_targets, regime_info = apply_regime_overlay(
                     momentum_targets, reading,
                 )
+                if _regime_mode == "1":
+                    # LIVE: apply the scaling
+                    momentum_targets = shadow_targets
+                    mode_label = "LIVE"
+                else:
+                    # SHADOW: log only, don't modify
+                    mode_label = "SHADOW"
                 if regime_info.get("regime"):
-                    print(f"  -> regime overlay: {regime_info['regime']} "
-                          f"@ conf={regime_info.get('confidence'):.2f}, "
-                          f"scalar={regime_info['scalar']:.3f}")
+                    print(f"  -> regime overlay [{mode_label}]: "
+                          f"{regime_info['regime']} @ "
+                          f"conf={regime_info.get('confidence'):.2f}, "
+                          f"would-scale={regime_info['scalar']:.3f}")
                     if regime_info.get("reason"):
                         print(f"     reason: {regime_info['reason']}")
+                    if _regime_mode == "SHADOW":
+                        print(f"     SHADOW: targets unchanged. Flip to "
+                              f"REGIME_OVERLAY_ENABLED=1 to apply.")
         except Exception as e:
             print(f"  regime overlay failed (non-fatal): "
                   f"{type(e).__name__}: {e}")
