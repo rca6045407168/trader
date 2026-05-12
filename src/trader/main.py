@@ -250,6 +250,39 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
             print(f"  vol-target overlay failed (non-fatal): "
                   f"{type(e).__name__}: {e}")
 
+    # v6.0.x (research-driven addition): HMM-based regime overlay.
+    # OPT-IN via REGIME_OVERLAY_ENABLED=1. Fits a 3-state Gaussian
+    # HMM on trailing 3 years of SPY daily returns, classifies the
+    # current state as BULL/NEUTRAL/BEAR, scales gross accordingly
+    # (1.00 / 0.85 / 0.65 by default). Only acts when posterior
+    # confidence > 55% — ambiguous regimes leave gross unchanged.
+    # Inspired by Hamilton 1989 + MDPI 2020 regime-switching factor
+    # paper. Off by default because the classifier is unsupervised
+    # and false-positive bears can compound losses; flip on after
+    # validating in shadow.
+    if momentum_targets and os.environ.get("REGIME_OVERLAY_ENABLED", "0") == "1":
+        try:
+            from .regime_classifier import classify_regime, apply_regime_overlay
+            from .data import fetch_history
+            import pandas as _pd_for_regime
+            end_d = _pd_for_regime.Timestamp.today()
+            start_d = (end_d - _pd_for_regime.DateOffset(years=4)).strftime("%Y-%m-%d")
+            spy_panel = fetch_history(["SPY"], start=start_d)
+            if "SPY" in spy_panel.columns:
+                reading = classify_regime(spy_panel["SPY"].dropna())
+                momentum_targets, regime_info = apply_regime_overlay(
+                    momentum_targets, reading,
+                )
+                if regime_info.get("regime"):
+                    print(f"  -> regime overlay: {regime_info['regime']} "
+                          f"@ conf={regime_info.get('confidence'):.2f}, "
+                          f"scalar={regime_info['scalar']:.3f}")
+                    if regime_info.get("reason"):
+                        print(f"     reason: {regime_info['reason']}")
+        except Exception as e:
+            print(f"  regime overlay failed (non-fatal): "
+                  f"{type(e).__name__}: {e}")
+
     # v6.0.x: calendar-effect overlay. ENABLED by default. Stacks
     # the small empirical edges from turn-of-month, OPEX, pre-FOMC,
     # year-end reversal, pre-holiday into a single multiplicative
