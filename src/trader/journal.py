@@ -32,12 +32,18 @@ CREATE TABLE IF NOT EXISTS orders (
     status TEXT,
     error TEXT
 );
+-- v6.0.x: daily_snapshot gains a `broker` column with composite PK
+-- (date, broker) so cross-broker journal data doesn't mix. New table
+-- below; existing single-PK rows get migrated automatically via
+-- _migrate_daily_snapshot_broker() called from init_db().
 CREATE TABLE IF NOT EXISTS daily_snapshot (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    broker TEXT NOT NULL DEFAULT 'alpaca_paper',
     equity REAL,
     cash REAL,
     positions_json TEXT,
-    benchmark_spy_close REAL
+    benchmark_spy_close REAL,
+    PRIMARY KEY (date, broker)
 );
 CREATE TABLE IF NOT EXISTS postmortems (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,8 +108,63 @@ def _conn():
     return c
 
 
+def _current_broker() -> str:
+    """The current BROKER env value, defaulted to 'alpaca_paper'.
+
+    v6.0.x: daily_snapshot + recent_snapshots use this to scope rows
+    by broker so cross-broker journal data doesn't mix.
+    """
+    import os as _os
+    return _os.environ.get("BROKER", "alpaca_paper").lower()
+
+
+def _migrate_daily_snapshot_broker(con) -> bool:
+    """One-shot migration: add `broker` column + composite PK to
+    daily_snapshot if the existing table uses the legacy single-PK
+    schema. Idempotent — safe to call on already-migrated DBs.
+
+    Returns True if a migration ran, False if the table was already
+    current. Existing rows get tagged 'alpaca_paper' (the only broker
+    that was in scope before v6.0.x).
+    """
+    cols = con.execute("PRAGMA table_info(daily_snapshot)").fetchall()
+    if not cols:
+        return False  # CREATE TABLE will have made the new shape already
+    col_names = {row[1] for row in cols}
+    if "broker" in col_names:
+        return False  # already migrated
+    # Legacy schema detected — rebuild
+    con.executescript("""
+        CREATE TABLE daily_snapshot_v6 (
+            date TEXT NOT NULL,
+            broker TEXT NOT NULL DEFAULT 'alpaca_paper',
+            equity REAL,
+            cash REAL,
+            positions_json TEXT,
+            benchmark_spy_close REAL,
+            PRIMARY KEY (date, broker)
+        );
+        INSERT INTO daily_snapshot_v6
+            (date, broker, equity, cash, positions_json, benchmark_spy_close)
+        SELECT date, 'alpaca_paper', equity, cash, positions_json,
+               benchmark_spy_close
+        FROM daily_snapshot;
+        DROP TABLE daily_snapshot;
+        ALTER TABLE daily_snapshot_v6 RENAME TO daily_snapshot;
+    """)
+    return True
+
+
 def init_db():
     with _conn() as c:
+        # Run the broker-column migration BEFORE executing the CREATE
+        # TABLE in SCHEMA (which is IF NOT EXISTS — so it would be a
+        # no-op on an existing legacy table). The migration recreates
+        # the table with the new shape.
+        try:
+            _migrate_daily_snapshot_broker(c)
+        except Exception:
+            pass  # if migration fails (e.g. table doesn't exist), SCHEMA creates fresh
         c.executescript(SCHEMA)
 
 
@@ -138,15 +199,22 @@ def log_order(ticker: str, side: str, notional: float, order_id: str | None,
         )
 
 
-def log_daily_snapshot(equity: float, cash: float, positions: dict, spy_close: float = 0.0):
+def log_daily_snapshot(equity: float, cash: float, positions: dict,
+                        spy_close: float = 0.0, broker: str | None = None):
+    """Write today's snapshot for the current (or specified) broker.
+
+    v6.0.x: composite PK (date, broker) — two brokers writing the same
+    date are independent rows. Default broker comes from the BROKER env."""
     init_db()
     today = datetime.utcnow().date().isoformat()
+    if broker is None:
+        broker = _current_broker()
     with _conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO daily_snapshot
-               (date, equity, cash, positions_json, benchmark_spy_close)
-               VALUES (?, ?, ?, ?, ?)""",
-            (today, equity, cash, json.dumps(positions), spy_close),
+               (date, broker, equity, cash, positions_json, benchmark_spy_close)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (today, broker, equity, cash, json.dumps(positions), spy_close),
         )
 
 
@@ -168,12 +236,30 @@ def recent_decisions(days: int = 1) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def recent_snapshots(days: int = 7) -> list[dict]:
+def recent_snapshots(days: int = 7, broker: str | None = None) -> list[dict]:
+    """Return recent daily snapshots, filtered by broker.
+
+    v6.0.x: `broker` defaults to the current BROKER env. Pass
+    broker='all' to get every broker's history (legacy behavior, used
+    by some operator tools that span historical runs)."""
     init_db()
+    if broker is None:
+        broker = _current_broker()
     with _conn() as c:
-        rows = c.execute(
-            f"SELECT * FROM daily_snapshot WHERE date >= date('now', '-{days} days') ORDER BY date DESC"
-        ).fetchall()
+        if broker == "all":
+            rows = c.execute(
+                f"SELECT * FROM daily_snapshot "
+                f"WHERE date >= date('now', '-{days} days') "
+                f"ORDER BY date DESC"
+            ).fetchall()
+        else:
+            rows = c.execute(
+                f"SELECT * FROM daily_snapshot "
+                f"WHERE date >= date('now', '-{days} days') "
+                f"AND broker = ? "
+                f"ORDER BY date DESC",
+                (broker,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
 

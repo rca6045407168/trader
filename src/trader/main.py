@@ -389,11 +389,16 @@ def build_targets(universe: list[str]) -> tuple[dict[str, float], list[dict], di
             from .risk_manager import (
                 apply_drawdown_protocol, drawdown_protocol_mode,
             )
-            from .journal import _conn
+            from .journal import _conn, _current_broker
+            # v6.0.x: filter snapshots by current broker so Alpaca-paper
+            # peaks don't false-trigger CATASTROPHIC under public_live.
+            current_broker = _current_broker()
             with _conn() as c:
                 snap_rows = c.execute(
                     "SELECT date, equity FROM daily_snapshot "
-                    "WHERE equity > 0 ORDER BY date DESC LIMIT 200"
+                    "WHERE equity > 0 AND broker = ? "
+                    "ORDER BY date DESC LIMIT 200",
+                    (current_broker,),
                 ).fetchall()
             snapshots = [
                 {"date": r[0], "equity": float(r[1])} for r in snap_rows

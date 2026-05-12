@@ -203,10 +203,12 @@ def test_intraday_freeze_fires_when_intraday_dd_exceeds_threshold(tmp_path, monk
     result = intraday_risk.check()
     assert result.action == "freeze_intraday"
     assert result.intraday_pnl_pct == pytest.approx(-0.10)
-    # Freeze state file written
+    # Freeze state file written. v6.0.x: file is now keyed by broker.
     assert (tmp_path / "freeze.json").exists()
     state = json.loads((tmp_path / "freeze.json").read_text())
-    assert "daily_loss_freeze_until" in state
+    # Default broker = alpaca_paper when BROKER env unset
+    alpaca_state = state.get("alpaca_paper", state)
+    assert "daily_loss_freeze_until" in alpaca_state
 
 
 def test_intraday_warn_fires_below_freeze_threshold(tmp_path, monkeypatch):
@@ -271,7 +273,9 @@ def test_intraday_liquidation_gate_fires_at_33pct_deploy_dd(tmp_path, monkeypatc
     result = intraday_risk.check()
     assert result.action == "freeze_liquidation"
     state = json.loads((tmp_path / "freeze.json").read_text())
-    assert state.get("liquidation_gate_tripped") is True
+    # v6.0.x: broker-scoped. Default broker = alpaca_paper.
+    alpaca_state = state.get("alpaca_paper", state)
+    assert alpaca_state.get("liquidation_gate_tripped") is True
 
 
 def test_intraday_handles_broker_fetch_failure(tmp_path, monkeypatch):

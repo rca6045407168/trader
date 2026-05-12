@@ -109,18 +109,53 @@ def vol_scale(vix: float | None) -> float:
     return 0.30
 
 
-def _load_freeze_state() -> dict:
+def _current_broker_for_freeze() -> str:
+    """Mirror trader.journal._current_broker — pick up BROKER env."""
+    import os as _os
+    return _os.environ.get("BROKER", "alpaca_paper").lower()
+
+
+def _read_all_freeze() -> dict:
+    """Read the full multi-broker freeze-state file. Migrates legacy
+    flat format → dict-by-broker on first read."""
     if not FREEZE_STATE_PATH.exists():
         return {}
     try:
-        return json.loads(FREEZE_STATE_PATH.read_text())
+        data = json.loads(FREEZE_STATE_PATH.read_text())
     except Exception:
         return {}
+    if not isinstance(data, dict):
+        return {}
+    # Legacy format: top-level keys are freeze fields (liquidation_gate_tripped,
+    # daily_loss_freeze_until, etc.) rather than broker names. Detect by
+    # looking for any known freeze key at the top level.
+    legacy_keys = {
+        "liquidation_gate_tripped", "liquidation_tripped_at",
+        "daily_loss_freeze_until", "deploy_dd_freeze_until",
+    }
+    if any(k in data for k in legacy_keys):
+        migrated = {"alpaca_paper": data}
+        try:
+            FREEZE_STATE_PATH.write_text(json.dumps(migrated, indent=2))
+        except Exception:
+            pass
+        return migrated
+    return data
+
+
+def _load_freeze_state() -> dict:
+    """Return the freeze state for the CURRENT broker (per BROKER env).
+    Caller-facing behavior is unchanged: a dict of freeze-key → value."""
+    return _read_all_freeze().get(_current_broker_for_freeze(), {})
 
 
 def _save_freeze_state(state: dict) -> None:
+    """Persist the freeze state for the current broker. Other brokers'
+    freeze state is preserved unchanged."""
+    all_data = _read_all_freeze()
+    all_data[_current_broker_for_freeze()] = state
     FREEZE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    FREEZE_STATE_PATH.write_text(json.dumps(state, indent=2))
+    FREEZE_STATE_PATH.write_text(json.dumps(all_data, indent=2))
 
 
 def _check_freeze_active() -> tuple[bool, str]:
@@ -406,7 +441,9 @@ def check_account_risk(
         cb = DrawdownCircuitBreaker()
         if cb.status() == "LIVE":
             from .journal import recent_snapshots as _rs_all
-            all_snaps = _rs_all(days=10_000)  # effectively all-time
+            # v6.0.x: filter by current broker so Alpaca-paper peaks
+            # don't cross-compare against Public.com live equity.
+            all_snaps = _rs_all(days=10_000)  # default broker = current BROKER env
             if all_snaps:
                 all_peak = max(s["equity"] for s in all_snaps if s.get("equity"))
                 if cb.is_tripped(peak_equity=all_peak, current_equity=equity):

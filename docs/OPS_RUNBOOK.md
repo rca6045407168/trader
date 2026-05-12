@@ -240,20 +240,21 @@ It does an in-process BROKER=public_live override (your launchctl env stays unch
 
 ### All targets zero / CATASTROPHIC tier (cross-broker drawdown false positive)
 
-**Current state (2026-05-12): mitigated via Option 3.** `.env` has `DRAWDOWN_PROTOCOL_MODE=ADVISORY` with an explanatory comment. The protocol still scores the tier (visible in logs + dashboard) but does not mutate targets. Other safety gates (kill-switch, deployment-anchor DD, v3.58 circuit breaker) still bind. Re-enable ENFORCING after the durable fix lands OR after Public.com is fully funded and a fresh deployment_anchor is set.
+**Current state (2026-05-12): RESOLVED via the durable fix.** The journal, deployment_anchor, and risk_freeze_state are now all broker-scoped — each broker has its own peak/anchor/freeze-state. `.env` is back to `DRAWDOWN_PROTOCOL_MODE=ENFORCING`. Cross-broker false-positive CATASTROPHIC is no longer possible.
 
-**The bug**: when you flip `BROKER=public_live`, the drawdown protocol still reads the same journal as before. The journal's all-time peak ($111k from Alpaca paper) gets compared to Public.com's much smaller live equity, producing a false -99% drawdown → CATASTROPHIC tier → all targets zeroed → daily-run liquidates everything.
+**The original bug (preserved for context)**: when you flipped `BROKER=public_live`, the drawdown protocol read the same journal as before. The journal's all-time peak ($111k from Alpaca paper) got compared to Public.com's much smaller live equity, producing a false -99% drawdown → CATASTROPHIC tier → all targets zeroed → daily-run would liquidate everything.
 
-**Fix options** (in increasing order of durability):
-1. **Temporarily disable the protocol's enforcement** (CURRENT — applied 2026-05-12):
-   Edit `.env` line: `DRAWDOWN_PROTOCOL_MODE=ADVISORY`. Note: `launchctl setenv` alone won't work — dotenv `override=True` in `src/trader/config.py` trumps shell env. The `.env` file is the binding source.
-2. **Reset the deployment anchor** for the Public.com account once it's funded to a stable level:
-   ```python
-   from trader.deployment_anchor import get_or_set_anchor
-   get_or_set_anchor(YOUR_PUBLIC_EQUITY, reset=True)
-   ```
-   Then revert `.env` to `DRAWDOWN_PROTOCOL_MODE=ENFORCING`. Note this still leaves the v3.58 circuit breaker (separate, also reads snapshots) potentially false-positive — that needs the durable fix below.
-3. **Scope journal snapshots by broker** (the durable fix). Add a `broker` column to `daily_snapshot`, backfill existing rows as `alpaca_paper`, filter in `risk_manager.py` and `v358_world_class.py` by the current `BROKER` env. ~half-day port. After this lands, ENFORCING is safe regardless of Public.com equity vs Alpaca journal history.
+**The durable fix that landed** (commit `[v6-broker-scoped-journal]`):
+1. `daily_snapshot` table now has composite PK `(date, broker)`. Existing rows tagged as `alpaca_paper`. `recent_snapshots()` filters by current BROKER env by default; pass `broker="all"` for cross-broker views.
+2. `deployment_anchor.json` is now a dict keyed by broker. Legacy single-tenant JSON gets migrated on first load. Each broker's anchor auto-sets on first daily-run for that broker.
+3. `risk_freeze_state.json` similarly broker-scoped. Liquidation-gate trips, daily-loss freezes, and deploy-DD freezes are all per-broker now.
+4. `main.py`'s direct SQL read for drawdown protocol filters by current broker.
+
+**What this means operationally:**
+- When the operator flips `BROKER=public_live`, the system has 0 historical snapshots for that broker → no peak comparison → no CATASTROPHIC.
+- A fresh deployment_anchor auto-sets to the broker's current equity on first daily-run.
+- The freeze state on alpaca_paper is preserved untouched (won't bleed into public_live behavior).
+- After enough public_live snapshots accumulate (~30 days), the protocol resumes its normal "peak vs current" semantics for that broker independently.
 
 ### First week post-flip checklist
 
