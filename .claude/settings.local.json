@@ -24,7 +24,12 @@
       "Bash(python scripts/regression_check.py:*)",
       "Bash(date*)",
       "Bash(cat /Users/richardchen/trader/data/reports/*)",
-      "Bash(ls /Users/richardchen/trader/data/reports/*)"
+      "Bash(ls /Users/richardchen/trader/data/reports/*)",
+      "Bash(arch -arm64 /Users/richardchen/trader/.venv/bin/python:*)",
+      "Bash(arch -arm64 .venv/bin/python:*)",
+      "Bash(tee /tmp/*)",
+      "Bash(cat > /tmp/*)",
+      "Write(/tmp/*)"
     ]
   }
 }
