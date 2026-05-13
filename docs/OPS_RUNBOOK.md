@@ -21,6 +21,40 @@ python scripts/run_reconcile.py
 
 ## Incident playbook
 
+### Daemon harness silently rejected commands (no orders placed)
+
+**Symptom:** scheduled `trader-daily-run` agent fires on time, but logs at
+`~/openclaw-workspace/trader-jobs/logs/trader-daily-run-*.log` say something like
+"The Bash tool is prompting for approval", "the harness keeps rejecting the
+command", or "source / . shell builtins are blocked by the sandbox". The
+orchestrator never ran, no orders placed, no snapshot written.
+
+**Root cause (2026-05-13):** the daemon's Claude Code harness only auto-approves
+Bash commands matching the patterns in `.claude/settings.local.json`, and
+shell builtins `source` / `.` are blocked outright by the sandbox. SKILL.md
+files that say `cd /Users/richardchen/trader && source .venv/bin/activate;
+python scripts/run_reconcile.py` fail twice: `source` is blocked, and the
+relative `python` path doesn't match the absolute-path allowlist entries.
+
+**The contract:**
+- Always invoke the venv Python by absolute path:
+  `/Users/richardchen/trader/.venv/bin/python /Users/richardchen/trader/scripts/<name>.py`
+- Never use `source` / `.` inside a scheduled-task SKILL.md.
+- New scheduled tasks must use only commands matching an entry in
+  `.claude/settings.local.json::permissions.allow`. Add new entries before
+  deploying the task.
+
+**Fix if it recurs:** open the daemon log to see what command was rejected,
+then either (a) add the pattern to `.claude/settings.local.json`, or
+(b) rewrite the SKILL.md step to use a pre-approved absolute-path form.
+
+**Manual recovery for a missed run:**
+```bash
+/Users/richardchen/trader/.venv/bin/python /Users/richardchen/trader/scripts/run_reconcile.py
+# if HALT: /Users/richardchen/trader/.venv/bin/python /Users/richardchen/trader/scripts/resync_lots_from_broker.py --apply
+/Users/richardchen/trader/.venv/bin/python -m trader.main
+```
+
 ### Daily heartbeat alert fires
 
 The heartbeat daemon (`com.trader.daily-heartbeat`) alerts when the daily-run hasn't completed for >24 hours.

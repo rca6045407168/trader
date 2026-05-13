@@ -576,7 +576,12 @@ def main(force: bool = False) -> dict:
                 # "last-close" label. Walk back from today skipping
                 # weekends. (Holidays aren't worth modelling here —
                 # the operator can read the date and decide.)
-                from datetime import date as _date, timedelta as _td
+                # NOTE: do NOT rebind `_date` here — it's already
+                # imported at module scope (line 38) and Python would
+                # treat it as a function-local for the entire scope,
+                # so line 986 (`scan_anomalies(_date.today())`) would
+                # raise UnboundLocalError on market-open days.
+                from datetime import timedelta as _td
                 d = _date.today() - _td(days=1)
                 while d.weekday() >= 5:  # Sat=5, Sun=6
                     d -= _td(days=1)

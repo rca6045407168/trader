@@ -1,17 +1,30 @@
 {
-  "_comment": "Pre-approved tool permissions for scheduled-task autonomy. Without these, scheduled tasks hang waiting for permission prompts that no human will see at the cron time.",
+  "_comment": "Pre-approved tool permissions for scheduled-task autonomy. Without these, scheduled tasks hang waiting for permission prompts that no human will see at the cron time. NOTE: the daemon harness blocks `source`/`.` builtins, so the venv Python must be invoked by absolute path (/Users/richardchen/trader/.venv/bin/python). See trader-daily-run-20260513-* logs for the 4 daemon failures that motivated widening this list.",
   "permissions": {
     "allow": [
       "Bash(cd /Users/richardchen/trader:*)",
       "Bash(source /Users/richardchen/trader/.venv/bin/activate:*)",
+      "Bash(source .venv/bin/activate:*)",
+      "Bash(/Users/richardchen/trader/.venv/bin/python:*)",
+      "Bash(.venv/bin/python:*)",
       "Bash(python /Users/richardchen/trader/scripts/*:*)",
+      "Bash(python scripts/*:*)",
       "Bash(python -c *)",
+      "Bash(python -m trader.main*)",
+      "Bash(python -m trader.*)",
       "Bash(python /Users/richardchen/trader/scripts/run_daily.py*)",
       "Bash(python /Users/richardchen/trader/scripts/run_postmortem.py*)",
       "Bash(python /Users/richardchen/trader/scripts/run_reconcile.py*)",
       "Bash(python /Users/richardchen/trader/scripts/run_optimizer.py*)",
       "Bash(python /Users/richardchen/trader/scripts/regression_check.py*)",
-      "Bash(date*)"
+      "Bash(python scripts/run_reconcile.py:*)",
+      "Bash(python scripts/run_daily.py:*)",
+      "Bash(python scripts/run_postmortem.py:*)",
+      "Bash(python scripts/run_optimizer.py:*)",
+      "Bash(python scripts/regression_check.py:*)",
+      "Bash(date*)",
+      "Bash(cat /Users/richardchen/trader/data/reports/*)",
+      "Bash(ls /Users/richardchen/trader/data/reports/*)"
     ]
   }
 }
