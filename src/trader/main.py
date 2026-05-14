@@ -893,6 +893,35 @@ def main(force: bool = False) -> dict:
     except Exception as e:
         print(f"  ReactorSignalRule check failed (non-fatal): {type(e).__name__}: {e}")
 
+    # v6.1.0 — cash-park overlay. Route residual cash (post all prior
+    # overlays) into a benchmark ETF (default SPY) to reduce cash drag
+    # on up days. Active only in GREEN drawdown tier — when DD escalates
+    # the cash IS the protection. Default OFF (env: CASH_PARK_TICKER=SPY).
+    # See src/trader/cash_park.py for the full rationale + trade-offs.
+    try:
+        from .cash_park import plan_cash_park
+        # Drawdown vs deployment anchor; if no anchor yet, dd_pct = 0.
+        dd_pct = 0.0
+        try:
+            from .deployment_anchor import drawdown_from_deployment
+            dd_pct, _ = drawdown_from_deployment(equity)
+        except Exception:
+            pass
+        cp_plan = plan_cash_park(final_targets, dd_pct)
+        if cp_plan.active:
+            existing = final_targets.get(cp_plan.ticker, 0.0)
+            final_targets[cp_plan.ticker] = existing + cp_plan.park_pct
+            # Also add to momentum_targets so the dispatch picks it up
+            # (rebalance is filtered by `t in momentum_targets`).
+            momentum_targets[cp_plan.ticker] = (
+                momentum_targets.get(cp_plan.ticker, 0.0) + cp_plan.park_pct
+            )
+            print(f"  cash-park: {cp_plan.reason}")
+        elif os.environ.get("CASH_PARK_TICKER"):
+            print(f"  cash-park inactive: {cp_plan.reason}")
+    except Exception as e:
+        print(f"  cash-park overlay failed (non-fatal): {type(e).__name__}: {e}")
+
     # v0.9: validate targets before any order leaves the system
     try:
         target_check = validate_targets(final_targets)

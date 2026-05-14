@@ -19,6 +19,59 @@ python scripts/run_reconcile.py
 
 ---
 
+## Cash-park overlay (v6.1.0, 2026-05-14)
+
+**What:** route residual cash (after all overlays) into a benchmark ETF
+(default SPY) to remove cash drag on up days. Active only in GREEN
+drawdown tier — when DD escalates, cash IS the protection and the
+overlay shuts off.
+
+**Why:** the trader finishes most sessions at ~60-70% deployed (alpha
+sleeve sizing + vol-target). The leftover ~30-40% sits in cash earning
+~0% (Alpaca) / ~5% (Public.com). On a +0.80% SPY day, that's
+30-40 bps of relative underperformance baked in. The cash-park
+overlay converts that bucket from beta-0 to beta-1.
+
+**Backtest (2021-2026 sim, 62% deployed alpha, residual → SPY):**
+- ΔCAGR: +7.78 pp (17.30% → 25.08%)
+- ΔSharpe: +0.09 (1.10 → 1.19)
+- ΔmaxDD: -6.6 pp (worse — mitigated by drawdown-tier gate in prod)
+- Δalpha-vs-SPY: +7.78 pp (2.36 → 10.14)
+
+**Enable / disable:**
+```bash
+# enable for the next daemon fire:
+echo 'CASH_PARK_TICKER=SPY' >> .env
+# disable:
+sed -i '' '/CASH_PARK_TICKER/d' .env
+```
+
+**Suppression rules (built in, no operator action):**
+- Skipped if drawdown tier != GREEN (YELLOW @ -5%, RED @ -8%,
+  ESCALATION @ -12%, CATASTROPHIC @ -20%).
+- Skipped if residual < 1% (don't bother trading dust).
+- Always keeps a 5% minimum cash buffer regardless.
+
+**What to expect in the daemon log when active:**
+```
+  cash-park: park 33.5% in SPY (residual 38.5%, buffer 5.0%)
+```
+
+**Validation warning you'll see (expected, not a halt):**
+```
+  validation warn: SPY weight 33.5% > 20% — concentration risk
+```
+
+This is the overlay working — SPY is the concentrated cash-park
+position by design. The warning is informational.
+
+**To remove SPY from the book after disabling:** next rebalance will
+naturally sell it to zero. To force immediate exit, run
+`/Users/richardchen/trader/.venv/bin/python -m trader.main --force`
+after removing the env var.
+
+---
+
 ## Incident playbook
 
 ### Daemon harness silently rejected commands (no orders placed)
