@@ -90,9 +90,34 @@ def check_heartbeat(now: datetime | None = None,
         out["reason"] = f"non-trading day ({sess.label})"
         return out
 
-    # Did a run start today?
-    fired_today = (last_started is not None
-                    and last_started.startswith(today_iso))
+    # Did a run start today? `today_iso` is the ET trading-day date.
+    # `started_at` is stored as UTC isoformat. v6.1.1 (2026-05-14
+    # incident): the old `.startswith(today_iso)` comparison was wrong
+    # — an evening-PT run (say 7pm PT) is stored as next-day UTC
+    # (02:00 UTC) and would NEVER match `2026-05-14...`, producing
+    # a false-positive "missing today" alert. Compare against the
+    # UTC range that corresponds to today's ET trading day instead.
+    fired_today = False
+    if last_started is not None:
+        try:
+            from datetime import time as _time, timedelta as _td, timezone as _tz
+            try:
+                from zoneinfo import ZoneInfo
+                _ET = ZoneInfo("America/New_York")
+            except ImportError:
+                _ET = None
+            if _ET is not None:
+                et_day = sess.et_now.date()
+                et_start = datetime.combine(et_day, _time.min, tzinfo=_ET)
+                et_end = datetime.combine(et_day + _td(days=1), _time.min, tzinfo=_ET)
+                last_dt = datetime.fromisoformat(last_started)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=_tz.utc)
+                fired_today = et_start <= last_dt < et_end
+            else:
+                fired_today = last_started.startswith(today_iso)
+        except Exception:
+            fired_today = last_started.startswith(today_iso)
     out["fired_today"] = fired_today
 
     if fired_today:

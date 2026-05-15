@@ -5,7 +5,7 @@ flat — easier to query, easier to dump to CSV when we want to audit.
 """
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from .config import DB_PATH
 
 SCHEMA = """
@@ -274,15 +274,45 @@ def start_run(run_id: str, notes: str = "") -> bool:
     do all its work but leave no runs-table evidence, making the
     journal inconsistent with the orders/decisions/strategy_eval rows
     it produced.
+
+    v6.1.1 (2026-05-14 incident): idempotency guard now uses ET
+    trading-day boundaries instead of UTC date. Bug: a run started
+    at 5pm PT on day N (UTC date = day N+1) would cause the morning
+    daemons of day N+1 to see "today's run already exists" and skip,
+    because both runs share the same UTC date. ET (America/New_York)
+    is the right axis — it's the trading calendar.
+    Also: only 'started' or 'completed' rows block. 'halted' rows
+    do NOT block — a HALTed earlier run should let the operator
+    re-trigger after fixing the underlying issue.
     """
     init_db()
-    today = datetime.utcnow().date().isoformat()
     is_force = run_id.endswith("-FORCE")
+    # ET trading-day range, expressed as UTC for comparison against
+    # started_at (which is stored as UTC isoformat).
+    from datetime import timedelta as _td, time as _time
+    try:
+        from zoneinfo import ZoneInfo
+        _ET = ZoneInfo("America/New_York")
+    except ImportError:  # pragma: no cover — Python 3.9+ has zoneinfo
+        _ET = None
+    if _ET is not None:
+        today_et = datetime.now(_ET).date()
+        et_start = datetime.combine(today_et, _time.min, tzinfo=_ET)
+        et_end = datetime.combine(today_et + _td(days=1), _time.min, tzinfo=_ET)
+        # Convert to naive UTC isoformat to match started_at storage
+        utc_start_iso = et_start.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
+        utc_end_iso = et_end.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
+    else:  # fallback to UTC date if zoneinfo missing
+        today_utc = datetime.utcnow().date()
+        utc_start_iso = datetime.combine(today_utc, _time.min).isoformat()
+        utc_end_iso = datetime.combine(today_utc + _td(days=1), _time.min).isoformat()
     with _conn() as c:
         if not is_force:
             existing = c.execute(
-                "SELECT run_id, status FROM runs WHERE run_id LIKE ? AND status IN ('started', 'completed')",
-                (f"{today}%",),
+                "SELECT run_id, status FROM runs "
+                "WHERE started_at >= ? AND started_at < ? "
+                "AND status IN ('started', 'completed')",
+                (utc_start_iso, utc_end_iso),
             ).fetchone()
             if existing:
                 return False

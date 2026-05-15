@@ -511,6 +511,8 @@ def main(force: bool = False) -> dict:
         allowed, reason = check_override_delay()
         print(f"  {reason}")
         if not allowed:
+            if not DRY_RUN:
+                finish_run(run_id, status="halted", notes=f"override_delay: {reason}")
             return {"halted": True, "kill_switch_reasons": [reason], "halt_type": "override_delay"}
     except Exception as e:
         print(f"  override-delay check failed (non-fatal): {e}")
@@ -554,6 +556,8 @@ def main(force: bool = False) -> dict:
             alert_kill_switch(reasons)
         except Exception as e:
             print(f"  alert_kill_switch failed: {e}")
+        if not DRY_RUN:
+            finish_run(run_id, status="halted", notes=f"kill_switch: {reasons}")
         return {"halted": True, "kill_switch_reasons": reasons}
     print("  kill switch clear.")
 
@@ -595,6 +599,9 @@ def main(force: bool = False) -> dict:
                 else:
                     print(f"  HALT: market closed (next open {next_open}). "
                           f"Set ALLOW_WEEKEND_ORDERS=1 to override.")
+                    if not DRY_RUN:
+                        finish_run(run_id, status="halted",
+                                   notes=f"market_closed (next open {next_open})")
                     return {
                         "halted": True,
                         "kill_switch_reasons": [
@@ -636,6 +643,9 @@ def main(force: bool = False) -> dict:
                     )
                 except Exception as e:
                     print(f"  alert_halt failed: {e}")
+                if not DRY_RUN:
+                    finish_run(run_id, status="halted",
+                               notes=f"reconciliation_drift: {rep.get('summary','')}")
                 return {"halted": True, "reason": "reconciliation_drift", "detail": rep}
             print(f"  reconcile: {rep['summary']}")
         except Exception as e:
@@ -813,6 +823,8 @@ def main(force: bool = False) -> dict:
     print(f"  decision: proceed={risk.proceed}  {risk.reason}")
     if not risk.proceed:
         notify(f"HALT: {risk.reason}", level="warn")
+        if not DRY_RUN:
+            finish_run(run_id, status="halted", notes=f"risk_gate: {risk.reason}")
         return {"halted": True, "reason": risk.reason}
 
     final_targets = risk.adjusted_targets
@@ -930,6 +942,8 @@ def main(force: bool = False) -> dict:
     except DataQualityError as e:
         print(f"  HALT: target validation failed — {e}")
         notify(f"Target validation HALT: {e}", level="warn")
+        if not DRY_RUN:
+            finish_run(run_id, status="halted", notes=f"target_validation: {e}")
         return {"halted": True, "reason": str(e)}
 
     print("\nFinal target allocation (post-risk):")
