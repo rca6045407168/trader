@@ -133,58 +133,68 @@ def apply_cash_park(daily_ret: pd.Series, weights_daily: pd.DataFrame,
     return daily_ret + park * spy_daily_ret
 
 
-def apply_hmm_regime(daily_ret: pd.Series, spy_daily_ret: pd.Series) -> pd.Series:
-    """HMM regime gate: fit Gaussian HMM on rolling SPY returns, scale
-    portfolio exposure by P(bull) - P(crisis). Forward-only (Viterbi
-    using data up to t).
+def apply_hmm_regime(daily_ret: pd.Series, spy_daily_ret: pd.Series,
+                      verbose: bool = False) -> pd.Series:
+    """HMM regime gate: fit 3-state Gaussian HMM on a SPY-history training
+    window, then use posterior probabilities to scale daily exposure.
 
-    Conservative implementation: 3-state HMM with bull/transition/crisis
-    labels; scale gross by P(bull) + 0.5 * P(transition). Crisis state
-    contributes 0.
+    State scaling: BULL=1.0, TRANSITION=0.6, BEAR=0.0.
 
-    This is a SIMPLIFIED layer on top of the daily portfolio return. A
-    proper implementation re-sizes positions at each rebalance, not the
-    return stream. But for a directional check this is right enough.
+    Honesty caveats:
+      - Trains on the first 40% of the in-window history. A truly
+        out-of-sample test would refit periodically with only data
+        available at each rebalance. For a directional check, single-
+        fit is the cheap approximation.
+      - Applied as a return-stream scalar (multiplies daily_ret), not
+        a position-sizing rebalance. A proper implementation would
+        re-size positions monthly when HMM state shifts. The scalar
+        approximation conservatively assumes proportional resizing.
+
+    v6.1.1 fix: previously this function silently caught AttributeError
+    on `hmm.state_label` (the real attribute is `state_to_regime`) and
+    returned the input unchanged — producing identical results to "no
+    overlay" across all 5 walk-forward windows. Now exceptions surface
+    explicitly so future bugs are loud, not silent.
     """
-    try:
-        from trader.hmm_regime import fit_hmm
-    except Exception:
-        return daily_ret  # graceful — HMM unavailable
+    from trader.hmm_regime import fit_hmm, HMMRegime
 
-    # Fit on a long window of SPY history (use the first 80% of the
-    # input as the "training" window proxy — in real prod this would
-    # use 10-year SPY history available at each rebalance).
-    train = spy_daily_ret.iloc[:max(int(len(spy_daily_ret) * 0.4), 60)]
-    try:
-        hmm = fit_hmm(train, n_states=3, n_iter=100)
-    except Exception:
+    # Train on first 40% of in-window SPY returns
+    n_train = max(int(len(spy_daily_ret) * 0.4), 60)
+    train = spy_daily_ret.iloc[:n_train].dropna()
+    if len(train) < 60:
+        if verbose:
+            print(f"    HMM skip: only {len(train)} training points")
         return daily_ret
 
-    # Score each day: posterior of each state given returns up to t
-    from trader.hmm_regime import HMMRegime
-    scales = []
-    series = spy_daily_ret.fillna(0).values.reshape(-1, 1)
-    try:
-        # Forward filter probabilities (no look-ahead)
-        log_probs = hmm.model.predict_proba(series)
-        states = hmm.state_label
-        for i in range(len(series)):
-            p = log_probs[i]
-            scale = 0.0
-            for s_idx, prob in enumerate(p):
-                lab = states.get(s_idx, HMMRegime.TRANSITION)
-                if lab == HMMRegime.BULL:
-                    scale += prob * 1.0
-                elif lab == HMMRegime.TRANSITION:
-                    scale += prob * 0.6
-                elif lab == HMMRegime.CRISIS:
-                    scale += prob * 0.0
-            scales.append(scale)
-        scale_series = pd.Series(scales, index=spy_daily_ret.index)
-        scale_series = scale_series.reindex(daily_ret.index).fillna(1.0)
-        return daily_ret * scale_series
-    except Exception:
-        return daily_ret
+    hmm = fit_hmm(train, n_states=3, n_iter=100)
+    if verbose:
+        regime_summary = ", ".join(
+            f"state{i}={hmm.state_to_regime[i].value}(μ={hmm.state_means[i]*100:+.3f}%,σ={hmm.state_vols[i]*100:.2f}%)"
+            for i in range(hmm.n_states)
+        )
+        print(f"    HMM fitted on {len(train)} days: {regime_summary}")
+
+    # Forward filter over the full window. predict_proba returns posterior
+    # P(state | observations up to t) — no in-window look-ahead.
+    X = spy_daily_ret.fillna(0).values.reshape(-1, 1)
+    posteriors = hmm.model.predict_proba(X)  # (T, K)
+
+    state_scales = {
+        HMMRegime.BULL: 1.0,
+        HMMRegime.TRANSITION: 0.6,
+        HMMRegime.BEAR: 0.0,
+    }
+    per_state = np.array([
+        state_scales[hmm.state_to_regime[i]] for i in range(hmm.n_states)
+    ])
+    daily_scale = posteriors @ per_state  # (T,) — weighted avg
+
+    scale_series = pd.Series(daily_scale, index=spy_daily_ret.index)
+    scale_series = scale_series.reindex(daily_ret.index).fillna(1.0)
+    if verbose:
+        print(f"    HMM scale range: min={scale_series.min():.2f}  "
+              f"mean={scale_series.mean():.2f}  max={scale_series.max():.2f}")
+    return daily_ret * scale_series
 
 
 # -------- one window simulation --------
