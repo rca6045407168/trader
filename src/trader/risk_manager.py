@@ -540,6 +540,27 @@ def check_account_risk(
     except Exception as e:
         warnings.append(f"regime_overlay unavailable (non-fatal): {e}")
 
+    # 6c) v6.1.2: HMM live-overlay (walk-forward-validated, 2026-05-15).
+    # Distinct from regime_overlay above: 10+yr SPY training, posterior-
+    # weighted scaling (BULL=1.0/TRANSITION=0.6/BEAR=0.0), HMM-only
+    # (no macro/GARCH composition). Env-gated by HMM_REGIME_MODE ∈
+    # {INERT, SHADOW, LIVE}. Default INERT.
+    # Walk-forward (5 windows 2021-26, OOS training on 2010-2020):
+    # avg CAGR +30.97% vs cash-park-only's +30.75% (tied), Sharpe 2.01
+    # vs 1.27 (+0.74), maxDD -6.7% vs -17.7% (11pp shallower), 4/5
+    # win-rate vs SPY. See ~/Documents/Obsidian Vault/Trader/Research
+    # Backlog.md for full evidence. SHIPPED IN SHADOW — 30-day
+    # observation before flipping LIVE.
+    try:
+        from .hmm_live_overlay import compute_hmm_overlay
+        hmm_sig = compute_hmm_overlay()
+        if hmm_sig.mode in ("SHADOW", "LIVE") or hmm_sig.error:
+            warnings.append(hmm_sig.rationale())
+        if hmm_sig.is_active():  # mode == LIVE and scale < 1.0
+            adjusted = {t: w * hmm_sig.scale for t, w in adjusted.items()}
+    except Exception as e:
+        warnings.append(f"hmm_live_overlay unavailable (non-fatal): {e}")
+
     # 7) Gross exposure cap (final clamp; runs after all multipliers)
     total = sum(adjusted.values())
     if total > MAX_GROSS_EXPOSURE:

@@ -134,33 +134,46 @@ def apply_cash_park(daily_ret: pd.Series, weights_daily: pd.DataFrame,
 
 
 def apply_hmm_regime(daily_ret: pd.Series, spy_daily_ret: pd.Series,
+                      training_returns: pd.Series | None = None,
                       verbose: bool = False) -> pd.Series:
-    """HMM regime gate: fit 3-state Gaussian HMM on a SPY-history training
-    window, then use posterior probabilities to scale daily exposure.
+    """HMM regime gate: fit 3-state Gaussian HMM, then use posterior
+    probabilities to scale daily exposure.
 
     State scaling: BULL=1.0, TRANSITION=0.6, BEAR=0.0.
 
-    Honesty caveats:
-      - Trains on the first 40% of the in-window history. A truly
-        out-of-sample test would refit periodically with only data
-        available at each rebalance. For a directional check, single-
-        fit is the cheap approximation.
-      - Applied as a return-stream scalar (multiplies daily_ret), not
-        a position-sizing rebalance. A proper implementation would
-        re-size positions monthly when HMM state shifts. The scalar
-        approximation conservatively assumes proportional resizing.
+    Args:
+      daily_ret: portfolio daily returns over the prediction window.
+      spy_daily_ret: SPY daily returns over the prediction window
+                     (used as the observation series for the forward filter).
+      training_returns: optional pre-window SPY returns to train HMM on.
+                        If provided, HMM is fit on these (out-of-sample).
+                        If None, falls back to first-40%-of-window training
+                        (in-sample, biased — see v6.1.1 caveat).
+      verbose: print fit + scale diagnostics.
 
-    v6.1.1 fix: previously this function silently caught AttributeError
-    on `hmm.state_label` (the real attribute is `state_to_regime`) and
-    returned the input unchanged — producing identical results to "no
-    overlay" across all 5 walk-forward windows. Now exceptions surface
-    explicitly so future bugs are loud, not silent.
+    Honesty caveats:
+      - When `training_returns` is provided: HMM only sees pre-window data.
+        Forward filtering on the prediction window uses the trained
+        transition matrix and emission distributions — no look-ahead.
+      - HMM is fit ONCE (not refit during the window). A more honest
+        production implementation would refit every N months with
+        only-available-at-rebalance data. Acceptable for this test.
+
+    v6.1.1 (silent-bug fix): previously caught AttributeError on
+    `hmm.state_label` (the real attribute is `state_to_regime`) and
+    returned the input unchanged. Now exceptions surface explicitly.
+    v6.1.2 (out-of-sample): training set decoupled from prediction window.
     """
     from trader.hmm_regime import fit_hmm, HMMRegime
 
-    # Train on first 40% of in-window SPY returns
-    n_train = max(int(len(spy_daily_ret) * 0.4), 60)
-    train = spy_daily_ret.iloc[:n_train].dropna()
+    if training_returns is not None and len(training_returns) >= 60:
+        train = training_returns.dropna()
+        train_label = f"OOS pre-window ({len(train)} days)"
+    else:
+        n_train = max(int(len(spy_daily_ret) * 0.4), 60)
+        train = spy_daily_ret.iloc[:n_train].dropna()
+        train_label = f"in-sample first {n_train} of window"
+
     if len(train) < 60:
         if verbose:
             print(f"    HMM skip: only {len(train)} training points")
@@ -169,13 +182,15 @@ def apply_hmm_regime(daily_ret: pd.Series, spy_daily_ret: pd.Series,
     hmm = fit_hmm(train, n_states=3, n_iter=100)
     if verbose:
         regime_summary = ", ".join(
-            f"state{i}={hmm.state_to_regime[i].value}(μ={hmm.state_means[i]*100:+.3f}%,σ={hmm.state_vols[i]*100:.2f}%)"
+            f"state{i}={hmm.state_to_regime[i].value}"
+            f"(μ={hmm.state_means[i]*100:+.3f}%,σ={hmm.state_vols[i]*100:.2f}%)"
             for i in range(hmm.n_states)
         )
-        print(f"    HMM fitted on {len(train)} days: {regime_summary}")
+        print(f"    HMM fitted on {train_label}: {regime_summary}")
 
-    # Forward filter over the full window. predict_proba returns posterior
-    # P(state | observations up to t) — no in-window look-ahead.
+    # Forward filter over the prediction window. predict_proba returns
+    # posterior P(state | observations up to t) using trained model —
+    # no future leakage.
     X = spy_daily_ret.fillna(0).values.reshape(-1, 1)
     posteriors = hmm.model.predict_proba(X)  # (T, K)
 
@@ -198,7 +213,8 @@ def apply_hmm_regime(daily_ret: pd.Series, spy_daily_ret: pd.Series,
 
 
 # -------- one window simulation --------
-def simulate_window(start: str, end: str, overlays: dict) -> dict:
+def simulate_window(start: str, end: str, overlays: dict,
+                    hmm_oos_training_start: str = "2010-01-01") -> dict:
     """Run one window with the given overlays.
 
     overlays = {
@@ -206,10 +222,22 @@ def simulate_window(start: str, end: str, overlays: dict) -> dict:
         "sector_cap": True/False,
         "hmm_regime": True/False,
     }
+
+    hmm_oos_training_start: HMM is trained on SPY returns from this date
+    up to `start` (exclusive). Default 2010-01-01 gives ~11 years of OOS
+    training before the first window (2021-07-01). This is the v6.1.2
+    fix for confirmation bias — earlier in-window training had the bear
+    period in the training set for the 2021-22 window.
     """
     # Pull universe prices + SPY for the window (need pre-window history
-    # for the lookback and HMM training).
+    # for the momentum lookback and SPY history for HMM training).
     pre_start = (pd.to_datetime(start) - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
+    # Pull a longer SPY series separately for OOS HMM training
+    spy_train = None
+    if overlays.get("hmm_regime"):
+        spy_full = fetch_history(["SPY"], start=hmm_oos_training_start, end=start)
+        if "SPY" in spy_full.columns:
+            spy_train = spy_full["SPY"].pct_change().dropna()
     prices = fetch_history(DEFAULT_LIQUID_50 + ["SPY"], start=pre_start, end=end)
     prices = prices.dropna(axis=1, thresh=int(len(prices) * 0.5))
     spy = prices["SPY"]
@@ -244,9 +272,12 @@ def simulate_window(start: str, end: str, overlays: dict) -> dict:
     if overlays.get("cash_park"):
         portfolio_ret = apply_cash_park(portfolio_ret, w_daily, spy_ret_window)
 
-    # HMM regime gate
+    # HMM regime gate — uses pre-window SPY training set (v6.1.2 OOS fix)
     if overlays.get("hmm_regime"):
-        portfolio_ret = apply_hmm_regime(portfolio_ret, spy_ret_window)
+        portfolio_ret = apply_hmm_regime(
+            portfolio_ret, spy_ret_window,
+            training_returns=spy_train,
+        )
 
     stats_p = annualize(portfolio_ret)
     stats_spy = annualize(spy_ret_window)
